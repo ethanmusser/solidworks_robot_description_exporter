@@ -57,12 +57,20 @@ namespace SW2URDF.URDF
         [DataMember]
         public byte[] SWMainComponentPID;
 
+        // Names of SolidWorks reference coordinate systems the user has promoted to MJCF <site>
+        // elements on this link. Entries match the strings surfaced by
+        // ExportHelper.GetRefCoordinateSystems() (e.g. "Tool_Tip <Hand-1>"). Empty for URDF-only
+        // flows.
+        [DataMember]
+        public List<string> SiteCoordSystemNames;
+
         public Link() : base("link", true)
         {
             Parent = null;
             Children = new List<Link>();
             SWComponents = new List<Component2>();
             SWComponentPIDs = new List<byte[]>();
+            SiteCoordSystemNames = new List<string>();
             NameAttribute = new URDFAttribute("name", true, "");
 
             Inertial = new Inertial();
@@ -98,6 +106,7 @@ namespace SW2URDF.URDF
             Children = new List<Link>();
             SWComponents = new List<Component2>();
             SWComponentPIDs = new List<byte[]>();
+            SiteCoordSystemNames = new List<string>();
             NameAttribute = new URDFAttribute("name", true, "");
 
             Inertial = new Inertial();
@@ -151,7 +160,30 @@ namespace SW2URDF.URDF
             string componentsContext = "Link.SWComponents";
             dictionary.Add(componentsContext, componentNamesStr);
 
+            // Emit site names using the same semicolon-joined convention used for SWComponents so
+            // the existing CSV reader (a plain StringDictionary lookup) can round-trip the list.
+            string siteNamesStr = string.Join(";", SiteCoordSystemNames ?? new List<string>());
+            dictionary.Add("Link.SiteCoordSystemNames", siteNamesStr);
+
             base.AppendToCSVDictionary(context, dictionary);
+        }
+
+        public override void SetElementFromData(List<string> context, StringDictionary dictionary)
+        {
+            string siteNames = dictionary["Link.SiteCoordSystemNames"];
+            SiteCoordSystemNames = new List<string>();
+            if (!string.IsNullOrWhiteSpace(siteNames))
+            {
+                foreach (string name in siteNames.Split(';'))
+                {
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        SiteCoordSystemNames.Add(name);
+                    }
+                }
+            }
+
+            base.SetElementFromData(context, dictionary);
         }
 
         public override void SetElement(URDFElement externalElement)
@@ -181,6 +213,10 @@ namespace SW2URDF.URDF
 
             SWMainComponent = externalLink.SWMainComponent;
             SWMainComponentPID = externalLink.SWMainComponentPID;
+
+            SiteCoordSystemNames = (externalLink.SiteCoordSystemNames != null)
+                ? new List<string>(externalLink.SiteCoordSystemNames)
+                : new List<string>();
 
             isFixedFrame = externalLink.isFixedFrame;
         }

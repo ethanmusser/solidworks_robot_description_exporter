@@ -1,7 +1,10 @@
-﻿using SolidWorks.Interop.sldworks;
+using SolidWorks.Interop.sldworks;
+using SW2URDF.MJCF;
 using SW2URDF.URDF;
 using SW2URDF.URDFExport;
 using System.Collections.Generic;
+using System.IO;
+using System.Xml.Linq;
 using Xunit;
 
 namespace SW2URDF.Test
@@ -233,6 +236,67 @@ namespace SW2URDF.Test
             OpenSWDocument(modelName);
             ExportHelper helper = new ExportHelper(SwApp);
             Assert.Equal(new List<string>(expected), helper.GetRefAxes());
+            Assert.True(SwApp.CloseAllDocuments(true));
+        }
+
+        [Theory]
+        [InlineData("3_DOF_ARM", 4)]
+        [InlineData("4_WHEELER", 5)]
+        [InlineData("ORIGINAL_3_DOF_ARM", 4)]
+        public void TestExportMjcf(string modelName, int expNumLinks)
+        {
+            ModelDoc2 doc = OpenSWDocument(modelName);
+            ExportHelper helper = new ExportHelper(SwApp);
+            helper.SetComputeInertial(true);
+            helper.SetComputeJointKinematics(true);
+            helper.SetComputeJointLimits(true);
+            helper.SetComputeVisualCollision(true);
+            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
+            Assert.False(error);
+            helper.CreateRobotFromTreeView(baseNode);
+
+            // Keep the MJCF package under a temp directory so we don't touch the user's profile.
+            string tempDir = CreateRandomTempDirectory();
+            helper.SavePath = tempDir;
+            helper.PackageName = modelName;
+
+            MjcfOptions options = new MjcfOptions
+            {
+                Timestep = 0.002,
+                Integrator = MjcfIntegrator.RK4,
+                Gravity = new double[] { 0, 0, -9.81 },
+                MeshDir = "meshes",
+                ActuatorType = MjcfActuatorType.None,
+                ActuatorGain = 1.0,
+                ExcludeAdjacentContacts = false,
+                EmitMimicEqualities = false,
+            };
+
+            try
+            {
+                helper.ExportMjcf(options);
+
+                Assert.NotNull(helper.URDFRobot);
+                Assert.Equal(expNumLinks, CommonSwOperations.GetCount(helper.URDFRobot.BaseLink));
+
+                string expectedXml = Path.Combine(tempDir, modelName, modelName + ".xml");
+                Assert.True(File.Exists(expectedXml), "MJCF file was not produced: " + expectedXml);
+
+                XDocument parsed = XDocument.Load(expectedXml);
+                Assert.Equal("mujoco", parsed.Root.Name.LocalName);
+                Assert.Equal(modelName, parsed.Root.Attribute("model").Value);
+                Assert.NotNull(parsed.Root.Element("worldbody"));
+                Assert.NotNull(parsed.Root.Element("compiler"));
+                Assert.NotNull(parsed.Root.Element("option"));
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    Directory.Delete(tempDir, true);
+                }
+            }
+
             Assert.True(SwApp.CloseAllDocuments(true));
         }
     }

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="12.0">
   <Import Project="..\packages\Microsoft.CodeAnalysis.FxCopAnalyzers.2.9.6\build\Microsoft.CodeAnalysis.FxCopAnalyzers.props" Condition="Exists('..\packages\Microsoft.CodeAnalysis.FxCopAnalyzers.2.9.6\build\Microsoft.CodeAnalysis.FxCopAnalyzers.props')" />
   <Import Project="..\packages\Microsoft.NetFramework.Analyzers.2.9.6\build\Microsoft.NetFramework.Analyzers.props" Condition="Exists('..\packages\Microsoft.NetFramework.Analyzers.2.9.6\build\Microsoft.NetFramework.Analyzers.props')" />
@@ -327,6 +327,7 @@
     <Compile Include="Test\TestExportHelper.cs" />
     <Compile Include="Test\TestLogger.cs" />
     <Compile Include="Test\TestMathOps.cs" />
+    <Compile Include="Test\TestMjcfWriter.cs" />
     <Compile Include="Test\TestPropertyManager.cs" />
     <Compile Include="Test\TestROSFIles.cs" />
     <Compile Include="Test\TestSerialization.cs" />
@@ -362,7 +363,18 @@
     <Compile Include="URDFExport\ConfigurationSerialization.cs" />
     <Compile Include="URDFExport\ExportHelper.cs" />
     <Compile Include="URDFExport\ExportHelperExtension.cs" />
+    <Compile Include="URDFExport\ExportHelperMjcf.cs" />
+    <Compile Include="MJCF\MjcfOptions.cs" />
+    <Compile Include="MJCF\MjcfPackage.cs" />
+    <Compile Include="MJCF\MjcfSite.cs" />
+    <Compile Include="MJCF\MjcfWriter.cs" />
     <Compile Include="UI\AssemblyExportFormExtension.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\AssemblyExportFormMjcf.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\MjcfOptionsDialog.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="URDFExport\CommonSwOperations.cs" />

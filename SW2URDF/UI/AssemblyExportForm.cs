@@ -1,4 +1,4 @@
-﻿/*
+/*
 Copyright (c) 2015 Stephen Brawner
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -106,6 +106,8 @@ namespace SW2URDF.UI
             {
                 textBox.KeyPress += NumericalTextBoxKeyPress;
             }
+
+            InitializeMjcfUi();
 
             saveConfigurationAttributeDef = SwApp.DefineAttribute(ConfigurationSerialization.UrdfConfigurationSwAttributeName);
             int Options = 0;

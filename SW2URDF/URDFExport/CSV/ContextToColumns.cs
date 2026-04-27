@@ -1,4 +1,4 @@
-﻿using System.Collections.Specialized;
+using System.Collections.Specialized;
 
 namespace SW2URDF.URDFExport.CSV
 {
@@ -47,6 +47,7 @@ namespace SW2URDF.URDFExport.CSV
             {"Link.Collision.Geometry.Mesh.filename","Collision Mesh Filename"},
             {"Link.Visual.Material.name","Material Name"},
             {"Link.SWComponents","SW Components"},
+            {"Link.SiteCoordSystemNames", "Site Coord Systems"},
             { "Link.CoordSysName","Coordinate System"},
             { "Link.AxisName","Axis Name"},
             { "Link.Joint.name","Joint Name"},

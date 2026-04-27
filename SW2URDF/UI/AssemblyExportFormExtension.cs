@@ -80,6 +80,8 @@ namespace SW2URDF.UI
                 radioButtonFine.Checked = Link.STLQualityFine;
                 radioButtonCourse.Checked = !Link.STLQualityFine;
             }
+
+            FillSitesForLink(Link);
         }
 
         //Fills the property boxes on the joint properties page
@@ -272,6 +274,8 @@ namespace SW2URDF.UI
 
                 Link.STLQualityFine = radioButtonFine.Checked;
             }
+
+            SaveSitesForLink(Link);
         }
 
         //Saves data from text boxes back into a joint
