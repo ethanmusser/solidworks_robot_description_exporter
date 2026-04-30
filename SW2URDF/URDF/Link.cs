@@ -49,20 +49,63 @@ namespace SW2URDF.URDF
 
         public Component2 SWMainComponent;
 
-        public List<Component2> SWComponents;
+        // VisualComponents are the SolidWorks components that contribute to the
+        // <visual> mesh. Historically these were stored as SWComponents and were
+        // also reused as the collision mesh; both interpretations are still
+        // supported through the SWComponents alias property below.
+        public List<Component2> VisualComponents;
+
+        // CollisionComponents are the SolidWorks components that contribute to
+        // the <collision> mesh. May be empty, in which case the visual mesh is
+        // reused for collision (URDF backward-compatible behavior).
+        public List<Component2> CollisionComponents;
+
+        // InertialComponents are used only when InertialSource == Custom. May be empty
+        // even when Custom is selected, in which case the visual components are used
+        // as a fallback (with a warning logged).
+        public List<Component2> InertialComponents;
 
         [DataMember]
         public List<byte[]> SWComponentPIDs;
 
+        [DataMember(IsRequired = false)]
+        public List<byte[]> CollisionComponentPIDs;
+
+        [DataMember(IsRequired = false)]
+        public List<byte[]> InertialComponentPIDs;
+
         [DataMember]
         public byte[] SWMainComponentPID;
+
+        // Drives which set of components ComputeInertialProperties consumes.
+        // Default Visual matches the legacy URDF behavior.
+        [DataMember(IsRequired = false)]
+        public InertialSource InertialSource;
+
+        // Sites attached to this link/body for MJCF export. Ignored by the URDF writer.
+        [DataMember(IsRequired = false)]
+        public List<SiteSpec> Sites;
+
+        // Backward-compatible alias for VisualComponents. Older code paths still refer
+        // to "SWComponents" as the single bag of bodies; expose them as the visual set.
+        public List<Component2> SWComponents
+        {
+            get => VisualComponents;
+            set => VisualComponents = value;
+        }
 
         public Link() : base("link", true)
         {
             Parent = null;
             Children = new List<Link>();
-            SWComponents = new List<Component2>();
+            VisualComponents = new List<Component2>();
+            CollisionComponents = new List<Component2>();
+            InertialComponents = new List<Component2>();
             SWComponentPIDs = new List<byte[]>();
+            CollisionComponentPIDs = new List<byte[]>();
+            InertialComponentPIDs = new List<byte[]>();
+            Sites = new List<SiteSpec>();
+            InertialSource = InertialSource.Visual;
             NameAttribute = new URDFAttribute("name", true, "");
 
             Inertial = new Inertial();
@@ -96,8 +139,14 @@ namespace SW2URDF.URDF
         {
             Parent = parent;
             Children = new List<Link>();
-            SWComponents = new List<Component2>();
+            VisualComponents = new List<Component2>();
+            CollisionComponents = new List<Component2>();
+            InertialComponents = new List<Component2>();
             SWComponentPIDs = new List<byte[]>();
+            CollisionComponentPIDs = new List<byte[]>();
+            InertialComponentPIDs = new List<byte[]>();
+            Sites = new List<SiteSpec>();
+            InertialSource = InertialSource.Visual;
             NameAttribute = new URDFAttribute("name", true, "");
 
             Inertial = new Inertial();
@@ -144,14 +193,92 @@ namespace SW2URDF.URDF
             }
         }
 
+        public override void SetElementFromData(List<string> context, StringDictionary dictionary)
+        {
+            base.SetElementFromData(context, dictionary);
+
+            if (dictionary.ContainsKey("Link.InertialSource"))
+            {
+                string raw = dictionary["Link.InertialSource"];
+                if (System.Enum.TryParse(raw, true, out InertialSource parsed))
+                {
+                    InertialSource = parsed;
+                }
+            }
+
+            if (dictionary.ContainsKey("Link.Sites"))
+            {
+                Sites = ParseSites(dictionary["Link.Sites"]);
+            }
+        }
+
+        private static List<SiteSpec> ParseSites(string raw)
+        {
+            List<SiteSpec> sites = new List<SiteSpec>();
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return sites;
+            }
+            foreach (string entry in raw.Split(';'))
+            {
+                if (string.IsNullOrWhiteSpace(entry))
+                {
+                    continue;
+                }
+                int sep = entry.IndexOf('|');
+                if (sep < 0)
+                {
+                    sites.Add(new SiteSpec(entry.Trim(), ""));
+                }
+                else
+                {
+                    string name = entry.Substring(0, sep).Trim();
+                    string coord = entry.Substring(sep + 1).Trim();
+                    sites.Add(new SiteSpec(name, coord));
+                }
+            }
+            return sites;
+        }
+
         public override void AppendToCSVDictionary(List<string> context, OrderedDictionary dictionary)
         {
-            IEnumerable<string> componentNames = SWComponents.Select(component => component.Name2);
-            string componentNamesStr = string.Join(";", componentNames);
-            string componentsContext = "Link.SWComponents";
-            dictionary.Add(componentsContext, componentNamesStr);
+            string visualComponentsContext = "Link.SWComponents";
+            dictionary.Add(visualComponentsContext, ComponentNamesJoined(VisualComponents));
+
+            string collisionComponentsContext = "Link.CollisionComponents";
+            dictionary.Add(collisionComponentsContext, ComponentNamesJoined(CollisionComponents));
+
+            string inertialComponentsContext = "Link.InertialComponents";
+            dictionary.Add(inertialComponentsContext, ComponentNamesJoined(InertialComponents));
+
+            string inertialSourceContext = "Link.InertialSource";
+            dictionary.Add(inertialSourceContext, InertialSource.ToString());
+
+            string sitesContext = "Link.Sites";
+            dictionary.Add(sitesContext, SitesJoined(Sites));
 
             base.AppendToCSVDictionary(context, dictionary);
+        }
+
+        private static string ComponentNamesJoined(List<Component2> components)
+        {
+            if (components == null)
+            {
+                return string.Empty;
+            }
+            IEnumerable<string> names = components.Select(c => c.Name2);
+            return string.Join(";", names);
+        }
+
+        private static string SitesJoined(List<SiteSpec> sites)
+        {
+            if (sites == null || sites.Count == 0)
+            {
+                return string.Empty;
+            }
+            // Each site is encoded as "name|coord_system" and sites are joined with ';'.
+            return string.Join(";",
+                sites.Select(s => (s.Name ?? "") + "|" + (s.CoordinateSystemName ?? "")));
         }
 
         public override void SetElement(URDFElement externalElement)
@@ -162,23 +289,40 @@ namespace SW2URDF.URDF
 
         public void SetSWComponents(Link externalLink)
         {
-            if (externalLink.SWComponents != null)
+            VisualComponents = (externalLink.VisualComponents != null) ?
+                new List<Component2>(externalLink.VisualComponents) :
+                new List<Component2>();
+
+            CollisionComponents = (externalLink.CollisionComponents != null) ?
+                new List<Component2>(externalLink.CollisionComponents) :
+                new List<Component2>();
+
+            InertialComponents = (externalLink.InertialComponents != null) ?
+                new List<Component2>(externalLink.InertialComponents) :
+                new List<Component2>();
+
+            SWComponentPIDs = (externalLink.SWComponentPIDs != null) ?
+                new List<byte[]>(externalLink.SWComponentPIDs) :
+                new List<byte[]>();
+
+            CollisionComponentPIDs = (externalLink.CollisionComponentPIDs != null) ?
+                new List<byte[]>(externalLink.CollisionComponentPIDs) :
+                new List<byte[]>();
+
+            InertialComponentPIDs = (externalLink.InertialComponentPIDs != null) ?
+                new List<byte[]>(externalLink.InertialComponentPIDs) :
+                new List<byte[]>();
+
+            Sites = new List<SiteSpec>();
+            if (externalLink.Sites != null)
             {
-                SWComponents = new List<Component2>(externalLink.SWComponents);
-            }
-            else
-            {
-                SWComponents = new List<Component2>();
-            }
-            if (externalLink.SWComponentPIDs != null)
-            {
-                SWComponentPIDs = new List<byte[]>(externalLink.SWComponentPIDs);
-            }
-            else
-            {
-                SWComponentPIDs = new List<byte[]>();
+                foreach (SiteSpec s in externalLink.Sites)
+                {
+                    Sites.Add(s.Clone());
+                }
             }
 
+            InertialSource = externalLink.InertialSource;
             SWMainComponent = externalLink.SWMainComponent;
             SWMainComponentPID = externalLink.SWMainComponentPID;
 
@@ -217,6 +361,36 @@ namespace SW2URDF.URDF
             }
 
             return true;
+        }
+
+        // Returns the components used to drive the inertial computation, based on
+        // InertialSource. Falls back to VisualComponents (with isFallback=true) when
+        // the selected set is empty.
+        public List<Component2> GetInertialComponents(out bool isFallback)
+        {
+            isFallback = false;
+            switch (InertialSource)
+            {
+                case InertialSource.Collision:
+                    if (CollisionComponents != null && CollisionComponents.Count > 0)
+                    {
+                        return CollisionComponents;
+                    }
+                    isFallback = true;
+                    return VisualComponents ?? new List<Component2>();
+
+                case InertialSource.Custom:
+                    if (InertialComponents != null && InertialComponents.Count > 0)
+                    {
+                        return InertialComponents;
+                    }
+                    isFallback = true;
+                    return VisualComponents ?? new List<Component2>();
+
+                case InertialSource.Visual:
+                default:
+                    return VisualComponents ?? new List<Component2>();
+            }
         }
     }
 }

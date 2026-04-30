@@ -262,18 +262,29 @@ namespace SW2URDF.URDFExport
 
         private void CheckModelDocsExist(LinkNode node, List<string> problemComponents)
         {
-            foreach (Component2 component in node.Link.SWComponents)
+            CheckModelDocsExistFor(node.Link.VisualComponents, problemComponents);
+            CheckModelDocsExistFor(node.Link.CollisionComponents, problemComponents);
+            CheckModelDocsExistFor(node.Link.InertialComponents, problemComponents);
+
+            foreach (LinkNode child in node.Nodes)
+            {
+                CheckModelDocsExist(child, problemComponents);
+            }
+        }
+
+        private static void CheckModelDocsExistFor(List<Component2> components, List<string> problemComponents)
+        {
+            if (components == null)
+            {
+                return;
+            }
+            foreach (Component2 component in components)
             {
                 ModelDoc2 doc = component.GetModelDoc2();
                 if (doc == null)
                 {
                     problemComponents.Add(component.Name2);
                 }
-            }
-
-            foreach (LinkNode child in node.Nodes)
-            {
-                CheckModelDocsExist(child, problemComponents);
             }
         }
 
@@ -328,8 +339,41 @@ namespace SW2URDF.URDFExport
                     previouslySelectedNode.Link.Joint.CoordinateSystemName =
                         PMComboBoxGlobalCoordsys.get_ItemText(-1);
                 }
+
+                if (previouslySelectedNode.Link.VisualComponents == null)
+                {
+                    previouslySelectedNode.Link.VisualComponents = new List<Component2>();
+                }
+                if (previouslySelectedNode.Link.CollisionComponents == null)
+                {
+                    previouslySelectedNode.Link.CollisionComponents = new List<Component2>();
+                }
+                if (previouslySelectedNode.Link.InertialComponents == null)
+                {
+                    previouslySelectedNode.Link.InertialComponents = new List<Component2>();
+                }
+
                 CommonSwOperations.GetSelectedComponents(
-                    ActiveSWModel, previouslySelectedNode.Link.SWComponents, PMSelection.Mark);
+                    ActiveSWModel, previouslySelectedNode.Link.VisualComponents, PMSelectionVisual.Mark);
+                CommonSwOperations.GetSelectedComponents(
+                    ActiveSWModel, previouslySelectedNode.Link.CollisionComponents, PMSelectionCollision.Mark);
+                CommonSwOperations.GetSelectedComponents(
+                    ActiveSWModel, previouslySelectedNode.Link.InertialComponents, PMSelectionInertial.Mark);
+
+                // Persist the inertial source choice.
+                short choice = PMComboBoxInertialSource.CurrentSelection;
+                if (choice == 1)
+                {
+                    previouslySelectedNode.Link.InertialSource = InertialSource.Collision;
+                }
+                else if (choice == 2)
+                {
+                    previouslySelectedNode.Link.InertialSource = InertialSource.Custom;
+                }
+                else
+                {
+                    previouslySelectedNode.Link.InertialSource = InertialSource.Visual;
+                }
             }
         }
 
@@ -343,7 +387,11 @@ namespace SW2URDF.URDFExport
                 node.Link.Name = "base_link";
                 node.Link.Joint.AxisName = "";
                 node.Link.Joint.CoordinateSystemName = "Automatically Generate";
-                node.Link.SWComponents = new List<Component2>();
+                node.Link.VisualComponents = new List<Component2>();
+                node.Link.CollisionComponents = new List<Component2>();
+                node.Link.InertialComponents = new List<Component2>();
+                node.Link.Sites = new List<SiteSpec>();
+                node.Link.InertialSource = InertialSource.Visual;
                 node.IsBaseNode = true;
                 node.IsIncomplete = true;
             }
@@ -354,7 +402,11 @@ namespace SW2URDF.URDFExport
                 node.Link.Joint.AxisName = "Automatically Generate";
                 node.Link.Joint.CoordinateSystemName = "Automatically Generate";
                 node.Link.Joint.Type = "Automatically Detect";
-                node.Link.SWComponents = new List<Component2>();
+                node.Link.VisualComponents = new List<Component2>();
+                node.Link.CollisionComponents = new List<Component2>();
+                node.Link.InertialComponents = new List<Component2>();
+                node.Link.Sites = new List<SiteSpec>();
+                node.Link.InertialSource = InertialSource.Visual;
                 node.IsBaseNode = false;
                 node.IsIncomplete = true;
             }
@@ -370,8 +422,52 @@ namespace SW2URDF.URDFExport
             PMTextBoxLinkName.Text = node.Link.Name;
             PMNumberBoxChildCount.Value = node.Nodes.Count;
 
-            //Selecting the associated link components
-            CommonSwOperations.SelectComponents(ActiveSWModel, node.Link.SWComponents, true, PMSelection.Mark);
+            // Make sure the new collections are non-null for legacy configurations.
+            if (node.Link.VisualComponents == null)
+            {
+                node.Link.VisualComponents = new List<Component2>();
+            }
+            if (node.Link.CollisionComponents == null)
+            {
+                node.Link.CollisionComponents = new List<Component2>();
+            }
+            if (node.Link.InertialComponents == null)
+            {
+                node.Link.InertialComponents = new List<Component2>();
+            }
+            if (node.Link.Sites == null)
+            {
+                node.Link.Sites = new List<SiteSpec>();
+            }
+
+            // Re-populate the three selection boxes. Use distinct marks to keep them separated.
+            ActiveSWModel.ClearSelection2(true);
+            CommonSwOperations.SelectComponents(
+                ActiveSWModel, node.Link.VisualComponents, false, PMSelectionVisual.Mark);
+            CommonSwOperations.SelectComponents(
+                ActiveSWModel, node.Link.CollisionComponents, false, PMSelectionCollision.Mark);
+            CommonSwOperations.SelectComponents(
+                ActiveSWModel, node.Link.InertialComponents, false, PMSelectionInertial.Mark);
+
+            // Inertial source combo.
+            switch (node.Link.InertialSource)
+            {
+                case InertialSource.Collision:
+                    PMComboBoxInertialSource.CurrentSelection = 1;
+                    break;
+                case InertialSource.Custom:
+                    PMComboBoxInertialSource.CurrentSelection = 2;
+                    break;
+                case InertialSource.Visual:
+                default:
+                    PMComboBoxInertialSource.CurrentSelection = 0;
+                    break;
+            }
+
+            // Sites region.
+            FillComboBox(PMComboBoxSiteCoordSys, Exporter.GetRefCoordinateSystems());
+            PMTextBoxSiteName.Text = "";
+            RefreshSitesListbox(node);
 
             //Setting joint properties
             if (!node.IsBaseNode && node.Parent != null)

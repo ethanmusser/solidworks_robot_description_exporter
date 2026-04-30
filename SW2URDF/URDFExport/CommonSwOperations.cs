@@ -158,13 +158,31 @@ namespace SW2URDF.URDFExport
 
         public static void RetrieveSWComponentPIDs(ModelDoc2 model, LinkNode node)
         {
-            if (node.Link.SWComponents != null)
+            if (node.Link.VisualComponents != null)
             {
                 node.Link.SWComponentPIDs = new List<byte[]>();
-                foreach (IComponent2 comp in node.Link.SWComponents)
+                foreach (IComponent2 comp in node.Link.VisualComponents)
                 {
                     byte[] PID = model.Extension.GetPersistReference3(comp);
                     node.Link.SWComponentPIDs.Add(PID);
+                }
+            }
+            if (node.Link.CollisionComponents != null)
+            {
+                node.Link.CollisionComponentPIDs = new List<byte[]>();
+                foreach (IComponent2 comp in node.Link.CollisionComponents)
+                {
+                    byte[] PID = model.Extension.GetPersistReference3(comp);
+                    node.Link.CollisionComponentPIDs.Add(PID);
+                }
+            }
+            if (node.Link.InertialComponents != null)
+            {
+                node.Link.InertialComponentPIDs = new List<byte[]>();
+                foreach (IComponent2 comp in node.Link.InertialComponents)
+                {
+                    byte[] PID = model.Extension.GetPersistReference3(comp);
+                    node.Link.InertialComponentPIDs.Add(PID);
                 }
             }
             foreach (LinkNode child in node.Nodes)
@@ -182,7 +200,9 @@ namespace SW2URDF.URDFExport
             {
                 Link.SWMainComponentPID = PID;
             }
-            Link.SWComponentPIDs = SaveSWComponents(model, Link.SWComponents);
+            Link.SWComponentPIDs = SaveSWComponents(model, Link.VisualComponents);
+            Link.CollisionComponentPIDs = SaveSWComponents(model, Link.CollisionComponents);
+            Link.InertialComponentPIDs = SaveSWComponents(model, Link.InertialComponents);
 
             foreach (Link Child in Link.Children)
             {
@@ -221,13 +241,46 @@ namespace SW2URDF.URDFExport
             logger.Info("Loading SolidWorks components for " +
                 node.Link.Name + " from " + model.GetPathName());
 
-            node.Link.SWComponents = LoadSWComponents(model, node.Link.SWComponentPIDs);
-            if (node.Link.SWComponents.Count != node.Link.SWComponentPIDs.Count)
+            if (node.Link.SWComponentPIDs == null)
+            {
+                node.Link.SWComponentPIDs = new List<byte[]>();
+            }
+            node.Link.VisualComponents = LoadSWComponents(model, node.Link.SWComponentPIDs);
+            if (node.Link.VisualComponents.Count != node.Link.SWComponentPIDs.Count)
             {
                 problemLinks.Add(node.Link.Name);
-                logger.Error("Link " + node.Link.Name + " did not fully load all components");
+                logger.Error("Link " + node.Link.Name + " did not fully load all visual components");
             }
-            logger.Info("Loaded " + node.Link.SWComponents.Count + " components for link " + node.Link.Name);
+            logger.Info("Loaded " + node.Link.VisualComponents.Count + " visual components for link " + node.Link.Name);
+
+            if (node.Link.CollisionComponentPIDs == null)
+            {
+                node.Link.CollisionComponentPIDs = new List<byte[]>();
+            }
+            node.Link.CollisionComponents = LoadSWComponents(model, node.Link.CollisionComponentPIDs);
+            if (node.Link.CollisionComponents.Count != node.Link.CollisionComponentPIDs.Count)
+            {
+                problemLinks.Add(node.Link.Name);
+                logger.Error("Link " + node.Link.Name + " did not fully load all collision components");
+            }
+            logger.Info("Loaded " + node.Link.CollisionComponents.Count + " collision components for link " + node.Link.Name);
+
+            if (node.Link.InertialComponentPIDs == null)
+            {
+                node.Link.InertialComponentPIDs = new List<byte[]>();
+            }
+            node.Link.InertialComponents = LoadSWComponents(model, node.Link.InertialComponentPIDs);
+            if (node.Link.InertialComponents.Count != node.Link.InertialComponentPIDs.Count)
+            {
+                problemLinks.Add(node.Link.Name);
+                logger.Error("Link " + node.Link.Name + " did not fully load all inertial components");
+            }
+            logger.Info("Loaded " + node.Link.InertialComponents.Count + " inertial components for link " + node.Link.Name);
+
+            if (node.Link.Sites == null)
+            {
+                node.Link.Sites = new List<SiteSpec>();
+            }
 
             foreach (LinkNode Child in node.Nodes)
             {

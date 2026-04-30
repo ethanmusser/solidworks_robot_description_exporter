@@ -59,7 +59,10 @@ namespace SW2URDF.URDFExport
 
         private readonly PropertyManagerPage2 PMPage;
         private PropertyManagerPageGroup PMGroup;
-        private PropertyManagerPageSelectionbox PMSelection;
+        private PropertyManagerPageSelectionbox PMSelectionVisual;
+        private PropertyManagerPageSelectionbox PMSelectionCollision;
+        private PropertyManagerPageSelectionbox PMSelectionInertial;
+        private PropertyManagerPageCombobox PMComboBoxInertialSource;
         private PropertyManagerPageButton PMButtonExport;
         private PropertyManagerPageButton PMButtonLoad;
         private PropertyManagerPageTextbox PMTextBoxLinkName;
@@ -74,6 +77,14 @@ namespace SW2URDF.URDFExport
         private PropertyManagerPageCheckbox PMComputeJointKinematics;
         private PropertyManagerPageCheckbox PMComputeJointLimits;
 
+        // Sites sub-section: a small inline editor on the per-link page.
+        private PropertyManagerPageGroup PMSitesGroup;
+        private PropertyManagerPageListbox PMListBoxSites;
+        private PropertyManagerPageTextbox PMTextBoxSiteName;
+        private PropertyManagerPageCombobox PMComboBoxSiteCoordSys;
+        private PropertyManagerPageButton PMButtonSiteAdd;
+        private PropertyManagerPageButton PMButtonSiteRemove;
+
         private PropertyManagerPageLabel PMLabelJointName;
         private PropertyManagerPageLabel PMLabelParentLink;
         private PropertyManagerPageLabel PMLabelAxes;
@@ -81,6 +92,10 @@ namespace SW2URDF.URDFExport
         private PropertyManagerPageLabel PMLabelJointType;
         private PropertyManagerPageLabel PMLabelGlobalCoordsys;
         private PropertyManagerPageLabel PMLabelCSVFilename;
+        private PropertyManagerPageLabel PMLabelInertialSource;
+        private PropertyManagerPageLabel PMLabelVisualComponents;
+        private PropertyManagerPageLabel PMLabelCollisionComponents;
+        private PropertyManagerPageLabel PMLabelInertialComponents;
 
         private PropertyManagerPageWindowFromHandle PMTree;
 
@@ -93,9 +108,16 @@ namespace SW2URDF.URDFExport
 
         private const int GroupID = 1;
         private const int TextBoxLinkNameID = 2;
-        private const int SelectionID = 3;
+        private const int SelectionVisualID = 3;
+        private const int SelectionCollisionID = 4;
+        private const int SelectionInertialID = 5;
+        private const int ComboInertialSourceID = 6;
         private const int NumBoxChildCountID = 7;
         private const int LabelLinkNameID = 8;
+        private const int LabelInertialSourceID = 9;
+        private const int LabelVisualID = 10;
+        private const int LabelCollisionID = 11;
+        private const int LabelInertialID = 12;
         private const int LabelJointNameID = 14;
         private const int dotNetTree = 16;
         private const int ButtonExportID = 17;
@@ -110,6 +132,22 @@ namespace SW2URDF.URDFExport
         private const int ComputeJointKinematicsID = 29;
         private const int ComputeJointLimitsID = 30;
         private const int LoadedCSVFilenameID = 31;
+        private const int SitesGroupID = 40;
+        private const int SitesListBoxID = 41;
+        private const int SitesNameTextBoxID = 42;
+        private const int SitesCoordSysComboID = 43;
+        private const int SitesAddButtonID = 44;
+        private const int SitesRemoveButtonID = 45;
+        private const int SitesHelpLabelID = 46;
+        private const int SitesNameLabelID = 47;
+        private const int SitesListLabelID = 48;
+
+        // Marks for the visual/collision/inertial selection boxes so SolidWorks can
+        // attribute the user's selection to the right list. -1 (default mark) is reserved
+        // by SolidWorks itself; using small distinct positive numbers per box.
+        private const int VisualSelectionMark = 11;
+        private const int CollisionSelectionMark = 12;
+        private const int InertialSelectionMark = 13;
 
         #endregion class variables
 
@@ -192,7 +230,7 @@ namespace SW2URDF.URDFExport
         {
             //Turns the selection box blue so that selected components are added to the PMPage
             // selection box
-            PMSelection.SetSelectionFocus();
+            PMSelectionVisual.SetSelectionFocus();
         }
 
         private void ExportButtonPress()
@@ -385,8 +423,73 @@ namespace SW2URDF.URDFExport
                     LoadFromCSV();
                     break;
 
+                case SitesAddButtonID:
+                    AddSiteFromForm();
+                    break;
+
+                case SitesRemoveButtonID:
+                    RemoveSelectedSiteFromForm();
+                    break;
+
                 default:
                     break;
+            }
+        }
+
+        private void AddSiteFromForm()
+        {
+            LinkNode node = (LinkNode)Tree.SelectedNode;
+            if (node == null)
+            {
+                return;
+            }
+            string name = (PMTextBoxSiteName.Text ?? "").Trim();
+            string coord = PMComboBoxSiteCoordSys.get_ItemText(-1);
+            if (string.IsNullOrEmpty(name))
+            {
+                MessageBox.Show("Please enter a site name before adding the site.");
+                return;
+            }
+            if (string.IsNullOrEmpty(coord) || coord == "Automatically Generate")
+            {
+                MessageBox.Show("Please select a reference coordinate system for the site.");
+                return;
+            }
+            if (node.Link.Sites == null)
+            {
+                node.Link.Sites = new List<SiteSpec>();
+            }
+            node.Link.Sites.Add(new SiteSpec(name, coord));
+            PMTextBoxSiteName.Text = "";
+            RefreshSitesListbox(node);
+        }
+
+        private void RemoveSelectedSiteFromForm()
+        {
+            LinkNode node = (LinkNode)Tree.SelectedNode;
+            if (node == null || node.Link.Sites == null || node.Link.Sites.Count == 0)
+            {
+                return;
+            }
+            short selected = PMListBoxSites.CurrentSelection;
+            if (selected < 0 || selected >= node.Link.Sites.Count)
+            {
+                return;
+            }
+            node.Link.Sites.RemoveAt(selected);
+            RefreshSitesListbox(node);
+        }
+
+        public void RefreshSitesListbox(LinkNode node)
+        {
+            PMListBoxSites.Clear();
+            if (node == null || node.Link.Sites == null)
+            {
+                return;
+            }
+            foreach (SiteSpec site in node.Link.Sites)
+            {
+                PMListBoxSites.AddItems(site.Name + " : " + site.CoordinateSystemName);
             }
         }
 
@@ -838,33 +941,203 @@ namespace SW2URDF.URDFExport
             PMComboBoxJointType.AddItems(new string[] {
                 "Automatically Detect", "continuous", "revolute", "prismatic", "fixed" });
 
-            //Create the selection box label
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
-            caption = "Link Components";
-            tip = "Select components associated with this link";
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            options = (int)swAddControlOptions_e.swControlOptions_Visible +
-                (int)swAddControlOptions_e.swControlOptions_Enabled;
-            
-            //Create selection box
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
-            caption = "Link Components";
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            options = (int)swAddControlOptions_e.swControlOptions_Visible + (int)swAddControlOptions_e.swControlOptions_Enabled;
-            tip = "Select components associated with this link";
-            PMSelection = (PropertyManagerPageSelectionbox)PMGroup.AddControl2(
-                SelectionID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            // === Component selection: Visual / Collision / Inertial ===
 
             swSelectType_e[] filters = new swSelectType_e[1];
             filters[0] = swSelectType_e.swSelCOMPONENTS;
-            object filterObj = null;
-            filterObj = filters;
+            object filterObj = filters;
 
-            PMSelection.AllowSelectInMultipleBoxes = true;
-            PMSelection.SingleEntityOnly = false;
-            PMSelection.AllowMultipleSelectOfSameEntity = false;
-            PMSelection.Height = 50;
-            PMSelection.SetSelectionFilters(filterObj);
+            // Inertial source combobox.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Inertial Source";
+            tip = "Choose which set of components drives the link's mass and inertia";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMLabelInertialSource = (PropertyManagerPageLabel)PMGroup.AddControl2(
+                LabelInertialSourceID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Combobox;
+            caption = "Inertial Source";
+            tip = "Visual: use visual components. Collision: use collision components. Custom: use the inertial components box below.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMComboBoxInertialSource = (PropertyManagerPageCombobox)PMGroup.AddControl2(
+                ComboInertialSourceID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMComboBoxInertialSource.Style =
+                (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
+            PMComboBoxInertialSource.AddItems(new string[] {
+                "Visual",
+                "Collision",
+                "Custom (Inertial Components)" });
+            PMComboBoxInertialSource.CurrentSelection = 0;
+
+            // --- Visual components ---
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Visual Components";
+            tip = "Select components used to build the visual mesh for this link/body";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMLabelVisualComponents = (PropertyManagerPageLabel)PMGroup.AddControl2(
+                LabelVisualID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
+            caption = "Visual Components";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMSelectionVisual = (PropertyManagerPageSelectionbox)PMGroup.AddControl2(
+                SelectionVisualID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMSelectionVisual.AllowSelectInMultipleBoxes = true;
+            PMSelectionVisual.SingleEntityOnly = false;
+            PMSelectionVisual.AllowMultipleSelectOfSameEntity = false;
+            PMSelectionVisual.Height = 40;
+            PMSelectionVisual.SetSelectionFilters(filterObj);
+            PMSelectionVisual.Mark = VisualSelectionMark;
+
+            // --- Collision components ---
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Collision Components";
+            tip = "Select components used to build the collision mesh. Empty re-uses the visual mesh.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMLabelCollisionComponents = (PropertyManagerPageLabel)PMGroup.AddControl2(
+                LabelCollisionID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
+            caption = "Collision Components";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMSelectionCollision = (PropertyManagerPageSelectionbox)PMGroup.AddControl2(
+                SelectionCollisionID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMSelectionCollision.AllowSelectInMultipleBoxes = true;
+            PMSelectionCollision.SingleEntityOnly = false;
+            PMSelectionCollision.AllowMultipleSelectOfSameEntity = false;
+            PMSelectionCollision.Height = 40;
+            PMSelectionCollision.SetSelectionFilters(filterObj);
+            PMSelectionCollision.Mark = CollisionSelectionMark;
+
+            // --- Inertial components (only used when Inertial Source = Custom) ---
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Inertial Components (used when source = Custom)";
+            tip = "Optional. When Inertial Source is Custom, mass and inertia are computed from these components.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMLabelInertialComponents = (PropertyManagerPageLabel)PMGroup.AddControl2(
+                LabelInertialID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
+            caption = "Inertial Components";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMSelectionInertial = (PropertyManagerPageSelectionbox)PMGroup.AddControl2(
+                SelectionInertialID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMSelectionInertial.AllowSelectInMultipleBoxes = true;
+            PMSelectionInertial.SingleEntityOnly = false;
+            PMSelectionInertial.AllowMultipleSelectOfSameEntity = false;
+            PMSelectionInertial.Height = 40;
+            PMSelectionInertial.SetSelectionFilters(filterObj);
+            PMSelectionInertial.Mark = InertialSelectionMark;
+
+            // === Sites sub-section (MJCF only; ignored by URDF writer) ===
+            // Workflow is: type a name -> pick a reference coord system -> click
+            // Add Site. The list at the bottom shows what has already been added.
+            caption = "Sites (MJCF)";
+            options = (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible;
+            PMSitesGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
+                SitesGroupID, caption, (int)options);
+
+            // Help label so users know the box is not a selection target like the
+            // visual / collision selection boxes above.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Type a site name, pick a reference coord. system, then click Add Site.";
+            tip = "Sites are MJCF-only frames attached to a body. They are ignored when exporting URDF.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMSitesGroup.AddControl2(
+                SitesHelpLabelID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            // Site name label + textbox.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Site name";
+            tip = "Identifier that will appear as <site name=...> in the MJCF file.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMSitesGroup.AddControl2(
+                SitesNameLabelID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Textbox;
+            caption = "";
+            tip = "Site name (will appear as <site name=...>)";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMTextBoxSiteName = (PropertyManagerPageTextbox)PMSitesGroup.AddControl2(
+                SitesNameTextBoxID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            // Site coord-system combobox.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Combobox;
+            caption = "Site coord. system";
+            tip = "Reference coordinate system that defines the site's pose relative to the parent body";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMComboBoxSiteCoordSys = (PropertyManagerPageCombobox)PMSitesGroup.AddControl2(
+                SitesCoordSysComboID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMComboBoxSiteCoordSys.Style =
+                (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
+            PMComboBoxSiteCoordSys.Height = 18;
+
+            // Add site button.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
+            caption = "Add Site";
+            tip = "Add the entered site to this link";
+            alignment = 0;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMButtonSiteAdd = (PropertyManagerPageButton)PMSitesGroup.AddControl2(
+                SitesAddButtonID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            // Label above the read-only listing of already-added sites.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Sites defined for this link";
+            tip = "Read-only summary. Use Remove Selected Site to delete one.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMSitesGroup.AddControl2(
+                SitesListLabelID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            // List of existing sites (display + selection target for the Remove
+            // button below). Not a SolidWorks SelectionBox; the user does not click
+            // into the SolidWorks tree from here.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Listbox;
+            caption = "";
+            tip = "Sites already added to this link. Select one and click Remove Selected Site to delete it.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMListBoxSites = (PropertyManagerPageListbox)PMSitesGroup.AddControl2(
+                SitesListBoxID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMListBoxSites.Height = 50;
+
+            // Remove site button.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
+            caption = "Remove Selected Site";
+            tip = "Remove the selected site from the list";
+            alignment = 0;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMButtonSiteRemove = (PropertyManagerPageButton)PMSitesGroup.AddControl2(
+                SitesRemoveButtonID, (short)controlType, caption, (short)alignment, (int)options, tip);
 
             //Create the number box label
             //Create the link name text box label
@@ -992,7 +1265,7 @@ namespace SW2URDF.URDFExport
             node.ContextMenuStrip = docMenu;
             Tree.Nodes.Add(node);
             Tree.SelectedNode = Tree.Nodes[0];
-            PMSelection.SetSelectionFocus();
+            PMSelectionVisual.SetSelectionFocus();
             PMPage.SetFocus(dotNetTree);
         }
 

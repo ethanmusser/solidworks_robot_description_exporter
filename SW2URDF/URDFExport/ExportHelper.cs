@@ -23,6 +23,7 @@ THE SOFTWARE.
 using MathNet.Numerics.LinearAlgebra;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
+using SW2URDF.MJCF;
 using SW2URDF.ROS;
 using SW2URDF.URDF;
 using SW2URDF.URDFExport.CSV;
@@ -141,48 +142,38 @@ namespace SW2URDF.URDFExport
 
         #region Export Methods
 
-        // Beginning method for exporting the full package
-        public void ExportRobot(bool exportSTL = true, MeshExportFormat meshFormat = MeshExportFormat.STL)
+        // Beginning method for exporting the full package. Defaults preserve the
+        // original URDF behavior so existing call sites continue to work unchanged.
+        public void ExportRobot(bool exportSTL = true,
+            MeshExportFormat meshFormat = MeshExportFormat.STL,
+            ExportFormat outputFormat = ExportFormat.URDF)
         {
             //Setting up the progress bar
-            logger.Info("Beginning the export process");
+            logger.Info("Beginning the export process (format: " + outputFormat + ")");
             int progressBarBound = CommonSwOperations.GetCount(URDFRobot.BaseLink);
             iSwApp.GetUserProgressBar(out progressBar);
             progressBar.Start(0, progressBarBound, "Creating package directories");
 
             //Creating package directories
             logger.Info("Creating package directories with name " + PackageName + " and save path " + SavePath);
-            URDFPackage package = new URDFPackage(PackageName, SavePath);
+            ExportPackage package = new ExportPackage(PackageName, SavePath, outputFormat);
             package.CreateDirectories();
             URDFRobot.Name = PackageName;
-            string windowsURDFFileName = package.WindowsRobotsDirectory + URDFRobot.Name + ".urdf";
-            string windowsCSVFileName = package.WindowsRobotsDirectory + URDFRobot.Name + ".csv";
-            string windowsPackageXMLFileName = package.WindowsPackageDirectory + "package.xml";
 
-            //Create CMakeLists
-            logger.Info("Creating CMakeLists.txt at " + package.WindowsCMakeLists);
-            package.CreateCMakeLists();
+            string windowsModelFileName = package.WindowsModelsDirectory + URDFRobot.Name + package.ModelExtension;
+            string windowsCSVFileName = package.WindowsModelsDirectory + URDFRobot.Name + ".csv";
 
-            //Create Config joint names, not sure how this is used...
-            logger.Info("Creating joint names config at " + package.WindowsConfigYAML);
-            package.CreateConfigYAML(URDFRobot.GetJointNames(false));
+            // Auxiliary information that the MJCF builder needs but the URDF tree
+            // does not store. We populate it as we walk the tree below.
+            Dictionary<string, MJCFBuilder.LinkAuxiliary> mjcfAux =
+                (outputFormat == ExportFormat.MJCF)
+                    ? new Dictionary<string, MJCFBuilder.LinkAuxiliary>()
+                    : null;
 
-            //Creating package.xml file
-            logger.Info("Creating package.xml at " + windowsPackageXMLFileName);
-            PackageXMLWriter packageXMLWriter = new PackageXMLWriter(windowsPackageXMLFileName);
-            PackageXML packageXML = new PackageXML(PackageName);
-            packageXML.WriteElement(packageXMLWriter);
-
-            //Creating RVIZ launch file
-            Rviz rviz = new Rviz(PackageName, URDFRobot.Name + ".urdf");
-            logger.Info("Creating RVIZ launch file in " + package.WindowsLaunchDirectory);
-            rviz.WriteFiles(package.WindowsLaunchDirectory);
-
-            //Creating Gazebo launch file
-            Gazebo gazebo = new Gazebo(URDFRobot.Name, PackageName, URDFRobot.Name + ".urdf");
-            logger.Info("Creating Gazebo launch file in " + package.WindowsLaunchDirectory);
-
-            gazebo.WriteFile(package.WindowsLaunchDirectory);
+            if (outputFormat == ExportFormat.URDF)
+            {
+                WriteROSPackageFiles(package);
+            }
 
             //Customizing STL preferences to how I want them
             logger.Info("Saving existing STL preferences");
@@ -203,12 +194,12 @@ namespace SW2URDF.URDFExport
             try
             {
                 logger.Info("Beginning individual files export");
-                ExportFiles(URDFRobot.BaseLink, package, 0, exportSTL, meshFormat);
+                ExportFiles(URDFRobot.BaseLink, package, 0, exportSTL, meshFormat, mjcfAux);
                 success = true;
             }
             catch (Exception e)
             {
-                logger.Error("An exception was thrown attempting to export the URDF", e);
+                logger.Error("An exception was thrown attempting to export the model", e);
             }
             finally
             {
@@ -221,14 +212,31 @@ namespace SW2URDF.URDFExport
 
             if (!success)
             {
-                MessageBox.Show("Exporting the URDF failed unexpectedly. Email your maintainer " +
+                MessageBox.Show("Exporting the model failed unexpectedly. Email your maintainer " +
                     "with the log file found at " + Logger.GetFileName());
                 return;
             }
 
-            logger.Info("Writing URDF file to " + windowsURDFFileName);
-            URDFWriter uWriter = new URDFWriter(windowsURDFFileName);
-            URDFRobot.WriteURDF(uWriter.writer);
+            if (outputFormat == ExportFormat.MJCF)
+            {
+                logger.Info("Writing MJCF file to " + windowsModelFileName);
+                MJCFModel mjcfModel = MJCFBuilder.Build(URDFRobot, package.MeshesDirectory, mjcfAux);
+                MJCFWriter mjcfWriter = new MJCFWriter(windowsModelFileName);
+                try
+                {
+                    mjcfModel.WriteMJCF(mjcfWriter.writer);
+                }
+                finally
+                {
+                    mjcfWriter.Close();
+                }
+            }
+            else
+            {
+                logger.Info("Writing URDF file to " + windowsModelFileName);
+                URDFWriter uWriter = new URDFWriter(windowsModelFileName);
+                URDFRobot.WriteURDF(uWriter.writer);
+            }
 
             ImportExport.WriteRobotToCSV(URDFRobot, windowsCSVFileName);
 
@@ -238,6 +246,32 @@ namespace SW2URDF.URDFExport
             logger.Info("Resetting STL preferences");
             ResetUserPreferences();
             progressBar.End();
+        }
+
+        // ROS-specific package files (CMakeLists, package.xml, launch files, joint
+        // names YAML). Only emitted for the URDF output format.
+        private void WriteROSPackageFiles(ExportPackage package)
+        {
+            string windowsPackageXMLFileName = package.WindowsPackageDirectory + "package.xml";
+
+            logger.Info("Creating CMakeLists.txt at " + package.WindowsCMakeLists);
+            package.CreateCMakeLists();
+
+            logger.Info("Creating joint names config at " + package.WindowsConfigYAML);
+            package.CreateConfigYAML(URDFRobot.GetJointNames(false));
+
+            logger.Info("Creating package.xml at " + windowsPackageXMLFileName);
+            PackageXMLWriter packageXMLWriter = new PackageXMLWriter(windowsPackageXMLFileName);
+            PackageXML packageXML = new PackageXML(PackageName);
+            packageXML.WriteElement(packageXMLWriter);
+
+            Rviz rviz = new Rviz(PackageName, URDFRobot.Name + package.ModelExtension);
+            logger.Info("Creating RVIZ launch file in " + package.WindowsLaunchDirectory);
+            rviz.WriteFiles(package.WindowsLaunchDirectory);
+
+            Gazebo gazebo = new Gazebo(URDFRobot.Name, PackageName, URDFRobot.Name + package.ModelExtension);
+            logger.Info("Creating Gazebo launch file in " + package.WindowsLaunchDirectory);
+            gazebo.WriteFile(package.WindowsLaunchDirectory);
         }
 
         public List<string> GetJointNames()
@@ -263,30 +297,36 @@ namespace SW2URDF.URDFExport
             return jointNames;
         }
 
-        //Recursive method for exporting each link (and writing it to the URDF)
-        private void ExportFiles(Link link, URDFPackage package, int count, bool exportSTL = true, MeshExportFormat meshFormat = MeshExportFormat.STL)
+        //Recursive method for exporting each link's mesh files. Splits visual and
+        // collision into separate STL passes so the URDF (and the new MJCF) can
+        // reference distinct meshes.
+        private void ExportFiles(Link link, ExportPackage package, int count,
+            bool exportSTL = true,
+            MeshExportFormat meshFormat = MeshExportFormat.STL,
+            Dictionary<string, MJCFBuilder.LinkAuxiliary> mjcfAux = null)
         {
             progressBar.UpdateProgress(count);
             progressBar.UpdateTitle("Exporting mesh: " + link.Name);
             logger.Info("Exporting link: " + link.Name);
-            // Iterate through each child and export its files
             logger.Info("Link " + link.Name + " has " + link.Children.Count + " children");
             foreach (Link child in link.Children)
             {
                 count += 1;
                 if (!child.isFixedFrame)
                 {
-                    ExportFiles(child, package, count, exportSTL, meshFormat);
+                    ExportFiles(child, package, count, exportSTL, meshFormat, mjcfAux);
                 }
             }
 
-            // Copy the texture file (if it was specified) to the textures directory
-            if (!link.isFixedFrame && !String.IsNullOrWhiteSpace(link.Visual.Material.Texture.wFilename))
+            // Copy the texture file (if it was specified) to the textures directory.
+            // Only the URDF package layout includes a textures directory.
+            if (!link.isFixedFrame &&
+                package.Format == ExportFormat.URDF &&
+                !String.IsNullOrWhiteSpace(link.Visual.Material.Texture.wFilename))
             {
                 if (File.Exists(link.Visual.Material.Texture.wFilename))
                 {
                     link.Visual.Material.Texture.Filename =
-
                         package.TexturesDirectory + Path.GetFileName(link.Visual.Material.Texture.wFilename);
                     string textureSavePath =
                         package.WindowsTexturesDirectory + Path.GetFileName(link.Visual.Material.Texture.wFilename);
@@ -294,50 +334,167 @@ namespace SW2URDF.URDFExport
                 }
             }
 
-            // Create the mesh filenames. SolidWorks likes to use / but that will get messy in filenames so use _ instead
+            // SolidWorks names occasionally contain "/" which would create unwanted
+            // sub-directories in mesh filenames. Replace them with "_".
             string linkName = link.Name.Replace('/', '_');
-            string meshFilename = package.MeshesDirectory + linkName;
-            string windowsMeshFileName = package.WindowsMeshesDirectory + linkName;
-            switch(meshFormat)
+            string extension = (meshFormat == MeshExportFormat.THREEDXML) ? ".3dxml" : ".STL";
+
+            // Visual pass — uses link.VisualComponents.
+            string visualMeshShort = linkName + "_visual" + extension;
+            string visualMeshRel = package.MeshesDirectory + visualMeshShort;
+            string visualMeshAbs = package.WindowsMeshesDirectory + visualMeshShort;
+
+            // Collision pass — uses link.CollisionComponents (falls back to visual
+            // when the user didn't pick a separate set, matching the legacy behavior
+            // where the URDF visual mesh doubled as collision).
+            List<Component2> visualComponents = link.VisualComponents ?? link.SWComponents ?? new List<Component2>();
+            List<Component2> collisionComponents = link.CollisionComponents ?? new List<Component2>();
+            bool hasDistinctCollision = collisionComponents.Count > 0;
+
+            string collisionMeshShort = hasDistinctCollision
+                ? linkName + "_collision" + extension
+                : visualMeshShort;
+            string collisionMeshRel = hasDistinctCollision
+                ? package.MeshesDirectory + collisionMeshShort
+                : visualMeshRel;
+            string collisionMeshAbs = hasDistinctCollision
+                ? package.WindowsMeshesDirectory + collisionMeshShort
+                : visualMeshAbs;
+
+            if (exportSTL && visualComponents.Count > 0)
             {
-                case MeshExportFormat.STL:
-                    meshFilename += ".STL";
-                    windowsMeshFileName += ".STL";
-                    break;
-
-                case MeshExportFormat.THREEDXML:
-                    meshFilename += ".3dxml";
-                    windowsMeshFileName += ".3dxml";
-                    break;
-
-                default:
-                    meshFilename += ".STL";
-                    windowsMeshFileName += ".STL";
-                    break;
+                ExportLinkMesh(link, visualComponents, visualMeshAbs, meshFormat);
             }
-            // Export STL
-            if (exportSTL)
+            if (exportSTL && hasDistinctCollision)
             {
-                switch (meshFormat)
+                ExportLinkMesh(link, collisionComponents, collisionMeshAbs, meshFormat);
+            }
+
+            link.Visual.Geometry.Mesh.Filename = visualMeshRel;
+            link.Collision.Geometry.Mesh.Filename = collisionMeshRel;
+
+            // For MJCF, the asset dictionary references each mesh by a name
+            // (independent of the file path). Only emit a mesh entry when there is
+            // an actual STL on disk for the role.
+            if (mjcfAux != null && !link.isFixedFrame)
+            {
+                MJCFBuilder.LinkAuxiliary aux = new MJCFBuilder.LinkAuxiliary();
+                if (visualComponents.Count > 0)
                 {
-                    case MeshExportFormat.STL:
-                        SaveSTL(link, windowsMeshFileName);
-                        break;
-
-                    case MeshExportFormat.THREEDXML:
-                        Save3dxml(link, windowsMeshFileName);
-                        break;
-
-                    default:
-                        SaveSTL(link, windowsMeshFileName);
-                        break;
+                    aux.VisualMeshName = linkName + "_visual";
+                    aux.VisualMeshFile = Path.GetFileName(visualMeshShort);
                 }
+                if (hasDistinctCollision)
+                {
+                    aux.CollisionMeshName = linkName + "_collision";
+                    aux.CollisionMeshFile = Path.GetFileName(collisionMeshShort);
+                }
+                else if (visualComponents.Count > 0)
+                {
+                    // Reuse the visual mesh as the collision geom so the body still
+                    // participates in physics (matches URDF backward-compat).
+                    aux.CollisionMeshName = linkName + "_visual";
+                    aux.CollisionMeshFile = Path.GetFileName(visualMeshShort);
+                }
+                aux.Sites = ComputeSiteTransforms(link);
+                mjcfAux[link.Name] = aux;
             }
-            link.Visual.Geometry.Mesh.Filename = meshFilename;
-            link.Collision.Geometry.Mesh.Filename = meshFilename;
         }
 
-        private void Save3dxml(Link link, string windowsMeshFilename)
+        // Single-pass mesh export for a specified component subset. Hides everything
+        // but the requested components, exports, and restores state. The choice of
+        // STL vs 3dxml is driven by `meshFormat`; the resulting file is always saved
+        // in body-local coordinates (which matters for transform consistency between
+        // URDF/MJCF outputs).
+        private void ExportLinkMesh(Link link, List<Component2> components,
+            string windowsMeshFilename, MeshExportFormat meshFormat)
+        {
+            switch (meshFormat)
+            {
+                case MeshExportFormat.STL:
+                    SaveSTL(link, windowsMeshFilename, components);
+                    break;
+                case MeshExportFormat.THREEDXML:
+                    Save3dxml(link, windowsMeshFilename, components);
+                    break;
+                default:
+                    SaveSTL(link, windowsMeshFilename, components);
+                    break;
+            }
+        }
+
+        // Computes pos/quat for each <site> spec attached to the link. Sites live in
+        // the parent body's local frame, so the transform we want is
+        //     T = (joint_global)^(-1) * (site_global)
+        // i.e. the same construction used for joint origins, but with the site's
+        // coordinate system in place of the child's joint coordinate system.
+        private List<MJCFBuilder.SiteTransform> ComputeSiteTransforms(Link link)
+        {
+            List<MJCFBuilder.SiteTransform> result = new List<MJCFBuilder.SiteTransform>();
+            if (link.Sites == null || link.Sites.Count == 0)
+            {
+                return result;
+            }
+            // The body frame is attached to link.Joint.CoordinateSystemName for non-base
+            // links and to whatever the user chose for the base link.
+            string parentCoordSys = link.Joint != null ? link.Joint.CoordinateSystemName : null;
+            if (string.IsNullOrEmpty(parentCoordSys))
+            {
+                logger.Warn("Cannot compute site transforms for link " + link.Name +
+                    " because its body coordinate system is not set");
+                return result;
+            }
+
+            MathTransform parentTransform = GetCoordinateSystemTransform(parentCoordSys);
+            if (parentTransform == null)
+            {
+                logger.Warn("Failed to resolve parent coordinate system " +
+                    parentCoordSys + " when computing site transforms for link " + link.Name);
+                return result;
+            }
+            Matrix<double> parentMat = MathOps.GetTransformation(parentTransform);
+            Matrix<double> parentInv = parentMat.Inverse();
+
+            foreach (SiteSpec spec in link.Sites)
+            {
+                if (string.IsNullOrEmpty(spec.CoordinateSystemName))
+                {
+                    logger.Warn("Site " + spec.Name + " on link " + link.Name +
+                        " has no coordinate system; using parent body frame as identity.");
+                    result.Add(new MJCFBuilder.SiteTransform
+                    {
+                        Name = spec.Name,
+                        Position = new double[] { 0, 0, 0 },
+                        Quaternion = new double[] { 1, 0, 0, 0 },
+                    });
+                    continue;
+                }
+
+                MathTransform siteTransform = GetCoordinateSystemTransform(spec.CoordinateSystemName);
+                if (siteTransform == null)
+                {
+                    logger.Warn("Failed to resolve site coordinate system " +
+                        spec.CoordinateSystemName + " for link " + link.Name);
+                    continue;
+                }
+                Matrix<double> siteMat = MathOps.GetTransformation(siteTransform);
+                Matrix<double> local = parentInv * siteMat;
+
+                double[] pos = MathOps.GetXYZ(local);
+                pos = MathOps.Threshold(pos, 0.00001);
+                double[] quat = MathOps.RotationMatrixToQuaternion(local);
+
+                result.Add(new MJCFBuilder.SiteTransform
+                {
+                    Name = spec.Name,
+                    Position = pos,
+                    Quaternion = quat,
+                });
+            }
+            return result;
+        }
+
+        private void Save3dxml(Link link, string windowsMeshFilename, List<Component2> components)
         {
             int errors = 0;
             int warnings = 0;
@@ -351,7 +508,7 @@ namespace SW2URDF.URDFExport
 
             logger.Info(link.Name + ": Reference geometry name " + names["component"]);
 
-            CommonSwOperations.ShowComponents(ActiveSWModel, link.SWComponents);
+            CommonSwOperations.ShowComponents(ActiveSWModel, components);
 
             int saveOptions = (int)swSaveAsOptions_e.swSaveAsOptions_Silent |
                 (int)swSaveAsOptions_e.swSaveAsOptions_Copy;
@@ -422,10 +579,10 @@ namespace SW2URDF.URDFExport
                 logger.Warn("Exporting 3dxml for link " + link.Name + " failed with error " + errors +
                     " or warnings " + warnings);
             }
-            CommonSwOperations.HideComponents(ActiveSWModel, link.SWComponents);
+            CommonSwOperations.HideComponents(ActiveSWModel, components);
         }
 
-        private bool SaveSTL(Link link, string windowsMeshFilename)
+        private bool SaveSTL(Link link, string windowsMeshFilename, List<Component2> components)
         {
             int errors = 0;
             int warnings = 0;
@@ -439,7 +596,7 @@ namespace SW2URDF.URDFExport
 
             logger.Info(link.Name + ": Reference geometry name " + names["component"]);
 
-            CommonSwOperations.ShowComponents(ActiveSWModel, link.SWComponents);
+            CommonSwOperations.ShowComponents(ActiveSWModel, components);
 
             int saveOptions = (int)swSaveAsOptions_e.swSaveAsOptions_Silent |
                 (int)swSaveAsOptions_e.swSaveAsOptions_Copy;
@@ -453,7 +610,7 @@ namespace SW2URDF.URDFExport
                 logger.Warn("Exporting STL for link " + link.Name + " failed with error " + errors + 
                     " or warnings " + warnings);
             }
-            CommonSwOperations.HideComponents(ActiveSWModel, link.SWComponents);
+            CommonSwOperations.HideComponents(ActiveSWModel, components);
 
             bool success = CorrectSTLMesh(windowsMeshFilename);
             if (!success)
@@ -474,11 +631,11 @@ namespace SW2URDF.URDFExport
             LocalizeLink(URDFRobot.BaseLink, GlobalTransform);
 
             //Creating package directories
-            URDFPackage package = new URDFPackage(PackageName, SavePath);
+            ExportPackage package = new ExportPackage(PackageName, SavePath, ExportFormat.URDF);
             package.CreateDirectories();
             string meshFileName = package.MeshesDirectory + URDFRobot.BaseLink.Name + ".STL";
             string windowsMeshFileName = package.WindowsMeshesDirectory + URDFRobot.BaseLink.Name + ".STL";
-            string windowsURDFFileName = package.WindowsRobotsDirectory + URDFRobot.Name + ".urdf";
+            string windowsURDFFileName = package.WindowsModelsDirectory + URDFRobot.Name + ".urdf";
             string windowsManifestFileName = package.WindowsPackageDirectory + "manifest.xml";
 
             //Creating manifest file
@@ -540,7 +697,7 @@ namespace SW2URDF.URDFExport
 
         #endregion Export Methods
 
-        private static void CopyLogFile(URDFPackage package)
+        private static void CopyLogFile(ExportPackage package)
         {
             string destination = package.WindowsPackageDirectory + "export.log";
             string log_filename = Logger.GetFileName();

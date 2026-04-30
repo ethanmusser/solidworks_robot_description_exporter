@@ -290,5 +290,84 @@ namespace SW2URDF.Utilities
             }
             return result;
         }
+
+        // Converts URDF roll-pitch-yaw (intrinsic XYZ Tait-Bryan angles, R = Rz * Ry * Rx)
+        // to a unit quaternion in the MJCF (w, x, y, z) order.
+        public static double[] RPYToQuaternion(double[] rpy)
+        {
+            if (rpy == null || rpy.Length < 3)
+            {
+                return new double[] { 1, 0, 0, 0 };
+            }
+            double cr = Math.Cos(rpy[0] * 0.5);
+            double sr = Math.Sin(rpy[0] * 0.5);
+            double cp = Math.Cos(rpy[1] * 0.5);
+            double sp = Math.Sin(rpy[1] * 0.5);
+            double cy = Math.Cos(rpy[2] * 0.5);
+            double sy = Math.Sin(rpy[2] * 0.5);
+
+            double w = cr * cp * cy + sr * sp * sy;
+            double x = sr * cp * cy - cr * sp * sy;
+            double y = cr * sp * cy + sr * cp * sy;
+            double z = cr * cp * sy - sr * sp * cy;
+
+            // Convention in MuJoCo: keep w >= 0 to canonicalize.
+            if (w < 0)
+            {
+                w = -w; x = -x; y = -y; z = -z;
+            }
+            return new double[] { w, x, y, z };
+        }
+
+        // Convenience: convert a 4x4 homogeneous transform's rotation portion to a
+        // (w, x, y, z) quaternion. Equivalent to GetRPY then RPYToQuaternion but
+        // less roundabout.
+        public static double[] RotationMatrixToQuaternion(Matrix<double> m)
+        {
+            double r00 = m[0, 0], r01 = m[0, 1], r02 = m[0, 2];
+            double r10 = m[1, 0], r11 = m[1, 1], r12 = m[1, 2];
+            double r20 = m[2, 0], r21 = m[2, 1], r22 = m[2, 2];
+
+            double trace = r00 + r11 + r22;
+            double w, x, y, z;
+            if (trace > 0)
+            {
+                double s = Math.Sqrt(trace + 1.0) * 2;
+                w = 0.25 * s;
+                x = (r21 - r12) / s;
+                y = (r02 - r20) / s;
+                z = (r10 - r01) / s;
+            }
+            else if (r00 > r11 && r00 > r22)
+            {
+                double s = Math.Sqrt(1.0 + r00 - r11 - r22) * 2;
+                w = (r21 - r12) / s;
+                x = 0.25 * s;
+                y = (r01 + r10) / s;
+                z = (r02 + r20) / s;
+            }
+            else if (r11 > r22)
+            {
+                double s = Math.Sqrt(1.0 + r11 - r00 - r22) * 2;
+                w = (r02 - r20) / s;
+                x = (r01 + r10) / s;
+                y = 0.25 * s;
+                z = (r12 + r21) / s;
+            }
+            else
+            {
+                double s = Math.Sqrt(1.0 + r22 - r00 - r11) * 2;
+                w = (r10 - r01) / s;
+                x = (r02 + r20) / s;
+                y = (r12 + r21) / s;
+                z = 0.25 * s;
+            }
+
+            if (w < 0)
+            {
+                w = -w; x = -x; y = -y; z = -z;
+            }
+            return new double[] { w, x, y, z };
+        }
     }
 }

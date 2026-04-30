@@ -42,7 +42,7 @@ namespace SW2URDF.SW
     /// </summary>
     [Guid("65c9fc17-6a74-45a3-8f84-55185900275d"), ComVisible(true)]
     [SwAddin(
-        Description = "SolidWorks to URDF exporter",
+        Description = "SolidWorks to URDF/MJCF exporter",
         Title = "SW2URDF",
         LoadAtStartup = true
         )]
@@ -253,19 +253,19 @@ namespace SW2URDF.SW
                 "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\URDFExporter\\images\\ros_logo_96x96.png",
                 "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\URDFExporter\\images\\ros_logo_128x128.png",
             };
-            int ret = SwApp.AddMenuItem5((int)swDocumentTypes_e.swDocASSEMBLY, add_in_id_, "Export as URDF@&Tools",
-                -1, "AssemblyURDFExporter", "", "Export assembly as URDF file", images);
+            int ret = SwApp.AddMenuItem5((int)swDocumentTypes_e.swDocASSEMBLY, add_in_id_, "Export as URDF/MJCF@&Tools",
+                -1, "AssemblyURDFExporter", "", "Export assembly as URDF/MJCF file", images);
             if (ret < 0)
             {
-                logger.Error("Failure to add menu item 'Export as URDF' to menu 'Tools'");
+                logger.Error("Failure to add menu item 'Export as URDF/MJCF' to menu 'Tools'");
                 return;
             }
             logger.Info("Adding Assembly export to file menu");
-            ret = SwApp.AddMenuItem5((int)swDocumentTypes_e.swDocPART, add_in_id_, "Export as URDF@&Tools",
-                -1, "PartURDFExporter", "", "Export part as URDF file", images);
+            ret = SwApp.AddMenuItem5((int)swDocumentTypes_e.swDocPART, add_in_id_, "Export as URDF/MJCF@&Tools",
+                -1, "PartURDFExporter", "", "Export part as URDF/MJCF file", images);
             if (ret < 0)
             {
-                logger.Error("Failure to add menu item 'Export as URDF' to menu 'Tools'");
+                logger.Error("Failure to add menu item 'Export as URDF/MJCF' to menu 'Tools'");
                 return;
             }
 
@@ -278,9 +278,9 @@ namespace SW2URDF.SW
         }
         public void RemoveCommandMgr()
         {
-            SwApp.RemoveMenu((int)swDocumentTypes_e.swDocASSEMBLY, "Export as URDF@&File", "");
+            SwApp.RemoveMenu((int)swDocumentTypes_e.swDocASSEMBLY, "Export as URDF/MJCF@&File", "");
             logger.Info("Removing assembly export from file menu");
-            SwApp.RemoveMenu((int)swDocumentTypes_e.swDocPART, "Export as URDF@&File", "");
+            SwApp.RemoveMenu((int)swDocumentTypes_e.swDocPART, "Export as URDF/MJCF@&File", "");
             logger.Info("Removing part export from file menu");
         }
 
@@ -305,7 +305,7 @@ namespace SW2URDF.SW
                 logger.Info("A rebuild is required");
             }
             if (saveAndRebuild ||
-                MessageBox.Show("The SW to URDF exporter requires saving and/or rebuilding before continuing",
+                MessageBox.Show("The SW to URDF/MJCF exporter requires saving and/or rebuilding before continuing",
                 "Save and rebuild document?", MessageBoxButtons.YesNo) == DialogResult.Yes)
             {
                 int options = (int)swSaveAsOptions_e.swSaveAsOptions_SaveReferenced |
@@ -352,7 +352,7 @@ namespace SW2URDF.SW
             ModelDoc2 modeldoc = SwApp.ActiveDoc;
             if ((modeldoc.Extension.NeedsRebuild2 == 0) ||
                 MessageBox.Show("Save and rebuild document?",
-                "The SW to URDF exporter requires saving before continuing",
+                "The SW to URDF/MJCF exporter requires saving before continuing",
                 MessageBoxButtons.YesNo) == DialogResult.Yes)
             {
                 if (modeldoc.Extension.NeedsRebuild2 != 0)

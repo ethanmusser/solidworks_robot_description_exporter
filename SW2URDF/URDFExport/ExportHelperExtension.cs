@@ -299,7 +299,23 @@ namespace SW2URDF.URDFExport
         {
             // Get the SolidWorks MathTransform that corresponds to the child coordinate system
             MathTransform jointTransform = GetCoordinateSystemTransform(link.Joint.CoordinateSystemName);
-            List<Body2> bodies = GetBodies(link.SWComponents);
+
+            // Pick the components based on the per-link InertialSource choice. Falls
+            // back to visual components when the user requested Collision/Custom but
+            // forgot to populate the corresponding box.
+            List<Component2> inertialComponents = link.GetInertialComponents(out bool isFallback);
+            if (isFallback)
+            {
+                logger.Warn("Link " + link.Name + " requested " + link.InertialSource +
+                    " inertial components but none were configured. Falling back to visual components.");
+            }
+            List<Body2> bodies = GetBodies(inertialComponents);
+            if (bodies.Count == 0)
+            {
+                logger.Warn("Link " + link.Name + " has no bodies to compute inertia from; " +
+                    "skipping inertial computation.");
+                return;
+            }
 
             double[] moment = GetComponentsMomentOfInertia(bodies, jointTransform);
             link.Inertial.Inertia.SetMomentMatrix(moment);

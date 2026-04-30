@@ -50,6 +50,13 @@ namespace SW2URDF.UI
         private readonly Control[] linkBoxes;
         private readonly LinkNode BaseNode;
 
+        // Output format radio buttons (URDF / MJCF). Added programmatically to the
+        // link-properties panel so we don't have to touch the Designer-generated
+        // file. Default is URDF for backward compatibility.
+        private RadioButton radioButtonURDF;
+        private RadioButton radioButtonMJCF;
+        private GroupBox groupBoxOutputFormat;
+
         public AssemblyExportForm(SldWorks SwApp, LinkNode node, ExportHelper exporter)
         {
             Application.ThreadException +=
@@ -119,6 +126,74 @@ namespace SW2URDF.UI
             saveConfigurationAttributeDef.AddParameter(
                 "exporterVersion", (int)swParamType_e.swParamTypeDouble, 1.0, Options);
             saveConfigurationAttributeDef.Register();
+
+            SetupOutputFormatRadios();
+        }
+
+        private void SetupOutputFormatRadios()
+        {
+            // The Designer-generated link-properties panel already has the tree view
+            // hugging the top-left (x=12..463, y=74..599) and the inertial / visual
+            // group boxes hugging the right side from y=80 down. The strip above the
+            // tree (roughly x=340..1062, y=0..73) is empty, so we put the format
+            // radios there where they cannot be hidden by anything else.
+            groupBoxOutputFormat = new GroupBox
+            {
+                Text = "Output Format",
+                Location = new Point(348, 5),
+                Size = new Size(280, 60),
+            };
+
+            radioButtonURDF = new RadioButton
+            {
+                AutoSize = true,
+                Location = new Point(15, 25),
+                Text = "URDF",
+                Checked = true,
+                UseVisualStyleBackColor = true,
+            };
+
+            radioButtonMJCF = new RadioButton
+            {
+                AutoSize = true,
+                Location = new Point(120, 25),
+                Text = "MJCF (MuJoCo)",
+                UseVisualStyleBackColor = true,
+            };
+
+            radioButtonURDF.CheckedChanged += OutputFormatChanged;
+            radioButtonMJCF.CheckedChanged += OutputFormatChanged;
+
+            groupBoxOutputFormat.Controls.Add(radioButtonURDF);
+            groupBoxOutputFormat.Controls.Add(radioButtonMJCF);
+            panelLinkProperties.Controls.Add(groupBoxOutputFormat);
+            // Make absolutely sure the new group sits on top of any controls whose
+            // bounds happen to overlap (e.g., the tree view).
+            groupBoxOutputFormat.BringToFront();
+
+            // Initial label refresh so the Export buttons read "Export URDF ..." up
+            // front rather than the literal Designer placeholders.
+            UpdateExportButtonLabels();
+        }
+
+        private void OutputFormatChanged(object sender, EventArgs e)
+        {
+            UpdateExportButtonLabels();
+        }
+
+        private void UpdateExportButtonLabels()
+        {
+            string formatName = (radioButtonMJCF != null && radioButtonMJCF.Checked)
+                ? "MJCF"
+                : "URDF";
+            if (buttonLinksExportUrdfOnly != null)
+            {
+                buttonLinksExportUrdfOnly.Text = "Export " + formatName + " Only...";
+            }
+            if (buttonLinksFinish != null)
+            {
+                buttonLinksFinish.Text = "Export " + formatName + " and Meshes...";
+            }
         }
 
         private void ExceptionHandler(object sender, ThreadExceptionEventArgs e)
@@ -292,11 +367,40 @@ namespace SW2URDF.UI
                 }
             }
 
+            ExportFormat outputFormat = (radioButtonMJCF != null && radioButtonMJCF.Checked)
+                ? ExportFormat.MJCF
+                : ExportFormat.URDF;
+
+            // Pre-export validation: warn if URDF is chosen and any link has sites
+            // configured (URDF has no <site> analog, so they'll be silently dropped).
+            if (outputFormat == ExportFormat.URDF && AnyLinkHasSites(Exporter.URDFRobot.BaseLink))
+            {
+                DialogResult siteWarn = MessageBox.Show(
+                    "Some links have MJCF <site> tags configured but you've selected URDF " +
+                    "output. URDF does not support sites; they will be omitted from the " +
+                    "exported file. Continue?",
+                    "Sites will be dropped",
+                    MessageBoxButtons.YesNo);
+                if (siteWarn == DialogResult.No)
+                {
+                    return;
+                }
+            }
+
+            // Suggest a filename suffix matching the chosen format so test exports stay
+            // self-labeling (e.g. "3_DOF_ARM - MJCF").
+            string formatSuffix = outputFormat == ExportFormat.MJCF ? " - MJCF" : " - URDF";
+            string suggestedName = Exporter.PackageName;
+            if (!suggestedName.EndsWith(formatSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                suggestedName += formatSuffix;
+            }
+
             SaveFileDialog saveFileDialog1 = new SaveFileDialog
             {
                 RestoreDirectory = true,
                 InitialDirectory = Exporter.SavePath,
-                FileName = Exporter.PackageName
+                FileName = suggestedName,
             };
 
             bool saveResult = DialogResult.OK == saveFileDialog1.ShowDialog();
@@ -306,7 +410,7 @@ namespace SW2URDF.UI
                 Exporter.SavePath = Path.GetDirectoryName(saveFileDialog1.FileName);
                 Exporter.PackageName = Path.GetFileName(saveFileDialog1.FileName);
 
-                logger.Info("Saving URDF package to " + saveFileDialog1.FileName);
+                logger.Info("Saving " + outputFormat + " package to " + saveFileDialog1.FileName);
 
                 MeshExportFormat meshFormat;
                 if(radioButtonStl.Checked)
@@ -321,10 +425,30 @@ namespace SW2URDF.UI
                 {
                     meshFormat = MeshExportFormat.STL;
                 }
-                Exporter.ExportRobot(exportSTL, meshFormat);
+                Exporter.ExportRobot(exportSTL, meshFormat, outputFormat);
 
                 Close();
             }
+        }
+
+        private static bool AnyLinkHasSites(Link link)
+        {
+            if (link == null)
+            {
+                return false;
+            }
+            if (link.Sites != null && link.Sites.Count > 0)
+            {
+                return true;
+            }
+            foreach (Link child in link.Children)
+            {
+                if (AnyLinkHasSites(child))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private string CheckLinksForErrors(Link baseLink)
