@@ -20,6 +20,12 @@ namespace SW2URDF.URDFExport
         public string ConfigDirectory { get; }
         public string LaunchDirectory { get; }
 
+        // For MJCF, the <compiler meshdir="..."> attribute must be a path relative to
+        // the location of the model XML file. Because we keep the model file in a
+        // sibling `mjcf/` folder next to `meshes/`, this is "../meshes/". For URDF
+        // this is unused (URDF mesh URIs are package://-prefixed via MeshesDirectory).
+        public string MJCFMeshDir { get; }
+
         public string WindowsPackageDirectory { get; }
         public string WindowsMeshesDirectory { get; }
         public string WindowsTexturesDirectory { get; }
@@ -52,6 +58,9 @@ namespace SW2URDF.URDFExport
                     ModelExtension = ".xml";
                     WindowsModelsDirectory = WindowsPackageDirectory + @"mjcf\";
                     ModelsDirectory = packageRef + @"mjcf/";
+                    // Path written into <compiler meshdir="..."> -- must be
+                    // relative to the model file (which lives in mjcf/).
+                    MJCFMeshDir = @"../meshes/";
                     WindowsLaunchDirectory = null;
                     LaunchDirectory = null;
                     WindowsConfigDirectory = null;
@@ -65,6 +74,7 @@ namespace SW2URDF.URDFExport
                     ModelExtension = ".urdf";
                     WindowsModelsDirectory = WindowsPackageDirectory + @"urdf\";
                     ModelsDirectory = packageRef + @"urdf/";
+                    MJCFMeshDir = null;
                     WindowsLaunchDirectory = WindowsPackageDirectory + @"launch\";
                     LaunchDirectory = packageRef + @"launch/";
                     WindowsConfigDirectory = WindowsPackageDirectory + @"config\";

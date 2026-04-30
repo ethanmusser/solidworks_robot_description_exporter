@@ -302,6 +302,9 @@ namespace SW2URDF.Test
                 Assert.Contains("mjcf", pkg.WindowsModelsDirectory);
                 Assert.Null(pkg.WindowsCMakeLists);
                 Assert.Null(pkg.WindowsLaunchDirectory);
+                // The MJCF compiler meshdir must be relative to the model file
+                // location (mjcf/<name>.xml), not a package:// URI.
+                Assert.Equal("../meshes/", pkg.MJCFMeshDir);
             }
             finally
             {
@@ -322,6 +325,8 @@ namespace SW2URDF.Test
                 Assert.NotNull(pkg.WindowsCMakeLists);
                 Assert.NotNull(pkg.WindowsLaunchDirectory);
                 Assert.NotNull(pkg.WindowsConfigDirectory);
+                // MJCFMeshDir is unused in the URDF path.
+                Assert.Null(pkg.MJCFMeshDir);
             }
             finally
             {

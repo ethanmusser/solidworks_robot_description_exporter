@@ -85,6 +85,11 @@ namespace SW2URDF.URDFExport
         private PropertyManagerPageButton PMButtonSiteAdd;
         private PropertyManagerPageButton PMButtonSiteRemove;
 
+        // Import / Export action group lives below the Sites group so that the
+        // "Load Configuration..." and "Preview and Export..." buttons are at the
+        // bottom of the side-bar where users naturally finish their workflow.
+        private PropertyManagerPageGroup PMActionsGroup;
+
         private PropertyManagerPageLabel PMLabelJointName;
         private PropertyManagerPageLabel PMLabelParentLink;
         private PropertyManagerPageLabel PMLabelAxes;
@@ -141,6 +146,7 @@ namespace SW2URDF.URDFExport
         private const int SitesHelpLabelID = 46;
         private const int SitesNameLabelID = 47;
         private const int SitesListLabelID = 48;
+        private const int ActionsGroupID = 49;
 
         // Marks for the visual/collision/inertial selection boxes so SolidWorks can
         // attribute the user's selection to the right list. -1 (default mark) is reserved
@@ -1161,14 +1167,23 @@ namespace SW2URDF.URDFExport
                 (int)swNumberboxUnitType_e.swNumberBox_UnitlessInteger, 0, int.MaxValue, true, 1, 1, 1);
             PMNumberBoxChildCount.Value = 0;
 
+            // === Import / Export action group ===
+            // Sits below the Sites group so the workflow flows top-down: first
+            // configure the link tree, then sites, and finally import / export.
+            caption = "Import / Export";
+            options = (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible +
+                (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Expanded;
+            PMActionsGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
+                ActionsGroupID, caption, (int)options);
+
             // Load Configuration button
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
             caption = "Load Configuration...";
             tip = "Import values from a CSV file";
-            alignment = 0;// (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_DoubleIndent;
+            alignment = 0;
             options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMButtonLoad = PMGroup.AddControl2(
+            PMButtonLoad = PMActionsGroup.AddControl2(
                 LoadConfigurationID, (short)controlType, caption, (short)alignment, (int)options, tip);
             (PMButtonLoad as IPropertyManagerPageControl).Width = 200;
 
@@ -1178,7 +1193,7 @@ namespace SW2URDF.URDFExport
             tip = "";
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             options = 0;
-            PMLabelCSVFilename = PMGroup.AddControl2(
+            PMLabelCSVFilename = PMActionsGroup.AddControl2(
                 LoadedCSVFilenameID, (short)controlType, caption, (short)alignment, (int)options, tip);
 
             // Create Check Boxes to select whether to recompute values
@@ -1187,7 +1202,7 @@ namespace SW2URDF.URDFExport
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             tip = "External values have been loaded. Check this box to recompute the Mass and Inertia values";
             options = 0;
-            PMComputeMassInertia = PMGroup.AddControl2(
+            PMComputeMassInertia = PMActionsGroup.AddControl2(
                 ComputeMassInertiaID, (short)controlType, caption, (short)alignment, (int)options, tip);
             PMComputeMassInertia.Checked = true;
 
@@ -1196,7 +1211,7 @@ namespace SW2URDF.URDFExport
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             tip = "External values have been loaded. Check this box to recompute the visual and collision values";
             options = 0;
-            PMComputeVisualCollision = PMGroup.AddControl2(
+            PMComputeVisualCollision = PMActionsGroup.AddControl2(
                 ComputeVisualCollisionID, (short)controlType, caption, (short)alignment, (int)options, tip);
             PMComputeVisualCollision.Checked = true;
 
@@ -1205,7 +1220,7 @@ namespace SW2URDF.URDFExport
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             tip = "External values have been loaded. Check this box to recompute the joint kinematics";
             options = 0;
-            PMComputeJointKinematics = PMGroup.AddControl2(
+            PMComputeJointKinematics = PMActionsGroup.AddControl2(
                 ComputeJointKinematicsID, (short)controlType, caption, (short)alignment, (int)options, tip);
             PMComputeJointKinematics.Checked = true;
 
@@ -1214,15 +1229,16 @@ namespace SW2URDF.URDFExport
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             tip = "External values have been loaded. Check this box to recompute the joint limits";
             options = 0;
-            PMComputeJointLimits = PMGroup.AddControl2(
+            PMComputeJointLimits = PMActionsGroup.AddControl2(
                 ComputeJointLimitsID, (short)controlType, caption, (short)alignment, (int)options, tip);
             PMComputeJointLimits.Checked = true;
 
             options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMButtonExport = PMGroup.AddControl2(ButtonExportID,
+            PMButtonExport = PMActionsGroup.AddControl2(ButtonExportID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Button,
-                "Preview and Export...", 0, (int)options, "Preview the generated URDF and export to a URDF package");
+                "Preview and Export...", 0, (int)options,
+                "Preview the generated description and export the package");
             (PMButtonExport as IPropertyManagerPageControl).Width = 200;
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_WindowFromHandle;

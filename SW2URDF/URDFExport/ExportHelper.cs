@@ -220,7 +220,7 @@ namespace SW2URDF.URDFExport
             if (outputFormat == ExportFormat.MJCF)
             {
                 logger.Info("Writing MJCF file to " + windowsModelFileName);
-                MJCFModel mjcfModel = MJCFBuilder.Build(URDFRobot, package.MeshesDirectory, mjcfAux);
+                MJCFModel mjcfModel = MJCFBuilder.Build(URDFRobot, package.MJCFMeshDir, mjcfAux);
                 MJCFWriter mjcfWriter = new MJCFWriter(windowsModelFileName);
                 try
                 {
