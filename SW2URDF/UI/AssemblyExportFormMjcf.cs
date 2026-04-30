@@ -43,18 +43,26 @@ namespace SW2URDF.UI
 
         private void InitializeMjcfUi()
         {
-            // Shrink the link tree to free vertical space for the Sites selector. Width stays the
-            // same so the URDF experience doesn't feel cramped.
+            // Anchor MJCF additions to existing Designer-created controls so that everything
+            // lands consistently across DPI / AutoScaleMode.Font scaling. Hard-coded pixel
+            // coordinates here would be applied AFTER the form's autoscale pass and end up
+            // in the wrong place on any non-100% display.
+
             Size treeSize = treeViewLinkProperties.Size;
             Point treeLocation = treeViewLinkProperties.Location;
-            int sitesTop = treeLocation.Y + 300 + 10;
-            treeViewLinkProperties.Size = new Size(treeSize.Width, 300);
+
+            int treeNewHeight = treeSize.Height / 2;
+            const int sitesGap = 10;
+            int sitesTop = treeLocation.Y + treeNewHeight + sitesGap;
+            int sitesBottom = treeLocation.Y + treeSize.Height;
+            int sitesHeight = sitesBottom - sitesTop;
+            treeViewLinkProperties.Size = new Size(treeSize.Width, treeNewHeight);
 
             groupBoxSites = new GroupBox
             {
                 Text = "Sites (MJCF)",
                 Location = new Point(treeLocation.X, sitesTop),
-                Size = new Size(treeSize.Width, 215),
+                Size = new Size(treeSize.Width, sitesHeight),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom,
             };
 
@@ -65,12 +73,13 @@ namespace SW2URDF.UI
                 AutoSize = false,
                 Location = new Point(6, 16),
                 Size = new Size(treeSize.Width - 12, 32),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             };
 
             checkedListBoxSites = new CheckedListBox
             {
                 Location = new Point(6, 52),
-                Size = new Size(treeSize.Width - 12, 150),
+                Size = new Size(treeSize.Width - 12, sitesHeight - 60),
                 CheckOnClick = true,
                 Anchor = AnchorStyles.Top | AnchorStyles.Left
                          | AnchorStyles.Right | AnchorStyles.Bottom,
@@ -80,16 +89,20 @@ namespace SW2URDF.UI
             groupBoxSites.Controls.Add(checkedListBoxSites);
             panelLinkProperties.Controls.Add(groupBoxSites);
 
-            // Slot the MJCF export button between the existing Previous and "Export URDF Only"
-            // buttons so it doesn't wrap or overlap.
+            // Slot the MJCF export button immediately to the left of "Export URDF Only..." so
+            // it shares the existing button row at the form's actual (post-autoscale) DPI.
+            const int buttonGap = 5;
             buttonExportMjcf = new Button
             {
                 Text = "Export MJCF...",
-                Location = new Point(604, 603),
-                Size = new Size(150, 21),
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                Size = buttonLinksExportUrdfOnly.Size,
+                Anchor = buttonLinksExportUrdfOnly.Anchor,
                 UseVisualStyleBackColor = true,
             };
+            buttonExportMjcf.Location = new Point(
+                buttonLinksExportUrdfOnly.Location.X
+                    - buttonLinksExportUrdfOnly.Width - buttonGap,
+                buttonLinksExportUrdfOnly.Location.Y);
             buttonExportMjcf.Click += ButtonExportMjcfClick;
             panelLinkProperties.Controls.Add(buttonExportMjcf);
         }
