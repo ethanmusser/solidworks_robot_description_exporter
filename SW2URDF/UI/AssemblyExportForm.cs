@@ -27,6 +27,7 @@ using SW2URDF.URDFExport;
 using SW2URDF.Utilities;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Drawing;
 using System.IO;
 using System.Text;
@@ -53,8 +54,20 @@ namespace SW2URDF.UI
         // Output format radio buttons (URDF / MJCF). Added programmatically to the
         // link-properties panel so we don't have to touch the Designer-generated
         // file. Default is URDF for backward compatibility.
+        //
+        // CA2213 is suppressed because the radio buttons and the group box are
+        // parented to panelLinkProperties.Controls (see SetupOutputFormatRadios)
+        // and WinForms disposes child controls transitively when the form is
+        // disposed. The analyzer cannot see the runtime parenting, so it flags
+        // them; the parenting itself is the disposal contract.
+        [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed",
+            Justification = "Parented to panelLinkProperties.Controls; disposed by the form's control hierarchy.")]
         private RadioButton radioButtonURDF;
+        [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed",
+            Justification = "Parented to panelLinkProperties.Controls; disposed by the form's control hierarchy.")]
         private RadioButton radioButtonMJCF;
+        [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed",
+            Justification = "Parented to panelLinkProperties.Controls; disposed by the form's control hierarchy.")]
         private GroupBox groupBoxOutputFormat;
 
         public AssemblyExportForm(SldWorks SwApp, LinkNode node, ExportHelper exporter)

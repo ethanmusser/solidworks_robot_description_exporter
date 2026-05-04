@@ -6,7 +6,7 @@ namespace SW2URDF.MJCF
     // Recursive MJCF body element. The root body acts as the worldbody contents
     // (its name is conventionally the URDF base_link name) but is written inside
     // <worldbody> by MJCFModel.
-    public class Body
+    internal class Body
     {
         public string Name { get; set; }
         public double[] Position { get; set; } = new double[] { 0, 0, 0 };

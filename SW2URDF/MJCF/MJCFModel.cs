@@ -6,10 +6,10 @@ namespace SW2URDF.MJCF
     // and the worldbody hierarchy. Writing the model is straightforward XML emission;
     // the heavy lifting (translating a SW2URDF Link tree into the MJCF tree) lives in
     // MJCFBuilder.
-    public class MJCFModel
+    internal class MJCFModel
     {
         public string Name { get; set; }
-        public Compiler Compiler { get; set; }
+        public MJCFCompiler Compiler { get; set; }
         public Asset Asset { get; set; }
 
         // The root body. Conventionally added directly under <worldbody>. Its
@@ -23,7 +23,7 @@ namespace SW2URDF.MJCF
         public MJCFModel(string name)
         {
             Name = name;
-            Compiler = new Compiler();
+            Compiler = new MJCFCompiler();
             Asset = new Asset();
             RootBody = new Body { Name = name, SuppressTransform = true };
         }

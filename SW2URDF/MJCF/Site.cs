@@ -5,7 +5,7 @@ namespace SW2URDF.MJCF
     // A site attached to a body, located by a position + quaternion expressed in
     // the body's local frame. Sites are used by MuJoCo for sensors, mounting points,
     // markers, etc.
-    public class Site
+    internal class Site
     {
         public string Name { get; set; }
         public double[] Position { get; set; } = new double[] { 0, 0, 0 };

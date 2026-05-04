@@ -21,6 +21,8 @@ THE SOFTWARE.
 */
 
 using System.Reflection;
+using System.Resources;
+using System.Runtime.InteropServices;
 
 //
 // General Information about an assembly is controlled through the following
@@ -35,6 +37,18 @@ using System.Reflection;
 [assembly: AssemblyCopyright("")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
+
+// Hide the entire assembly from COM by default. The two types that genuinely
+// need to be COM-visible (SwAddin and ExportPropertyManager) carry their own
+// [ComVisible(true)] attributes and remain exposed. Without this directive
+// the type-library exporter would also try to surface helpers like
+// IMessageBox (which references System.Windows.MessageBoxResult, a non-COM
+// value type) and emit warnings.
+[assembly: ComVisible(false)]
+
+// English is the only resource language shipped with this add-in; declaring
+// it lets the runtime skip the satellite-assembly probe.
+[assembly: NeutralResourcesLanguage("en-US")]
 
 //
 // Version information for an assembly consists of the following four values:

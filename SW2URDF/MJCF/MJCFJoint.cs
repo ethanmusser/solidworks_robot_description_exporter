@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Xml;
 
 namespace SW2URDF.MJCF
@@ -5,7 +6,7 @@ namespace SW2URDF.MJCF
     // The MJCF joint type. URDF revolute/continuous map to "hinge"; URDF prismatic
     // maps to "slide". URDF "fixed" is represented by omitting the joint element so
     // the body becomes rigid relative to its parent (MJCF default).
-    public enum MJCFJointType
+    internal enum MJCFJointType
     {
         None,
         Hinge,
@@ -14,7 +15,7 @@ namespace SW2URDF.MJCF
         Ball,
     }
 
-    public static class MJCFJointTypeExtensions
+    internal static class MJCFJointTypeExtensions
     {
         public static string ToMJCFString(this MJCFJointType type)
         {
@@ -31,6 +32,13 @@ namespace SW2URDF.MJCF
         // Maps a URDF joint type string (as emitted by the existing exporter) to its
         // MJCF equivalent. Returns false for "fixed" (which has no MJCF analogue and
         // is represented by omitting the <joint> tag).
+        //
+        // CA1308 suggests ToUpperInvariant. We deliberately keep ToLowerInvariant
+        // because the URDF specification defines joint type strings ("revolute",
+        // "prismatic", "fixed", ...) in lowercase; matching against the lowercase
+        // form keeps this code aligned with the spec it implements.
+        [SuppressMessage("Globalization", "CA1308:Normalize strings to uppercase",
+            Justification = "URDF joint-type strings are spec-defined as lowercase.")]
         public static bool TryFromURDFType(string urdfType, out MJCFJointType result)
         {
             result = MJCFJointType.Hinge;
@@ -63,7 +71,7 @@ namespace SW2URDF.MJCF
 
     // A joint inside an MJCF body. The body's pos/quat already places the joint at
     // the right location, so MJCF joints always sit at the body origin (pos = 0).
-    public class MJCFJoint
+    internal class MJCFJoint
     {
         public string Name { get; set; }
         public MJCFJointType Type { get; set; } = MJCFJointType.Hinge;

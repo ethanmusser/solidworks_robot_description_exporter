@@ -4,7 +4,7 @@ using System.Xml;
 namespace SW2URDF.MJCF
 {
     // A reference to a mesh STL file. MuJoCo expects unique names per mesh.
-    public class MeshAsset
+    internal class MeshAsset
     {
         public string Name { get; set; }
         public string File { get; set; }
@@ -21,7 +21,7 @@ namespace SW2URDF.MJCF
     // so we only need the filename's basename here. MuJoCo requires <texture>
     // declarations to appear before any <material> that references them — Asset
     // emits in that order regardless of insertion order.
-    public class TextureAsset
+    internal class TextureAsset
     {
         public string Name { get; set; }
         public string File { get; set; }
@@ -37,7 +37,7 @@ namespace SW2URDF.MJCF
     // Texture is optional; a null/empty value omits the attribute. Future fields
     // (specular, shininess, emission, reflectance) plug in here without touching
     // geom emission — visual <geom>s reference materials by name.
-    public class MaterialAsset
+    internal class MaterialAsset
     {
         public string Name { get; set; }
         public double[] Rgba { get; set; }
@@ -55,7 +55,7 @@ namespace SW2URDF.MJCF
     //   <material>...</material>   (referenced by visual geoms)
     //   <mesh>...</mesh>           (referenced by all geoms)
     // The block is omitted entirely if there is nothing to declare.
-    public class Asset
+    internal class Asset
     {
         public List<MeshAsset> Meshes { get; }
         public List<TextureAsset> Textures { get; }

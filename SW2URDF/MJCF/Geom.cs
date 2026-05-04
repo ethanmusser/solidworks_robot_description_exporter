@@ -5,7 +5,7 @@ namespace SW2URDF.MJCF
     // The role a <geom> plays for a body. We declare matching <default class="..."> blocks
     // at the top of the model so visual geoms get rendered but not collided with, and
     // collision geoms participate in physics.
-    public enum GeomRole
+    internal enum GeomRole
     {
         Visual,
         Collision,
@@ -14,7 +14,7 @@ namespace SW2URDF.MJCF
     // A simple <geom type="mesh" mesh="..." class="..."/>. Meshes are STL-exported in
     // body-local coordinates (the exporter uses the body's coordinate system as the
     // STL save origin), so the geom never needs an explicit pos/quat.
-    public class Geom
+    internal class Geom
     {
         public string Name { get; set; }
         public string MeshName { get; set; }

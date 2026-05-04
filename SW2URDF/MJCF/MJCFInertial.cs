@@ -4,7 +4,7 @@ namespace SW2URDF.MJCF
 {
     // The MJCF inertial element. The frame is the body's local frame, so the
     // center-of-mass is expressed relative to the parent body's origin.
-    public class MJCFInertial
+    internal class MJCFInertial
     {
         public double[] Position { get; set; } = new double[] { 0, 0, 0 };
         public double Mass { get; set; }

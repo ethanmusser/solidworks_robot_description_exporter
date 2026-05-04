@@ -1,6 +1,7 @@
 using SolidWorks.Interop.sldworks;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Xml;
@@ -112,6 +113,14 @@ namespace SW2URDF.URDF
         // collapses to a single default group containing the supplied list.
         // Existing call sites use this as "the bag of visual components" and
         // don't need to be aware of the multi-group split.
+        //
+        // CA2227 is suppressed because the writable setter has explicit
+        // replace-contents semantics for legacy callers (TreeMerger,
+        // SetElementFromData, etc.); it is not a "settable backing
+        // collection" but a flattened-view assignment that buckets the
+        // supplied items into VisualGroups[0].
+        [SuppressMessage("Usage", "CA2227:Collection properties should be read-only",
+            Justification = "Flattened view over VisualGroups; setter has documented replace-contents semantics.")]
         public List<Component2> VisualComponents
         {
             get
@@ -156,6 +165,8 @@ namespace SW2URDF.URDF
 
         // CollisionComponents is a flattened view across all collision groups.
         // Setter mirrors VisualComponents: collapse to a single group.
+        [SuppressMessage("Usage", "CA2227:Collection properties should be read-only",
+            Justification = "Flattened view over CollisionGroups; setter has documented replace-contents semantics.")]
         public List<Component2> CollisionComponents
         {
             get
@@ -208,6 +219,8 @@ namespace SW2URDF.URDF
 
         // Backward-compatible alias for VisualComponents. Older code paths still refer
         // to "SWComponents" as the single bag of bodies; expose them as the visual set.
+        [SuppressMessage("Usage", "CA2227:Collection properties should be read-only",
+            Justification = "Legacy alias for VisualComponents; same flattened-view replace-contents semantics.")]
         public List<Component2> SWComponents
         {
             get => VisualComponents;

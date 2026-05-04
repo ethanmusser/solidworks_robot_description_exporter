@@ -330,14 +330,14 @@ namespace SW2URDF.Test
             Robot robot = new Robot { Name = "test_multi_visual" };
             robot.SetBaseLink(baseLink);
 
-            var aux = new Dictionary<string, MJCFBuilder.LinkAuxiliary>
+            var aux = new Dictionary<string, LinkAuxiliary>
             {
-                ["multi_visual"] = new MJCFBuilder.LinkAuxiliary
+                ["multi_visual"] = new LinkAuxiliary
                 {
                     VisualMeshes =
                     {
-                        new MJCFBuilder.MeshAssetRef { Name = "multi_visual_outer", File = "multi_visual_outer.STL" },
-                        new MJCFBuilder.MeshAssetRef { Name = "multi_visual_inner", File = "multi_visual_inner.STL" },
+                        new MeshAssetRef { Name = "multi_visual_outer", File = "multi_visual_outer.STL" },
+                        new MeshAssetRef { Name = "multi_visual_inner", File = "multi_visual_inner.STL" },
                     },
                 },
             };
@@ -377,18 +377,18 @@ namespace SW2URDF.Test
             Robot robot = new Robot { Name = "test_multi_col" };
             robot.SetBaseLink(baseLink);
 
-            var aux = new Dictionary<string, MJCFBuilder.LinkAuxiliary>
+            var aux = new Dictionary<string, LinkAuxiliary>
             {
-                ["multi_col"] = new MJCFBuilder.LinkAuxiliary
+                ["multi_col"] = new LinkAuxiliary
                 {
                     VisualMeshes =
                     {
-                        new MJCFBuilder.MeshAssetRef { Name = "multi_col_visual", File = "multi_col_visual.STL" },
+                        new MeshAssetRef { Name = "multi_col_visual", File = "multi_col_visual.STL" },
                     },
                     CollisionMeshes =
                     {
-                        new MJCFBuilder.MeshAssetRef { Name = "multi_col_upper", File = "multi_col_upper.STL" },
-                        new MJCFBuilder.MeshAssetRef { Name = "multi_col_lower", File = "multi_col_lower.STL" },
+                        new MeshAssetRef { Name = "multi_col_upper", File = "multi_col_upper.STL" },
+                        new MeshAssetRef { Name = "multi_col_lower", File = "multi_col_lower.STL" },
                     },
                 },
             };
@@ -439,28 +439,28 @@ namespace SW2URDF.Test
             Robot robot = new Robot { Name = "test_materials" };
             robot.SetBaseLink(baseLink);
 
-            var aux = new Dictionary<string, MJCFBuilder.LinkAuxiliary>
+            var aux = new Dictionary<string, LinkAuxiliary>
             {
-                ["base_link"] = new MJCFBuilder.LinkAuxiliary
+                ["base_link"] = new LinkAuxiliary
                 {
                     VisualMeshes =
                     {
-                        new MJCFBuilder.MeshAssetRef { Name = "base_link_visual", File = "base_link_visual.STL" },
+                        new MeshAssetRef { Name = "base_link_visual", File = "base_link_visual.STL" },
                     },
                     CollisionMeshes =
                     {
-                        new MJCFBuilder.MeshAssetRef { Name = "base_link_collision", File = "base_link_collision.STL" },
+                        new MeshAssetRef { Name = "base_link_collision", File = "base_link_collision.STL" },
                     },
                 },
-                ["child"] = new MJCFBuilder.LinkAuxiliary
+                ["child"] = new LinkAuxiliary
                 {
                     VisualMeshes =
                     {
-                        new MJCFBuilder.MeshAssetRef { Name = "child_visual", File = "child_visual.STL" },
+                        new MeshAssetRef { Name = "child_visual", File = "child_visual.STL" },
                     },
                     CollisionMeshes =
                     {
-                        new MJCFBuilder.MeshAssetRef { Name = "child_collision", File = "child_collision.STL" },
+                        new MeshAssetRef { Name = "child_collision", File = "child_collision.STL" },
                     },
                 },
             };
@@ -536,19 +536,19 @@ namespace SW2URDF.Test
             Robot robot = new Robot { Name = "test_multi_material" };
             robot.SetBaseLink(baseLink);
 
-            var aux = new Dictionary<string, MJCFBuilder.LinkAuxiliary>
+            var aux = new Dictionary<string, LinkAuxiliary>
             {
-                ["multi"] = new MJCFBuilder.LinkAuxiliary
+                ["multi"] = new LinkAuxiliary
                 {
                     VisualMeshes =
                     {
-                        new MJCFBuilder.MeshAssetRef { Name = "multi_a", File = "multi_a.STL" },
-                        new MJCFBuilder.MeshAssetRef { Name = "multi_b", File = "multi_b.STL" },
+                        new MeshAssetRef { Name = "multi_a", File = "multi_a.STL" },
+                        new MeshAssetRef { Name = "multi_b", File = "multi_b.STL" },
                     },
                     CollisionMeshes =
                     {
-                        new MJCFBuilder.MeshAssetRef { Name = "multi_col_a", File = "multi_col_a.STL" },
-                        new MJCFBuilder.MeshAssetRef { Name = "multi_col_b", File = "multi_col_b.STL" },
+                        new MeshAssetRef { Name = "multi_col_a", File = "multi_col_a.STL" },
+                        new MeshAssetRef { Name = "multi_col_b", File = "multi_col_b.STL" },
                     },
                 },
             };
@@ -597,13 +597,13 @@ namespace SW2URDF.Test
             Robot robot = new Robot { Name = "test_texture" };
             robot.SetBaseLink(baseLink);
 
-            var aux = new Dictionary<string, MJCFBuilder.LinkAuxiliary>
+            var aux = new Dictionary<string, LinkAuxiliary>
             {
-                ["tex_link"] = new MJCFBuilder.LinkAuxiliary
+                ["tex_link"] = new LinkAuxiliary
                 {
                     VisualMeshes =
                     {
-                        new MJCFBuilder.MeshAssetRef { Name = "tex_link_visual", File = "tex_link_visual.STL" },
+                        new MeshAssetRef { Name = "tex_link_visual", File = "tex_link_visual.STL" },
                     },
                 },
             };
@@ -664,13 +664,13 @@ namespace SW2URDF.Test
             Robot robot = new Robot { Name = "test_no_texture" };
             robot.SetBaseLink(baseLink);
 
-            var aux = new Dictionary<string, MJCFBuilder.LinkAuxiliary>
+            var aux = new Dictionary<string, LinkAuxiliary>
             {
-                ["plain_link"] = new MJCFBuilder.LinkAuxiliary
+                ["plain_link"] = new LinkAuxiliary
                 {
                     VisualMeshes =
                     {
-                        new MJCFBuilder.MeshAssetRef { Name = "plain_link_visual", File = "plain_link_visual.STL" },
+                        new MeshAssetRef { Name = "plain_link_visual", File = "plain_link_visual.STL" },
                     },
                 },
             };

@@ -7,7 +7,7 @@ namespace SW2URDF.MJCF
     // Lightweight wrapper around XmlWriter that mirrors the URDFWriter pattern.
     // Owns no state of its own beyond the underlying writer: callers write each
     // element by invoking WriteMJCF on the data classes directly.
-    public class MJCFWriter
+    internal class MJCFWriter
     {
         public readonly string SaveLocation;
         public XmlWriter writer;

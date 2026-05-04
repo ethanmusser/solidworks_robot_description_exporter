@@ -5,7 +5,10 @@ namespace SW2URDF.MJCF
     // Emits the <compiler ...> element. The compiler tag governs how MuJoCo parses
     // the rest of the document. We default to settings that match how URDF is exported:
     // angles in radians (matching URDF), automatic limits, and balanced inertia.
-    public class Compiler
+    //
+    // Named MJCFCompiler rather than Compiler so the unqualified type does not
+    // collide with the System.CodeDom.Compiler namespace (CA1724).
+    internal class MJCFCompiler
     {
         public string MeshDir { get; set; } = "meshes/";
 

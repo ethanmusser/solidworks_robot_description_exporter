@@ -165,9 +165,9 @@ namespace SW2URDF.URDFExport
 
             // Auxiliary information that the MJCF builder needs but the URDF tree
             // does not store. We populate it as we walk the tree below.
-            Dictionary<string, MJCFBuilder.LinkAuxiliary> mjcfAux =
+            Dictionary<string, LinkAuxiliary> mjcfAux =
                 (outputFormat == ExportFormat.MJCF)
-                    ? new Dictionary<string, MJCFBuilder.LinkAuxiliary>()
+                    ? new Dictionary<string, LinkAuxiliary>()
                     : null;
 
             if (outputFormat == ExportFormat.URDF)
@@ -303,7 +303,7 @@ namespace SW2URDF.URDFExport
         private void ExportFiles(Link link, ExportPackage package, int count,
             bool exportSTL = true,
             MeshExportFormat meshFormat = MeshExportFormat.STL,
-            Dictionary<string, MJCFBuilder.LinkAuxiliary> mjcfAux = null)
+            Dictionary<string, LinkAuxiliary> mjcfAux = null)
         {
             progressBar.UpdateProgress(count);
             progressBar.UpdateTitle("Exporting mesh: " + link.Name);
@@ -387,10 +387,10 @@ namespace SW2URDF.URDFExport
             }
 
             // Per-link MJCF auxiliary, populated as we walk the groups below.
-            MJCFBuilder.LinkAuxiliary aux = null;
+            LinkAuxiliary aux = null;
             if (mjcfAux != null && !link.isFixedFrame)
             {
-                aux = new MJCFBuilder.LinkAuxiliary();
+                aux = new LinkAuxiliary();
             }
 
             // ---- Visual groups -----------------------------------------------
@@ -414,7 +414,7 @@ namespace SW2URDF.URDFExport
 
                 if (aux != null)
                 {
-                    aux.VisualMeshes.Add(new MJCFBuilder.MeshAssetRef
+                    aux.VisualMeshes.Add(new MeshAssetRef
                     {
                         Name = baseName,
                         File = Path.GetFileName(meshShort),
@@ -441,7 +441,7 @@ namespace SW2URDF.URDFExport
                     MeshGroup vg = visualGroupsToExport[i];
                     if (aux != null)
                     {
-                        aux.CollisionMeshes.Add(new MJCFBuilder.MeshAssetRef
+                        aux.CollisionMeshes.Add(new MeshAssetRef
                         {
                             Name = ChooseVisualMeshBaseName(linkName, vg, i, visualGroupsToExport.Count),
                             File = Path.GetFileName(vg.MeshFilename ?? string.Empty),
@@ -473,7 +473,7 @@ namespace SW2URDF.URDFExport
 
                     if (aux != null)
                     {
-                        aux.CollisionMeshes.Add(new MJCFBuilder.MeshAssetRef
+                        aux.CollisionMeshes.Add(new MeshAssetRef
                         {
                             Name = baseName,
                             File = Path.GetFileName(meshShort),
@@ -578,9 +578,9 @@ namespace SW2URDF.URDFExport
         //     T = (joint_global)^(-1) * (site_global)
         // i.e. the same construction used for joint origins, but with the site's
         // coordinate system in place of the child's joint coordinate system.
-        private List<MJCFBuilder.SiteTransform> ComputeSiteTransforms(Link link)
+        private List<SiteTransform> ComputeSiteTransforms(Link link)
         {
-            List<MJCFBuilder.SiteTransform> result = new List<MJCFBuilder.SiteTransform>();
+            List<SiteTransform> result = new List<SiteTransform>();
             if (link.Sites == null || link.Sites.Count == 0)
             {
                 return result;
@@ -611,7 +611,7 @@ namespace SW2URDF.URDFExport
                 {
                     logger.Warn("Site " + spec.Name + " on link " + link.Name +
                         " has no coordinate system; using parent body frame as identity.");
-                    result.Add(new MJCFBuilder.SiteTransform
+                    result.Add(new SiteTransform
                     {
                         Name = spec.Name,
                         Position = new double[] { 0, 0, 0 },
@@ -634,7 +634,7 @@ namespace SW2URDF.URDFExport
                 pos = MathOps.Threshold(pos, 0.00001);
                 double[] quat = MathOps.RotationMatrixToQuaternion(local);
 
-                result.Add(new MJCFBuilder.SiteTransform
+                result.Add(new SiteTransform
                 {
                     Name = spec.Name,
                     Position = pos,
@@ -681,7 +681,7 @@ namespace SW2URDF.URDFExport
 
             // Get the model document of the link.
             ModelDoc2 linkModel;
-            bool isBaseLink = linkModelName == "";
+            bool isBaseLink = string.IsNullOrEmpty(linkModelName);
             if (isBaseLink)
             {
                 linkModel = ActiveDoc;

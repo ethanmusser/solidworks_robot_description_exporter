@@ -40,7 +40,7 @@ namespace SW2URDF.URDFExport
 {
     [ComVisible(true)]
     [Serializable]
-    public sealed partial class ExportPropertyManager : PropertyManagerPage2Handler9
+    public sealed partial class ExportPropertyManager : PropertyManagerPage2Handler9, IDisposable
     {
         #region class variables
 
@@ -48,12 +48,24 @@ namespace SW2URDF.URDFExport
         public SldWorks swApp;
         public ModelDoc2 ActiveSWModel;
 
+        // The non-serializable runtime references below are flagged with
+        // [NonSerialized] so the BinaryFormatter doesn't try to walk them if
+        // anything ever attempts to serialize this PMPage handler. We don't
+        // actually persist the handler — config persistence happens via the
+        // DataContract Link path — but the class carries [Serializable] for
+        // historical COM-hosting reasons and the analyzer (CA2235) requires
+        // the explicit opt-out on each non-serializable field.
+        [NonSerialized]
         public ExportHelper Exporter;
+        [NonSerialized]
         public LinkNode previouslySelectedNode;
+        [NonSerialized]
         public Link previouslySelectedLink;
         public List<Link> linksToVisit;
+        [NonSerialized]
         public LinkNode rightClickedNode;
         private readonly ContextMenuStrip docMenu;
+        private bool disposed;
 
         //General objects required for the PropertyManager page
 
@@ -259,6 +271,37 @@ namespace SW2URDF.URDFExport
         public void Close(bool ok)
         {
             PMPage.Close(ok);
+        }
+
+        // Releases the .NET-only Forms objects this handler owns (the
+        // TreeView and ContextMenuStrip). SolidWorks itself does not call
+        // Dispose; the IPropertyManagerPage2Handler9.OnClose hook invokes
+        // this after the page tear-down so the WinForms resources are
+        // released along with the SolidWorks-side handles. Idempotent: a
+        // second call is a no-op.
+        public void Dispose()
+        {
+            if (disposed)
+            {
+                return;
+            }
+            disposed = true;
+            try
+            {
+                Tree?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("Exception disposing TreeView in ExportPropertyManager.Dispose", ex);
+            }
+            try
+            {
+                docMenu?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("Exception disposing docMenu in ExportPropertyManager.Dispose", ex);
+            }
         }
 
         //The following runs when a new instance of the class is created
@@ -873,7 +916,7 @@ namespace SW2URDF.URDFExport
         // and at least one visual group (so the SelectionBox always has a
         // place to commit to). Collision is allowed to be empty (URDF
         // fallback).
-        private void EnsureGroupsInitialized(LinkNode node)
+        private static void EnsureGroupsInitialized(LinkNode node)
         {
             if (node == null || node.Link == null)
             {
@@ -1025,6 +1068,17 @@ namespace SW2URDF.URDFExport
             finally
             {
                 pageIsClosing = false;
+                // NOTE: we deliberately do NOT call Dispose() here. The Tree
+                // TreeView's child nodes (the LinkNode hierarchy) are
+                // about to be transferred to AssemblyExportForm in
+                // ExportButtonPress; disposing Tree at this point would
+                // invalidate those TreeNodes (they would still hold a
+                // stale TreeView reference and any subsequent
+                // TreeNodeCollection.Add would throw "Cannot add or
+                // insert ... in more than one place"). Dispose() is
+                // available for callers that want to release the .NET
+                // Forms resources after the export workflow has fully
+                // detached BaseNode from Tree.
             }
         }
 

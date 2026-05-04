@@ -23,51 +23,13 @@ namespace SW2URDF.MJCF
     //   - <site>s have pos/quat computed from a separate body-local transform and
     //     are populated by the caller (which has access to the live SolidWorks
     //     coordinate systems).
-    public static class MJCFBuilder
+    internal static class MJCFBuilder
     {
         private static readonly log4net.ILog logger = Logger.GetLogger();
 
         // Path written into <compiler texturedir="..."> for MJCF packages. Mirrors
         // the meshdir convention: relative to the model XML which lives in mjcf/.
         public const string DefaultTextureDir = "../textures/";
-
-        // Site transform information used only when constructing the MJCF model. The
-        // SolidWorks-side machinery is responsible for computing the body-local
-        // transform for each site; the builder simply consumes the result.
-        public class SiteTransform
-        {
-            public string Name;
-            public double[] Position;
-            public double[] Quaternion;
-        }
-
-        // A single mesh reference: a logical name that becomes the <mesh> asset's
-        // `name` attribute and the file path (relative to the model's meshdir)
-        // that lands in the asset's `file` attribute. ExportHelper assembles one
-        // MeshAssetRef per visual / collision group on a link.
-        public class MeshAssetRef
-        {
-            public string Name;
-            public string File;
-        }
-
-        // Per-link auxiliary data that the export helper assembles. The builder
-        // does not know about SolidWorks, so the caller supplies the pieces that
-        // depend on SW state (mesh filenames, site transforms).
-        public class LinkAuxiliary
-        {
-            // One entry per visual group on the link. Empty list -> no <geom
-            // class="visual"> emitted on this body. Each entry produces one
-            // <mesh> in <asset> and one <geom> in the body.
-            public List<MeshAssetRef> VisualMeshes = new List<MeshAssetRef>();
-
-            // One entry per collision group on the link. Empty list -> no
-            // <geom class="collision"> emitted unless the legacy single-mesh
-            // fallback below is used.
-            public List<MeshAssetRef> CollisionMeshes = new List<MeshAssetRef>();
-
-            public List<SiteTransform> Sites = new List<SiteTransform>();
-        }
 
         // Builds an MJCFModel from a populated SW2URDF Robot. `auxByLinkName` carries
         // per-link mesh/site information that depends on the SolidWorks export step.
@@ -78,7 +40,7 @@ namespace SW2URDF.MJCF
         {
             if (robot == null)
             {
-                throw new ArgumentNullException("robot");
+                throw new ArgumentNullException(nameof(robot));
             }
             MJCFModel model = new MJCFModel(robot.Name);
             model.Compiler.MeshDir = string.IsNullOrEmpty(meshDir) ? "meshes/" : meshDir;
