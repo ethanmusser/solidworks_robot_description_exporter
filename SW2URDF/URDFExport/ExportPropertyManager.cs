@@ -137,6 +137,20 @@ namespace SW2URDF.URDFExport
         // SolidWorks UI thread, so a plain bool is safe here.
         private bool suppressGroupListboxRefresh;
 
+        // Set true while OnClose is executing. When the property-manager page
+        // closes (green check OR PMPage.Close(true) from the Preview-and-Export
+        // button), SolidWorks releases the marked selections owned by the
+        // SelectionBoxes BEFORE OnClose runs. SaveActiveNode used to read those
+        // marks via Commit*GroupSelection / GetSelectedComponents to rebuild
+        // the active link's component lists - with the marks gone, that
+        // refresh wipes the last-edited link's groups. The flag lets those
+        // helpers skip the destructive Clear()+refill while still allowing
+        // SaveActiveNode to commit non-SelectionMgr UI state (link name, joint
+        // props, CollisionUsesVisual, InertialSource). The visual / collision /
+        // inertial component lists are kept current via OnSelectionboxListChanged
+        // for every pick, so skipping the close-time refresh is safe.
+        private bool pageIsClosing;
+
         // Sites sub-section: a small inline editor on the per-link page.
         private PropertyManagerPageGroup PMSitesGroup;
         private PropertyManagerPageListbox PMListBoxSites;
@@ -658,6 +672,15 @@ namespace SW2URDF.URDFExport
             {
                 return;
             }
+            // The page is closing: SolidWorks has already released the marks
+            // that back this SelectionBox, so reading them back would clear
+            // the group with whatever stale state happens to be there.
+            // OnSelectionboxListChanged has kept the group in sync on every
+            // user pick, so the in-memory data is already authoritative.
+            if (pageIsClosing)
+            {
+                return;
+            }
             EnsureGroupsInitialized(node);
             if (activeVisualGroupIndex < 0 || activeVisualGroupIndex >= node.Link.VisualGroups.Count)
             {
@@ -668,6 +691,27 @@ namespace SW2URDF.URDFExport
             {
                 group.Components = new List<Component2>();
             }
+
+            // Teardown defense: if SolidWorks has 0 marked items but the
+            // active group already holds components, this commit is almost
+            // certainly being driven by a programmatic clear (PMPage tear-
+            // down on green-check, or another loader's ClearSelection2(true)
+            // cascade) rather than a deliberate user action. The destructive
+            // Clear+Refill below would wipe a freshly-picked component, so
+            // we bail out and let the existing in-memory state stand. The
+            // OnSelectionboxListChanged handler kept group.Components in
+            // sync for every user pick on the way in, so we already have
+            // the authoritative list. Trade-off: the user cannot clear the
+            // LAST component in a group through the SelectionBox UI alone -
+            // they need to remove the group entirely or pick a different
+            // component first. That UX cost is worth avoiding silent data
+            // loss on the last-edited link.
+            int markedCount = ActiveSWModel.SelectionManager.GetSelectedObjectCount2(PMSelectionVisual.Mark);
+            if (markedCount == 0 && group.Components.Count > 0)
+            {
+                return;
+            }
+
             group.Components.Clear();
             CommonSwOperations.GetSelectedComponents(
                 ActiveSWModel, group.Components, PMSelectionVisual.Mark);
@@ -679,6 +723,12 @@ namespace SW2URDF.URDFExport
             {
                 return;
             }
+            // See CommitActiveVisualGroupSelection: skip during OnClose so we
+            // don't clobber the active group from an empty SelectionMgr.
+            if (pageIsClosing)
+            {
+                return;
+            }
             EnsureGroupsInitialized(node);
             if (activeCollisionGroupIndex < 0 || activeCollisionGroupIndex >= node.Link.CollisionGroups.Count)
             {
@@ -689,6 +739,15 @@ namespace SW2URDF.URDFExport
             {
                 group.Components = new List<Component2>();
             }
+
+            // See CommitActiveVisualGroupSelection: same teardown / cascade
+            // defense applied to the collision side.
+            int markedCount = ActiveSWModel.SelectionManager.GetSelectedObjectCount2(PMSelectionCollision.Mark);
+            if (markedCount == 0 && group.Components.Count > 0)
+            {
+                return;
+            }
+
             group.Components.Clear();
             CommonSwOperations.GetSelectedComponents(
                 ActiveSWModel, group.Components, PMSelectionCollision.Mark);
@@ -698,30 +757,33 @@ namespace SW2URDF.URDFExport
         // SelectionBox. Called after the active group changes.
         private void LoadActiveVisualGroupIntoSelectionBox(LinkNode node)
         {
-            // Drop the previous selection (only the visual mark) so we don't
-            // accumulate components from the previously-active group.
-            ActiveSWModel.ClearSelection2(true);
-            if (node == null)
-            {
-                return;
-            }
-            EnsureGroupsInitialized(node);
-            if (activeVisualGroupIndex < 0 || activeVisualGroupIndex >= node.Link.VisualGroups.Count)
-            {
-                return;
-            }
-            MeshGroup group = node.Link.VisualGroups[activeVisualGroupIndex];
-            if (group.Components == null)
-            {
-                return;
-            }
-            // Programmatically populating the SelectionBox fires
-            // OnSelectionboxListChanged once per added item. Suppress the
-            // commit+refresh pipeline during the load so the listbox count
-            // does not flicker.
+            // Both the ClearSelection2 below and the subsequent
+            // SelectComponents call fire OnSelectionboxListChanged once per
+            // affected item. Without the suppress guard around the WHOLE
+            // body, the Count=0 event from ClearSelection2 would re-enter
+            // CommitActiveVisualGroupSelection and clobber group.Components
+            // with an empty SelectionMgr read - that's the data-loss path
+            // the user hit on the end-effector link.
             suppressGroupListboxRefresh = true;
             try
             {
+                // Drop the previous selection so we don't accumulate
+                // components from the previously-active group.
+                ActiveSWModel.ClearSelection2(true);
+                if (node == null)
+                {
+                    return;
+                }
+                EnsureGroupsInitialized(node);
+                if (activeVisualGroupIndex < 0 || activeVisualGroupIndex >= node.Link.VisualGroups.Count)
+                {
+                    return;
+                }
+                MeshGroup group = node.Link.VisualGroups[activeVisualGroupIndex];
+                if (group.Components == null)
+                {
+                    return;
+                }
                 CommonSwOperations.SelectComponents(
                     ActiveSWModel, group.Components, false, PMSelectionVisual.Mark);
             }
@@ -733,25 +795,29 @@ namespace SW2URDF.URDFExport
 
         private void LoadActiveCollisionGroupIntoSelectionBox(LinkNode node)
         {
-            ActiveSWModel.ClearSelection2(true);
-            if (node == null)
-            {
-                return;
-            }
-            EnsureGroupsInitialized(node);
-            if (activeCollisionGroupIndex < 0 || activeCollisionGroupIndex >= node.Link.CollisionGroups.Count)
-            {
-                return;
-            }
-            MeshGroup group = node.Link.CollisionGroups[activeCollisionGroupIndex];
-            if (group.Components == null)
-            {
-                return;
-            }
-            // See LoadActiveVisualGroupIntoSelectionBox for why this is guarded.
+            // See LoadActiveVisualGroupIntoSelectionBox: ClearSelection2(true)
+            // clears all marks, including the visual mark just populated by
+            // the prior load call. The Count=0 event for the visual box that
+            // SolidWorks fires would otherwise clobber the visual group's
+            // components, so we suppress for the entire body.
             suppressGroupListboxRefresh = true;
             try
             {
+                ActiveSWModel.ClearSelection2(true);
+                if (node == null)
+                {
+                    return;
+                }
+                EnsureGroupsInitialized(node);
+                if (activeCollisionGroupIndex < 0 || activeCollisionGroupIndex >= node.Link.CollisionGroups.Count)
+                {
+                    return;
+                }
+                MeshGroup group = node.Link.CollisionGroups[activeCollisionGroupIndex];
+                if (group.Components == null)
+                {
+                    return;
+                }
                 CommonSwOperations.SelectComponents(
                     ActiveSWModel, group.Components, false, PMSelectionCollision.Mark);
             }
@@ -927,6 +993,13 @@ namespace SW2URDF.URDFExport
 
         void IPropertyManagerPage2Handler9.OnClose(int Reason)
         {
+            // Marked selections owned by the SelectionBoxes are released by
+            // SolidWorks before OnClose runs, so SaveActiveNode must not try
+            // to refresh the active link's component lists from the SelectionMgr
+            // (the read would return 0 items and clobber data the user committed
+            // via OnSelectionboxListChanged). The pageIsClosing guard makes the
+            // SelectionMgr-derived commits no-op for the duration of this call.
+            pageIsClosing = true;
             try
             {
                 if (Reason ==
@@ -948,6 +1021,10 @@ namespace SW2URDF.URDFExport
                 logger.Error("Exception caught on close ", e);
                 MessageBox.Show("There was a problem closing the property manager: \n\"" +
                     e.Message + "\"\nEmail your maintainer with the log file found at " + Logger.GetFileName());
+            }
+            finally
+            {
+                pageIsClosing = false;
             }
         }
 
@@ -998,8 +1075,18 @@ namespace SW2URDF.URDFExport
             // back to the group and rebuild the listbox row text so the
             // "(N comp.)" count stays in sync without requiring a re-click.
             // The suppress flag short-circuits programmatic populates done by
-            // LoadActive*GroupIntoSelectionBox.
+            // LoadActive*GroupIntoSelectionBox / FillPropertyManager.
             if (suppressGroupListboxRefresh)
+            {
+                return;
+            }
+
+            // Skip when the page is in the middle of closing. SolidWorks
+            // releases marked selections at PMPage teardown, which can
+            // re-enter this handler with Count=0; the destructive Clear+
+            // refill in CommitActive*GroupSelection would wipe the last-
+            // edited link's groups in that case.
+            if (pageIsClosing)
             {
                 return;
             }
@@ -1019,6 +1106,33 @@ namespace SW2URDF.URDFExport
             {
                 CommitActiveCollisionGroupSelection(active);
                 RefreshCollisionGroupsListbox(active);
+            }
+            else if (Id == SelectionInertialID)
+            {
+                // Mirror the visual / collision pattern: commit on every pick
+                // so InertialComponents stays current without depending on the
+                // SelectionMgr being live during OnClose. SaveActiveNode skips
+                // its inertial refresh when pageIsClosing is true, so this
+                // incremental commit is the authoritative path for the
+                // green-check-without-navigating case.
+                if (active.Link.InertialComponents == null)
+                {
+                    active.Link.InertialComponents = new List<Component2>();
+                }
+
+                // Same teardown defense as CommitActiveVisualGroupSelection:
+                // if the inertial mark is empty but we already hold inertial
+                // components, treat this as a programmatic teardown / clear
+                // and skip the destructive refresh.
+                int markedCount = ActiveSWModel.SelectionManager.GetSelectedObjectCount2(
+                    PMSelectionInertial.Mark);
+                if (markedCount == 0 && active.Link.InertialComponents.Count > 0)
+                {
+                    return;
+                }
+
+                CommonSwOperations.GetSelectedComponents(
+                    ActiveSWModel, active.Link.InertialComponents, PMSelectionInertial.Mark);
             }
         }
 

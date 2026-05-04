@@ -376,8 +376,18 @@ namespace SW2URDF.URDFExport
                 {
                     previouslySelectedNode.Link.InertialComponents = new List<Component2>();
                 }
-                CommonSwOperations.GetSelectedComponents(
-                    ActiveSWModel, previouslySelectedNode.Link.InertialComponents, PMSelectionInertial.Mark);
+                // Same SelectionMgr-during-OnClose hazard as
+                // CommitActiveVisualGroupSelection: the inertial SelectionBox
+                // is backed by a marked selection that SolidWorks has already
+                // released by the time OnClose runs. The OnSelectionboxListChanged
+                // handler keeps InertialComponents up to date for every user
+                // pick, so skipping the close-time refresh preserves the
+                // committed data instead of clobbering it from an empty mark.
+                if (!pageIsClosing)
+                {
+                    CommonSwOperations.GetSelectedComponents(
+                        ActiveSWModel, previouslySelectedNode.Link.InertialComponents, PMSelectionInertial.Mark);
+                }
 
                 // Persist the inertial source choice.
                 short choice = PMComboBoxInertialSource.CurrentSelection;
@@ -472,11 +482,29 @@ namespace SW2URDF.URDFExport
 
             // Pre-populate the SelectionBoxes for the active groups + the
             // single inertial-components box.
-            ActiveSWModel.ClearSelection2(true);
-            LoadActiveVisualGroupIntoSelectionBox(node);
-            LoadActiveCollisionGroupIntoSelectionBox(node);
-            CommonSwOperations.SelectComponents(
-                ActiveSWModel, node.Link.InertialComponents, false, PMSelectionInertial.Mark);
+            //
+            // Every ClearSelection2 / SelectComponents call below can fire
+            // OnSelectionboxListChanged for an arbitrary box. Without the
+            // suppress guard around the whole population block the Count=0
+            // event from this top-level clear (and from the inner loaders'
+            // clears) would re-enter CommitActiveVisualGroupSelection and
+            // wipe the freshly-loaded groups with an empty SelectionMgr
+            // read. The inner loaders also set this flag for the same
+            // reason - the redundancy is intentional so that any individual
+            // loader is safe to call in isolation.
+            suppressGroupListboxRefresh = true;
+            try
+            {
+                ActiveSWModel.ClearSelection2(true);
+                LoadActiveVisualGroupIntoSelectionBox(node);
+                LoadActiveCollisionGroupIntoSelectionBox(node);
+                CommonSwOperations.SelectComponents(
+                    ActiveSWModel, node.Link.InertialComponents, false, PMSelectionInertial.Mark);
+            }
+            finally
+            {
+                suppressGroupListboxRefresh = false;
+            }
 
             // Inertial source combo.
             switch (node.Link.InertialSource)
