@@ -413,6 +413,290 @@ namespace SW2URDF.Test
         }
 
         [Fact]
+        public void TestMJCFEmitsPerLinkMaterialAsset()
+        {
+            // Each link with at least one visual geom should produce one
+            // <material> in <asset>, with rgba pulled from
+            // Link.Visual.Material.Color and the link's material name. The
+            // visual <geom>s reference it via material="..."; collision
+            // <geom>s carry neither rgba nor material (they inherit from
+            // <default class="collision">).
+            Link baseLink = new Link(null) { Name = "base_link" };
+            // SetColor populates Link.Visual.Material.Color; the Material.Name
+            // mirrors what ComputeVisualCollisionProperties writes by default.
+            baseLink.Visual.Material.Color.SetColor(new double[] { 0.1, 0.2, 0.3, 1.0 });
+            baseLink.Visual.Material.Name = "material_base_link";
+
+            Link child = new Link(baseLink) { Name = "child" };
+            child.Visual.Material.Color.SetColor(new double[] { 0.7, 0.8, 0.9, 0.5 });
+            child.Visual.Material.Name = "material_child";
+            child.Joint.Name = "j1";
+            child.Joint.Type = "fixed";
+            child.Joint.Origin.SetXYZ(new double[] { 0, 0, 0 });
+            child.Joint.Origin.SetRPY(new double[] { 0, 0, 0 });
+            baseLink.Children.Add(child);
+
+            Robot robot = new Robot { Name = "test_materials" };
+            robot.SetBaseLink(baseLink);
+
+            var aux = new Dictionary<string, MJCFBuilder.LinkAuxiliary>
+            {
+                ["base_link"] = new MJCFBuilder.LinkAuxiliary
+                {
+                    VisualMeshes =
+                    {
+                        new MJCFBuilder.MeshAssetRef { Name = "base_link_visual", File = "base_link_visual.STL" },
+                    },
+                    CollisionMeshes =
+                    {
+                        new MJCFBuilder.MeshAssetRef { Name = "base_link_collision", File = "base_link_collision.STL" },
+                    },
+                },
+                ["child"] = new MJCFBuilder.LinkAuxiliary
+                {
+                    VisualMeshes =
+                    {
+                        new MJCFBuilder.MeshAssetRef { Name = "child_visual", File = "child_visual.STL" },
+                    },
+                    CollisionMeshes =
+                    {
+                        new MJCFBuilder.MeshAssetRef { Name = "child_collision", File = "child_collision.STL" },
+                    },
+                },
+            };
+
+            MJCFModel model = MJCFBuilder.Build(robot, "meshes/", aux);
+
+            // Two materials, one per link. Names match the link's Material.Name.
+            Assert.Equal(2, model.Asset.Materials.Count);
+            MaterialAsset baseMat = model.Asset.FindMaterial("material_base_link");
+            MaterialAsset childMat = model.Asset.FindMaterial("material_child");
+            Assert.NotNull(baseMat);
+            Assert.NotNull(childMat);
+            Assert.Equal(new double[] { 0.1, 0.2, 0.3, 1.0 }, baseMat.Rgba);
+            Assert.Equal(new double[] { 0.7, 0.8, 0.9, 0.5 }, childMat.Rgba);
+            // No textures configured in this test.
+            Assert.Empty(model.Asset.Textures);
+            Assert.Null(baseMat.Texture);
+            Assert.Null(childMat.Texture);
+
+            // Visual geoms reference the material; collision geoms reference nothing.
+            Body baseBody = model.RootBody;
+            Geom baseVisual = baseBody.Geoms.Find(g => g.Role == GeomRole.Visual);
+            Geom baseCollision = baseBody.Geoms.Find(g => g.Role == GeomRole.Collision);
+            Assert.Equal("material_base_link", baseVisual.Material);
+            Assert.Null(baseVisual.Rgba);
+            Assert.Null(baseCollision.Material);
+            Assert.Null(baseCollision.Rgba);
+
+            Body childBody = baseBody.Children[0];
+            Geom childVisual = childBody.Geoms.Find(g => g.Role == GeomRole.Visual);
+            Geom childCollision = childBody.Geoms.Find(g => g.Role == GeomRole.Collision);
+            Assert.Equal("material_child", childVisual.Material);
+            Assert.Null(childVisual.Rgba);
+            Assert.Null(childCollision.Material);
+            Assert.Null(childCollision.Rgba);
+
+            // Sanity-check the emitted XML: <material> elements land in <asset>
+            // and visual <geom>s carry material="..." attributes.
+            string xml;
+            using (StringWriter sw = new StringWriter())
+            {
+                XmlWriterSettings settings = new XmlWriterSettings { Indent = true };
+                using (XmlWriter writer = XmlWriter.Create(sw, settings))
+                {
+                    model.WriteMJCF(writer);
+                }
+                xml = sw.ToString();
+            }
+
+            Assert.Contains("<material name=\"material_base_link\"", xml);
+            Assert.Contains("<material name=\"material_child\"", xml);
+            Assert.Contains("rgba=\"0.1 0.2 0.3 1\"", xml);
+            Assert.Contains("rgba=\"0.7 0.8 0.9 0.5\"", xml);
+            Assert.Contains("material=\"material_base_link\"", xml);
+            Assert.Contains("material=\"material_child\"", xml);
+        }
+
+        [Fact]
+        public void TestMJCFMultiVisualGeomsShareLinkMaterial()
+        {
+            // A link with multiple visual groups produces ONE <material> and
+            // every visual <geom> references it. Collisions remain unmaterialed.
+            Link baseLink = new Link(null) { Name = "base_link" };
+            Link child = new Link(baseLink) { Name = "multi" };
+            child.Visual.Material.Color.SetColor(new double[] { 0.25, 0.5, 0.75, 1.0 });
+            child.Visual.Material.Name = "material_multi";
+            child.Joint.Name = "j1";
+            child.Joint.Type = "fixed";
+            child.Joint.Origin.SetXYZ(new double[] { 0, 0, 0 });
+            child.Joint.Origin.SetRPY(new double[] { 0, 0, 0 });
+            baseLink.Children.Add(child);
+
+            Robot robot = new Robot { Name = "test_multi_material" };
+            robot.SetBaseLink(baseLink);
+
+            var aux = new Dictionary<string, MJCFBuilder.LinkAuxiliary>
+            {
+                ["multi"] = new MJCFBuilder.LinkAuxiliary
+                {
+                    VisualMeshes =
+                    {
+                        new MJCFBuilder.MeshAssetRef { Name = "multi_a", File = "multi_a.STL" },
+                        new MJCFBuilder.MeshAssetRef { Name = "multi_b", File = "multi_b.STL" },
+                    },
+                    CollisionMeshes =
+                    {
+                        new MJCFBuilder.MeshAssetRef { Name = "multi_col_a", File = "multi_col_a.STL" },
+                        new MJCFBuilder.MeshAssetRef { Name = "multi_col_b", File = "multi_col_b.STL" },
+                    },
+                },
+            };
+
+            MJCFModel model = MJCFBuilder.Build(robot, "meshes/", aux);
+
+            // Exactly one material, despite two visual groups.
+            Assert.Single(model.Asset.Materials);
+            Assert.Equal("material_multi", model.Asset.Materials[0].Name);
+
+            Body multiBody = model.RootBody.Children[0];
+            foreach (Geom g in multiBody.Geoms)
+            {
+                if (g.Role == GeomRole.Visual)
+                {
+                    // Both visual geoms point at the same material.
+                    Assert.Equal("material_multi", g.Material);
+                    Assert.Null(g.Rgba);
+                }
+                else
+                {
+                    // Collision geoms inherit from <default class="collision">.
+                    Assert.Null(g.Material);
+                    Assert.Null(g.Rgba);
+                }
+            }
+        }
+
+        [Fact]
+        public void TestMJCFEmitsTextureWhenLinkHasTextureFilename()
+        {
+            // A link with a non-empty Material.Texture.wFilename should emit a
+            // <texture> in <asset> and the corresponding <material> should
+            // reference it via texture="...". The <compiler> tag should carry
+            // a texturedir attribute. Texture must appear before material in
+            // the emitted XML (MuJoCo requires that ordering).
+            Link baseLink = new Link(null) { Name = "tex_link" };
+            baseLink.Visual.Material.Color.SetColor(new double[] { 0.4, 0.5, 0.6, 1.0 });
+            baseLink.Visual.Material.Name = "material_tex_link";
+            // ExportHelper sets wFilename to the absolute SolidWorks-side path;
+            // here we use a basename-only string since MJCFBuilder calls
+            // Path.GetFileName on it. Using a path with a directory prefix also
+            // works -- the builder strips it.
+            baseLink.Visual.Material.Texture.wFilename = "C:/some/where/checker.png";
+
+            Robot robot = new Robot { Name = "test_texture" };
+            robot.SetBaseLink(baseLink);
+
+            var aux = new Dictionary<string, MJCFBuilder.LinkAuxiliary>
+            {
+                ["tex_link"] = new MJCFBuilder.LinkAuxiliary
+                {
+                    VisualMeshes =
+                    {
+                        new MJCFBuilder.MeshAssetRef { Name = "tex_link_visual", File = "tex_link_visual.STL" },
+                    },
+                },
+            };
+
+            MJCFModel model = MJCFBuilder.Build(robot, "meshes/", aux);
+
+            // Texture asset registered with basename only.
+            Assert.Single(model.Asset.Textures);
+            Assert.Equal("texture_tex_link", model.Asset.Textures[0].Name);
+            Assert.Equal("checker.png", model.Asset.Textures[0].File);
+
+            // Material references the texture.
+            Assert.Single(model.Asset.Materials);
+            Assert.Equal("texture_tex_link", model.Asset.Materials[0].Texture);
+
+            // Compiler carries the texturedir attribute.
+            Assert.Equal(MJCFBuilder.DefaultTextureDir, model.Compiler.TextureDir);
+
+            string xml;
+            using (StringWriter sw = new StringWriter())
+            {
+                XmlWriterSettings settings = new XmlWriterSettings { Indent = true };
+                using (XmlWriter writer = XmlWriter.Create(sw, settings))
+                {
+                    model.WriteMJCF(writer);
+                }
+                xml = sw.ToString();
+            }
+
+            // texturedir on <compiler>.
+            Assert.Contains("texturedir=\"../textures/\"", xml);
+            // <texture> element with the basename only.
+            Assert.Contains("<texture name=\"texture_tex_link\"", xml);
+            Assert.Contains("file=\"checker.png\"", xml);
+            // <material> references it.
+            Assert.Contains("texture=\"texture_tex_link\"", xml);
+
+            // Texture must be emitted BEFORE material in <asset> (MuJoCo
+            // requires materials only reference textures already declared).
+            int textureIdx = xml.IndexOf("<texture", StringComparison.Ordinal);
+            int materialIdx = xml.IndexOf("<material name=\"material_tex_link\"", StringComparison.Ordinal);
+            Assert.True(textureIdx >= 0);
+            Assert.True(materialIdx >= 0);
+            Assert.True(textureIdx < materialIdx,
+                "Expected <texture> to be emitted before <material> within <asset>.");
+        }
+
+        [Fact]
+        public void TestMJCFNoTextureWhenLinkHasNoTextureFilename()
+        {
+            // The common case (no texture on the link) should produce a
+            // <material> with no texture= attribute and no <texture>
+            // element in <asset>.
+            Link baseLink = new Link(null) { Name = "plain_link" };
+            baseLink.Visual.Material.Color.SetColor(new double[] { 0.9, 0.9, 0.9, 1.0 });
+            // Texture.wFilename left as the default empty string.
+
+            Robot robot = new Robot { Name = "test_no_texture" };
+            robot.SetBaseLink(baseLink);
+
+            var aux = new Dictionary<string, MJCFBuilder.LinkAuxiliary>
+            {
+                ["plain_link"] = new MJCFBuilder.LinkAuxiliary
+                {
+                    VisualMeshes =
+                    {
+                        new MJCFBuilder.MeshAssetRef { Name = "plain_link_visual", File = "plain_link_visual.STL" },
+                    },
+                },
+            };
+
+            MJCFModel model = MJCFBuilder.Build(robot, "meshes/", aux);
+
+            Assert.Empty(model.Asset.Textures);
+            Assert.Single(model.Asset.Materials);
+            Assert.Null(model.Asset.Materials[0].Texture);
+
+            string xml;
+            using (StringWriter sw = new StringWriter())
+            {
+                XmlWriterSettings settings = new XmlWriterSettings { Indent = true };
+                using (XmlWriter writer = XmlWriter.Create(sw, settings))
+                {
+                    model.WriteMJCF(writer);
+                }
+                xml = sw.ToString();
+            }
+            Assert.DoesNotContain("<texture", xml);
+            // texturedir is still emitted (cheap; harmless).
+            Assert.Contains("texturedir=\"../textures/\"", xml);
+        }
+
+        [Fact]
         public void TestURDFEmitsMultipleVisualsAndCollisions()
         {
             // A Link with two visual groups + two collision groups should

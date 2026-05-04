@@ -25,6 +25,12 @@ namespace SW2URDF.MJCF
     //     coordinate systems).
     public static class MJCFBuilder
     {
+        private static readonly log4net.ILog logger = Logger.GetLogger();
+
+        // Path written into <compiler texturedir="..."> for MJCF packages. Mirrors
+        // the meshdir convention: relative to the model XML which lives in mjcf/.
+        public const string DefaultTextureDir = "../textures/";
+
         // Site transform information used only when constructing the MJCF model. The
         // SolidWorks-side machinery is responsible for computing the body-local
         // transform for each site; the builder simply consumes the result.
@@ -76,6 +82,7 @@ namespace SW2URDF.MJCF
             }
             MJCFModel model = new MJCFModel(robot.Name);
             model.Compiler.MeshDir = string.IsNullOrEmpty(meshDir) ? "meshes/" : meshDir;
+            model.Compiler.TextureDir = DefaultTextureDir;
             model.RootBody = BuildBody(robot.BaseLink, model.Asset, auxByLinkName, isRoot: true);
             return model;
         }
@@ -127,6 +134,13 @@ namespace SW2URDF.MJCF
             {
                 int visualCount = (aux.VisualMeshes != null) ? aux.VisualMeshes.Count : 0;
                 int visualIndex = 0;
+                string materialName = null;
+                if (aux.VisualMeshes != null && visualCount > 0)
+                {
+                    // One <material> per link with at least one visual mesh. Multi-group
+                    // visual links share this material on every visual <geom>.
+                    materialName = EnsureLinkMaterial(asset, link);
+                }
                 if (aux.VisualMeshes != null)
                 {
                     foreach (MeshAssetRef meshRef in aux.VisualMeshes)
@@ -139,7 +153,10 @@ namespace SW2URDF.MJCF
                         string geomName = (visualCount == 1)
                             ? link.Name + "_visual"
                             : link.Name + "_visual_" + (visualIndex + 1);
-                        body.Geoms.Add(new Geom(geomName, meshRef.Name, GeomRole.Visual));
+                        body.Geoms.Add(new Geom(geomName, meshRef.Name, GeomRole.Visual)
+                        {
+                            Material = materialName,
+                        });
                         visualIndex++;
                     }
                 }
@@ -158,6 +175,9 @@ namespace SW2URDF.MJCF
                         string geomName = (collisionCount == 1)
                             ? link.Name + "_collision"
                             : link.Name + "_collision_" + (collisionIndex + 1);
+                        // Collision geoms intentionally carry neither rgba nor material;
+                        // they inherit the rgba from <default class="collision"> so all
+                        // collision hulls render at a uniform tint regardless of link.
                         body.Geoms.Add(new Geom(geomName, meshRef.Name, GeomRole.Collision));
                         collisionIndex++;
                     }
@@ -254,6 +274,114 @@ namespace SW2URDF.MJCF
             }
 
             return mjJoint;
+        }
+
+        // Adds (idempotently) a <material> for the given link to the asset block,
+        // plus the corresponding <texture> if the link has a non-empty
+        // Texture.wFilename pointing at a file. The Color element is populated
+        // either by the user (Configure Link Properties form) or automatically
+        // from SolidWorks (ComputeVisualCollisionProperties reads the part's
+        // MaterialPropertyValues). Defaults to white-opaque so a link whose
+        // color was never populated still emits syntactically valid rgba; URDF
+        // Color() initializes to {1,1,1,1} for the same reason.
+        //
+        // Returns the material's <name> so the caller can stamp it on the geom.
+        // Material names must be unique within <asset> in MJCF: if the chosen
+        // name is already taken (because two links share a custom material name
+        // set in the form), Asset.Add returns false and we log a warning. The
+        // second link's geoms still reference the existing material, which
+        // means they render with the first link's color/texture. Acceptable
+        // degradation; the user can fix it by giving the second link a distinct
+        // name.
+        private static string EnsureLinkMaterial(Asset asset, Link link)
+        {
+            string materialName = ChooseMaterialName(link);
+
+            string textureName = null;
+            string textureWFilename = link?.Visual?.Material?.Texture?.wFilename;
+            if (!string.IsNullOrWhiteSpace(textureWFilename))
+            {
+                textureName = "texture_" + ((link != null && !string.IsNullOrWhiteSpace(link.Name))
+                    ? link.Name
+                    : "link");
+                string textureFile = Path.GetFileName(textureWFilename);
+                if (!asset.Add(new TextureAsset(textureName, textureFile)))
+                {
+                    // Same name already present -- not an error per se, but worth a
+                    // breadcrumb if the underlying file path differs.
+                    logger.Info("MJCF texture '" + textureName +
+                        "' already declared in <asset>; reusing existing entry.");
+                }
+            }
+
+            double[] rgba = (link != null
+                && link.Visual != null
+                && link.Visual.Material != null
+                && link.Visual.Material.Color != null)
+                ? link.Visual.Material.Color.GetColor()
+                : new double[] { 1, 1, 1, 1 };
+
+            MaterialAsset newMaterial = new MaterialAsset(materialName, rgba)
+            {
+                Texture = textureName,
+            };
+            if (!asset.Add(newMaterial))
+            {
+                MaterialAsset existing = asset.FindMaterial(materialName);
+                if (existing != null && !MaterialMatches(existing, newMaterial))
+                {
+                    logger.Warn("MJCF material name '" + materialName +
+                        "' is reused by link '" + (link?.Name ?? "<null>") +
+                        "' with different rgba/texture. The first link's material " +
+                        "definition wins; this link's geoms will render with that " +
+                        "color/texture instead. Give the link a distinct material " +
+                        "name in the Configure Link Properties form to fix.");
+                }
+            }
+            return materialName;
+        }
+
+        // Picks the material name for a link. Honours a user-supplied
+        // Link.Visual.Material.Name when set (typically by the form's
+        // comboBoxMaterials or by ComputeVisualCollisionProperties which writes
+        // "material_<linkname>"); falls back to "material_<linkname>" otherwise.
+        // Always returns a non-empty string.
+        private static string ChooseMaterialName(Link link)
+        {
+            string explicitName = link?.Visual?.Material?.Name;
+            if (!string.IsNullOrWhiteSpace(explicitName))
+            {
+                return explicitName;
+            }
+            string baseName = (link != null && !string.IsNullOrWhiteSpace(link.Name))
+                ? link.Name
+                : "link";
+            return "material_" + baseName;
+        }
+
+        private static bool MaterialMatches(MaterialAsset a, MaterialAsset b)
+        {
+            if (a == null || b == null)
+            {
+                return false;
+            }
+            if (!string.Equals(a.Texture ?? "", b.Texture ?? "", StringComparison.Ordinal))
+            {
+                return false;
+            }
+            if (a.Rgba == null || b.Rgba == null
+                || a.Rgba.Length != 4 || b.Rgba.Length != 4)
+            {
+                return a.Rgba == b.Rgba;
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                if (a.Rgba[i] != b.Rgba[i])
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         // Joins a directory and a filename using the MuJoCo convention of forward

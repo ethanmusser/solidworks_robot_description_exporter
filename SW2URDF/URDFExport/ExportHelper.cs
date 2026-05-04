@@ -319,18 +319,28 @@ namespace SW2URDF.URDFExport
             }
 
             // Copy the texture file (if it was specified) to the textures directory.
-            // Only the URDF package layout includes a textures directory.
+            // Both URDF and MJCF use the same on-disk layout (<package>/textures/);
+            // URDF references it via package://, MJCF references the basename via
+            // <compiler texturedir="../textures/"> in the emitted XML.
             if (!link.isFixedFrame &&
-                package.Format == ExportFormat.URDF &&
                 !String.IsNullOrWhiteSpace(link.Visual.Material.Texture.wFilename))
             {
                 if (File.Exists(link.Visual.Material.Texture.wFilename))
                 {
+                    // Filename is the URDF-side <texture filename=...> URI, harmless
+                    // for MJCF (the MJCF builder reads wFilename and computes its
+                    // own path relative to <compiler texturedir>).
                     link.Visual.Material.Texture.Filename =
                         package.TexturesDirectory + Path.GetFileName(link.Visual.Material.Texture.wFilename);
                     string textureSavePath =
                         package.WindowsTexturesDirectory + Path.GetFileName(link.Visual.Material.Texture.wFilename);
                     File.Copy(link.Visual.Material.Texture.wFilename, textureSavePath, true);
+                }
+                else
+                {
+                    logger.Warn("Texture file '" + link.Visual.Material.Texture.wFilename +
+                        "' for link '" + link.Name + "' does not exist; skipping copy. " +
+                        "The exported model will reference a missing texture.");
                 }
             }
 
