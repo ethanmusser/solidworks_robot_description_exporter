@@ -1442,18 +1442,18 @@ namespace SW2URDF.URDFExport
             PMSetupGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
                 SetupGroupID, caption, (int)options);
 
-            // Setup row 1: Preview and Export... button.
+            // Setup row 1: Export button.
             options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
             PMButtonExport = PMSetupGroup.AddControl2(ButtonExportID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Button,
-                "Preview and Export...", 0, (int)options,
-                "Preview the generated description and export the package");
+                "Preview/Export", 0, (int)options,
+                "Preview and export the generated description");
 
             // Setup row 2: Load Configuration... button.
             PMButtonLoad = PMSetupGroup.AddControl2(LoadConfigurationID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Button,
-                "Load Configuration...", 0, (int)options,
+                "Load Configuration", 0, (int)options,
                 "Import values from a CSV file");
 
             // Setup row 3: "Imported File:" label, hidden until a CSV import.

@@ -17,10 +17,6 @@ namespace SW2URDF.MJCF
         // so it sits next to the model XML in the package layout.
         public string TextureDir { get; set; }
 
-        public string Angle { get; set; } = "radian";
-        public bool BalanceInertia { get; set; } = true;
-        public bool AutoLimits { get; set; } = true;
-
         public void WriteMJCF(XmlWriter writer)
         {
             writer.WriteStartElement("compiler");
@@ -29,9 +25,6 @@ namespace SW2URDF.MJCF
             {
                 writer.WriteAttributeString("texturedir", TextureDir);
             }
-            writer.WriteAttributeString("angle", Angle);
-            writer.WriteAttributeString("balanceinertia", BalanceInertia ? "true" : "false");
-            writer.WriteAttributeString("autolimits", AutoLimits ? "true" : "false");
             writer.WriteEndElement();
         }
     }
