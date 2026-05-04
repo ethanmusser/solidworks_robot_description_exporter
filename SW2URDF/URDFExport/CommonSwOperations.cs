@@ -1,4 +1,4 @@
-﻿/*
+/*
 Copyright (c) 2015 Stephen Brawner
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -158,32 +158,32 @@ namespace SW2URDF.URDFExport
 
         public static void RetrieveSWComponentPIDs(ModelDoc2 model, LinkNode node)
         {
-            if (node.Link.VisualComponents != null)
+            // Refresh the per-group PIDs first; the legacy flat lists below are
+            // derived from them so older readers keep working.
+            if (node.Link.VisualGroups != null)
             {
-                node.Link.SWComponentPIDs = new List<byte[]>();
-                foreach (IComponent2 comp in node.Link.VisualComponents)
+                foreach (MeshGroup group in node.Link.VisualGroups)
                 {
-                    byte[] PID = model.Extension.GetPersistReference3(comp);
-                    node.Link.SWComponentPIDs.Add(PID);
+                    group.ComponentPIDs = SaveSWComponents(model, group.Components);
                 }
             }
-            if (node.Link.CollisionComponents != null)
+            if (node.Link.CollisionGroups != null)
             {
-                node.Link.CollisionComponentPIDs = new List<byte[]>();
-                foreach (IComponent2 comp in node.Link.CollisionComponents)
+                foreach (MeshGroup group in node.Link.CollisionGroups)
                 {
-                    byte[] PID = model.Extension.GetPersistReference3(comp);
-                    node.Link.CollisionComponentPIDs.Add(PID);
+                    group.ComponentPIDs = SaveSWComponents(model, group.Components);
                 }
             }
+
+            // Mirror the flattened component lists into the legacy single-list
+            // PID fields so previous versions of this addin (which don't know
+            // about VisualGroups) still see the components on a re-read.
+            node.Link.SWComponentPIDs = SaveSWComponents(model, node.Link.VisualComponents);
+            node.Link.CollisionComponentPIDs = SaveSWComponents(model, node.Link.CollisionComponents);
+
             if (node.Link.InertialComponents != null)
             {
-                node.Link.InertialComponentPIDs = new List<byte[]>();
-                foreach (IComponent2 comp in node.Link.InertialComponents)
-                {
-                    byte[] PID = model.Extension.GetPersistReference3(comp);
-                    node.Link.InertialComponentPIDs.Add(PID);
-                }
+                node.Link.InertialComponentPIDs = SaveSWComponents(model, node.Link.InertialComponents);
             }
             foreach (LinkNode child in node.Nodes)
             {
@@ -200,6 +200,24 @@ namespace SW2URDF.URDFExport
             {
                 Link.SWMainComponentPID = PID;
             }
+
+            // Persist per-group PIDs first.
+            if (Link.VisualGroups != null)
+            {
+                foreach (MeshGroup group in Link.VisualGroups)
+                {
+                    group.ComponentPIDs = SaveSWComponents(model, group.Components);
+                }
+            }
+            if (Link.CollisionGroups != null)
+            {
+                foreach (MeshGroup group in Link.CollisionGroups)
+                {
+                    group.ComponentPIDs = SaveSWComponents(model, group.Components);
+                }
+            }
+
+            // Legacy flat lists, kept in sync for older readers.
             Link.SWComponentPIDs = SaveSWComponents(model, Link.VisualComponents);
             Link.CollisionComponentPIDs = SaveSWComponents(model, Link.CollisionComponents);
             Link.InertialComponentPIDs = SaveSWComponents(model, Link.InertialComponents);
@@ -241,29 +259,53 @@ namespace SW2URDF.URDFExport
             logger.Info("Loading SolidWorks components for " +
                 node.Link.Name + " from " + model.GetPathName());
 
-            if (node.Link.SWComponentPIDs == null)
+            // Make sure legacy fields have been migrated into VisualGroups /
+            // CollisionGroups in case the configuration was constructed by a
+            // path that bypassed the DataContract OnDeserialized callback.
+            node.Link.MigrateLegacyComponents();
+
+            // Resolve each visual group's components from its PID list. The
+            // legacy SWComponentPIDs is a flattened mirror used only by older
+            // readers; it is rebuilt from the groups on save.
+            int totalVisualPIDs = 0;
+            int totalVisualLoaded = 0;
+            foreach (MeshGroup group in node.Link.VisualGroups)
             {
-                node.Link.SWComponentPIDs = new List<byte[]>();
+                if (group.ComponentPIDs == null)
+                {
+                    group.ComponentPIDs = new List<byte[]>();
+                }
+                group.Components = LoadSWComponents(model, group.ComponentPIDs);
+                totalVisualPIDs += group.ComponentPIDs.Count;
+                totalVisualLoaded += group.Components.Count;
             }
-            node.Link.VisualComponents = LoadSWComponents(model, node.Link.SWComponentPIDs);
-            if (node.Link.VisualComponents.Count != node.Link.SWComponentPIDs.Count)
+            if (totalVisualLoaded != totalVisualPIDs)
             {
                 problemLinks.Add(node.Link.Name);
                 logger.Error("Link " + node.Link.Name + " did not fully load all visual components");
             }
-            logger.Info("Loaded " + node.Link.VisualComponents.Count + " visual components for link " + node.Link.Name);
+            logger.Info("Loaded " + totalVisualLoaded + " visual components for link " + node.Link.Name +
+                " across " + node.Link.VisualGroups.Count + " group(s)");
 
-            if (node.Link.CollisionComponentPIDs == null)
+            int totalCollisionPIDs = 0;
+            int totalCollisionLoaded = 0;
+            foreach (MeshGroup group in node.Link.CollisionGroups)
             {
-                node.Link.CollisionComponentPIDs = new List<byte[]>();
+                if (group.ComponentPIDs == null)
+                {
+                    group.ComponentPIDs = new List<byte[]>();
+                }
+                group.Components = LoadSWComponents(model, group.ComponentPIDs);
+                totalCollisionPIDs += group.ComponentPIDs.Count;
+                totalCollisionLoaded += group.Components.Count;
             }
-            node.Link.CollisionComponents = LoadSWComponents(model, node.Link.CollisionComponentPIDs);
-            if (node.Link.CollisionComponents.Count != node.Link.CollisionComponentPIDs.Count)
+            if (totalCollisionLoaded != totalCollisionPIDs)
             {
                 problemLinks.Add(node.Link.Name);
                 logger.Error("Link " + node.Link.Name + " did not fully load all collision components");
             }
-            logger.Info("Loaded " + node.Link.CollisionComponents.Count + " collision components for link " + node.Link.Name);
+            logger.Info("Loaded " + totalCollisionLoaded + " collision components for link " + node.Link.Name +
+                " across " + node.Link.CollisionGroups.Count + " group(s)");
 
             if (node.Link.InertialComponentPIDs == null)
             {

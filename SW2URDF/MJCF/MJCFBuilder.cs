@@ -35,15 +35,31 @@ namespace SW2URDF.MJCF
             public double[] Quaternion;
         }
 
-        // Per-link auxiliary data that the export helper assembles. The builder does
-        // not know about SolidWorks, so the caller supplies the pieces that depend on
-        // SW state (mesh filenames, site transforms).
+        // A single mesh reference: a logical name that becomes the <mesh> asset's
+        // `name` attribute and the file path (relative to the model's meshdir)
+        // that lands in the asset's `file` attribute. ExportHelper assembles one
+        // MeshAssetRef per visual / collision group on a link.
+        public class MeshAssetRef
+        {
+            public string Name;
+            public string File;
+        }
+
+        // Per-link auxiliary data that the export helper assembles. The builder
+        // does not know about SolidWorks, so the caller supplies the pieces that
+        // depend on SW state (mesh filenames, site transforms).
         public class LinkAuxiliary
         {
-            public string VisualMeshName;
-            public string CollisionMeshName;
-            public string VisualMeshFile;     // file path stored under the meshdir
-            public string CollisionMeshFile;
+            // One entry per visual group on the link. Empty list -> no <geom
+            // class="visual"> emitted on this body. Each entry produces one
+            // <mesh> in <asset> and one <geom> in the body.
+            public List<MeshAssetRef> VisualMeshes = new List<MeshAssetRef>();
+
+            // One entry per collision group on the link. Empty list -> no
+            // <geom class="collision"> emitted unless the legacy single-mesh
+            // fallback below is used.
+            public List<MeshAssetRef> CollisionMeshes = new List<MeshAssetRef>();
+
             public List<SiteTransform> Sites = new List<SiteTransform>();
         }
 
@@ -97,22 +113,56 @@ namespace SW2URDF.MJCF
                 auxByLinkName.TryGetValue(link.Name, out aux);
             }
 
-            // Visual/collision geoms — only emitted if the corresponding STL was
-            // actually exported (presence of mesh name implies a mesh asset).
+            // Visual/collision geoms — one mesh asset and one geom per group.
+            // A link with two visual groups gets two <mesh> entries in <asset>
+            // and two <geom class="visual"> children of the body. The same
+            // applies to collision; this is what lets MuJoCo represent a
+            // concave shape as a union of convex hulls (one hull per group).
+            //
+            // Geom names disambiguate role and group index so a body with
+            //   * one visual + one collision      -> "<link>_visual" / "<link>_collision"
+            //   * N visuals (N > 1)               -> "<link>_visual_1..N"
+            // remain unique even when collision reuses a visual mesh asset.
             if (aux != null)
             {
-                if (!string.IsNullOrEmpty(aux.VisualMeshName))
+                int visualCount = (aux.VisualMeshes != null) ? aux.VisualMeshes.Count : 0;
+                int visualIndex = 0;
+                if (aux.VisualMeshes != null)
                 {
-                    asset.Add(new MeshAsset(aux.VisualMeshName, aux.VisualMeshFile));
-                    body.Geoms.Add(new Geom(
-                        link.Name + "_visual", aux.VisualMeshName, GeomRole.Visual));
+                    foreach (MeshAssetRef meshRef in aux.VisualMeshes)
+                    {
+                        if (meshRef == null || string.IsNullOrEmpty(meshRef.Name))
+                        {
+                            continue;
+                        }
+                        asset.Add(new MeshAsset(meshRef.Name, meshRef.File));
+                        string geomName = (visualCount == 1)
+                            ? link.Name + "_visual"
+                            : link.Name + "_visual_" + (visualIndex + 1);
+                        body.Geoms.Add(new Geom(geomName, meshRef.Name, GeomRole.Visual));
+                        visualIndex++;
+                    }
                 }
-                if (!string.IsNullOrEmpty(aux.CollisionMeshName))
+
+                int collisionCount = (aux.CollisionMeshes != null) ? aux.CollisionMeshes.Count : 0;
+                int collisionIndex = 0;
+                if (aux.CollisionMeshes != null)
                 {
-                    asset.Add(new MeshAsset(aux.CollisionMeshName, aux.CollisionMeshFile));
-                    body.Geoms.Add(new Geom(
-                        link.Name + "_collision", aux.CollisionMeshName, GeomRole.Collision));
+                    foreach (MeshAssetRef meshRef in aux.CollisionMeshes)
+                    {
+                        if (meshRef == null || string.IsNullOrEmpty(meshRef.Name))
+                        {
+                            continue;
+                        }
+                        asset.Add(new MeshAsset(meshRef.Name, meshRef.File));
+                        string geomName = (collisionCount == 1)
+                            ? link.Name + "_collision"
+                            : link.Name + "_collision_" + (collisionIndex + 1);
+                        body.Geoms.Add(new Geom(geomName, meshRef.Name, GeomRole.Collision));
+                        collisionIndex++;
+                    }
                 }
+
                 if (aux.Sites != null)
                 {
                     foreach (SiteTransform st in aux.Sites)

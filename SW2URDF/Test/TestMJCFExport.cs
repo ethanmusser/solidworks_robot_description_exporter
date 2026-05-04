@@ -3,6 +3,7 @@ using SW2URDF.URDF;
 using SW2URDF.URDFExport;
 using SW2URDF.Utilities;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Xml;
 using Xunit;
@@ -310,6 +311,209 @@ namespace SW2URDF.Test
             {
                 Directory.Delete(tempDir, true);
             }
+        }
+
+        [Fact]
+        public void TestMJCFEmitsMultipleVisualGeoms()
+        {
+            // A link with two visual groups should produce two <mesh> entries
+            // in <asset> and two <geom class="visual"> children of the body.
+            // Geom names disambiguate by index ("<link>_visual_1", _2, ...).
+            Link baseLink = new Link(null) { Name = "base_link" };
+            Link child = new Link(baseLink) { Name = "multi_visual" };
+            child.Joint.Name = "j1";
+            child.Joint.Type = "fixed";
+            child.Joint.Origin.SetXYZ(new double[] { 0, 0, 0 });
+            child.Joint.Origin.SetRPY(new double[] { 0, 0, 0 });
+            baseLink.Children.Add(child);
+
+            Robot robot = new Robot { Name = "test_multi_visual" };
+            robot.SetBaseLink(baseLink);
+
+            var aux = new Dictionary<string, MJCFBuilder.LinkAuxiliary>
+            {
+                ["multi_visual"] = new MJCFBuilder.LinkAuxiliary
+                {
+                    VisualMeshes =
+                    {
+                        new MJCFBuilder.MeshAssetRef { Name = "multi_visual_outer", File = "multi_visual_outer.STL" },
+                        new MJCFBuilder.MeshAssetRef { Name = "multi_visual_inner", File = "multi_visual_inner.STL" },
+                    },
+                },
+            };
+
+            MJCFModel model = MJCFBuilder.Build(robot, "meshes/", aux);
+
+            // Two mesh assets registered, with the supplied names/files.
+            Assert.Equal(2, model.Asset.Meshes.Count);
+            string[] meshNames = new string[] { model.Asset.Meshes[0].Name, model.Asset.Meshes[1].Name };
+            Assert.Contains("multi_visual_outer", meshNames);
+            Assert.Contains("multi_visual_inner", meshNames);
+
+            Body childBody = model.RootBody.Children[0];
+            Assert.Equal(2, childBody.Geoms.Count);
+            Assert.All(childBody.Geoms, g => Assert.Equal(GeomRole.Visual, g.Role));
+            // Geom names follow the role-disambiguated pattern when there are
+            // multiple visual groups so they remain unique in MuJoCo.
+            string[] geomNames = new string[] { childBody.Geoms[0].Name, childBody.Geoms[1].Name };
+            Assert.Contains("multi_visual_visual_1", geomNames);
+            Assert.Contains("multi_visual_visual_2", geomNames);
+        }
+
+        [Fact]
+        public void TestMJCFEmitsMultipleCollisionGeoms()
+        {
+            // Two collision groups should yield two <mesh> entries and two
+            // <geom class="collision"> children. This is what lets MuJoCo
+            // approximate a concave shape as a union of convex hulls.
+            Link baseLink = new Link(null) { Name = "base_link" };
+            Link child = new Link(baseLink) { Name = "multi_col" };
+            child.Joint.Name = "j1";
+            child.Joint.Type = "fixed";
+            child.Joint.Origin.SetXYZ(new double[] { 0, 0, 0 });
+            child.Joint.Origin.SetRPY(new double[] { 0, 0, 0 });
+            baseLink.Children.Add(child);
+
+            Robot robot = new Robot { Name = "test_multi_col" };
+            robot.SetBaseLink(baseLink);
+
+            var aux = new Dictionary<string, MJCFBuilder.LinkAuxiliary>
+            {
+                ["multi_col"] = new MJCFBuilder.LinkAuxiliary
+                {
+                    VisualMeshes =
+                    {
+                        new MJCFBuilder.MeshAssetRef { Name = "multi_col_visual", File = "multi_col_visual.STL" },
+                    },
+                    CollisionMeshes =
+                    {
+                        new MJCFBuilder.MeshAssetRef { Name = "multi_col_upper", File = "multi_col_upper.STL" },
+                        new MJCFBuilder.MeshAssetRef { Name = "multi_col_lower", File = "multi_col_lower.STL" },
+                    },
+                },
+            };
+
+            MJCFModel model = MJCFBuilder.Build(robot, "meshes/", aux);
+
+            // Three distinct assets: one visual + two collisions.
+            Assert.Equal(3, model.Asset.Meshes.Count);
+
+            Body childBody = model.RootBody.Children[0];
+            // 1 visual geom + 2 collision geoms.
+            Assert.Equal(3, childBody.Geoms.Count);
+            int visualCount = 0;
+            int collisionCount = 0;
+            foreach (Geom g in childBody.Geoms)
+            {
+                if (g.Role == GeomRole.Visual) visualCount++;
+                else if (g.Role == GeomRole.Collision) collisionCount++;
+            }
+            Assert.Equal(1, visualCount);
+            Assert.Equal(2, collisionCount);
+        }
+
+        [Fact]
+        public void TestURDFEmitsMultipleVisualsAndCollisions()
+        {
+            // A Link with two visual groups + two collision groups should
+            // serialize as two <visual> and two <collision> elements inside
+            // the same <link>, with each one's <mesh filename=...> picking up
+            // the per-group MeshFilename.
+            Link link = new Link { Name = "multi" };
+            link.Visual.Material.Color.Red = 1.0;
+            link.Visual.Material.Color.Green = 1.0;
+            link.Visual.Material.Color.Blue = 1.0;
+            link.Visual.Material.Color.Alpha = 1.0;
+            link.VisualGroups = new List<MeshGroup>
+            {
+                new MeshGroup("multi_outer") { MeshFilename = "package://x/meshes/multi_outer.STL" },
+                new MeshGroup("multi_inner") { MeshFilename = "package://x/meshes/multi_inner.STL" },
+            };
+            link.CollisionGroups = new List<MeshGroup>
+            {
+                new MeshGroup("multi_hull_upper") { MeshFilename = "package://x/meshes/multi_hull_upper.STL" },
+                new MeshGroup("multi_hull_lower") { MeshFilename = "package://x/meshes/multi_hull_lower.STL" },
+            };
+
+            string xml;
+            using (StringWriter sw = new StringWriter())
+            {
+                XmlWriterSettings settings = new XmlWriterSettings { Indent = true, OmitXmlDeclaration = true };
+                using (XmlWriter writer = XmlWriter.Create(sw, settings))
+                {
+                    writer.WriteStartDocument();
+                    link.WriteURDF(writer);
+                    writer.WriteEndDocument();
+                }
+                xml = sw.ToString();
+            }
+
+            // Both visual mesh filenames should appear distinctly.
+            Assert.Contains("multi_outer.STL", xml);
+            Assert.Contains("multi_inner.STL", xml);
+            // Both collision mesh filenames should appear distinctly.
+            Assert.Contains("multi_hull_upper.STL", xml);
+            Assert.Contains("multi_hull_lower.STL", xml);
+
+            // Count opening tags to verify two <visual> and two <collision>.
+            int visualCount = CountOccurrences(xml, "<visual>");
+            int collisionCount = CountOccurrences(xml, "<collision>");
+            Assert.Equal(2, visualCount);
+            Assert.Equal(2, collisionCount);
+        }
+
+        [Fact]
+        public void TestLegacySingleListMigratesToOneGroup()
+        {
+            // A Link with only legacy SWComponentPIDs populated (and no
+            // VisualGroups) should pick up a single visual group on the next
+            // call to MigrateLegacyComponents. Same for CollisionComponentPIDs.
+            Link link = new Link { Name = "legacy_link" };
+            // Simulate the state of a freshly-deserialized old config: groups
+            // are empty, but the legacy PID lists carry data.
+            link.VisualGroups.Clear();
+            link.CollisionGroups.Clear();
+            link.SWComponentPIDs = new List<byte[]>
+            {
+                new byte[] { 1, 2, 3 },
+                new byte[] { 4, 5, 6 },
+            };
+            link.CollisionComponentPIDs = new List<byte[]>
+            {
+                new byte[] { 7, 8, 9 },
+            };
+
+            link.MigrateLegacyComponents();
+
+            Assert.Single(link.VisualGroups);
+            Assert.Equal("legacy_link_visual", link.VisualGroups[0].Name);
+            Assert.Equal(2, link.VisualGroups[0].ComponentPIDs.Count);
+
+            Assert.Single(link.CollisionGroups);
+            Assert.Equal("legacy_link_collision", link.CollisionGroups[0].Name);
+            Assert.Single(link.CollisionGroups[0].ComponentPIDs);
+
+            // Idempotent: a second call should not duplicate the migration.
+            link.MigrateLegacyComponents();
+            Assert.Single(link.VisualGroups);
+            Assert.Single(link.CollisionGroups);
+        }
+
+        // Counts the number of times `needle` occurs in `haystack`.
+        private static int CountOccurrences(string haystack, string needle)
+        {
+            if (string.IsNullOrEmpty(haystack) || string.IsNullOrEmpty(needle))
+            {
+                return 0;
+            }
+            int count = 0;
+            int idx = 0;
+            while ((idx = haystack.IndexOf(needle, idx, StringComparison.Ordinal)) >= 0)
+            {
+                count++;
+                idx += needle.Length;
+            }
+            return count;
         }
 
         [Fact]

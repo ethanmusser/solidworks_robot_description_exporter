@@ -1,4 +1,4 @@
-﻿using System.Collections.Specialized;
+using System.Collections.Specialized;
 
 namespace SW2URDF.URDFExport.CSV
 {
@@ -51,6 +51,12 @@ namespace SW2URDF.URDFExport.CSV
             {"Link.InertialComponents","Inertial Components"},
             {"Link.InertialSource","Inertial Source"},
             {"Link.Sites","MJCF Sites"},
+            // Per-group structure used by the multi-group export pipeline.
+            // Encoded as "GroupName=comp1,comp2;OtherGroup=comp3"; older CSVs
+            // without these columns still load fine (the legacy flat columns
+            // above are sufficient for that path).
+            {"Link.VisualGroups","Visual Groups"},
+            {"Link.CollisionGroups","Collision Groups"},
             { "Link.CoordSysName","Coordinate System"},
             { "Link.AxisName","Axis Name"},
             { "Link.Joint.name","Joint Name"},

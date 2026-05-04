@@ -29,9 +29,16 @@ namespace SW2URDF.URDF
         [DataMember]
         public Inertial Inertial;
 
+        // Visual is a "template" element that holds the link's shared <visual>
+        // origin / material; the per-group mesh filenames are written by walking
+        // VisualGroups in WriteURDF. For backward compatibility with old saved
+        // configs that contained a single <visual>, this single Visual element
+        // is still serialized.
         [DataMember]
         public Visual Visual;
 
+        // Collision is a "template" element analogous to Visual. The per-group
+        // collision mesh filenames live in CollisionGroups.
         [DataMember]
         public Collision Collision;
 
@@ -49,22 +56,37 @@ namespace SW2URDF.URDF
 
         public Component2 SWMainComponent;
 
-        // VisualComponents are the SolidWorks components that contribute to the
-        // <visual> mesh. Historically these were stored as SWComponents and were
-        // also reused as the collision mesh; both interpretations are still
-        // supported through the SWComponents alias property below.
-        public List<Component2> VisualComponents;
+        // VisualGroups carries one entry per <visual> mesh emitted for this link.
+        // It is the source of truth at runtime; the legacy SWComponents/
+        // VisualComponents accessors flatten across all groups.
+        [DataMember(IsRequired = false)]
+        public List<MeshGroup> VisualGroups;
 
-        // CollisionComponents are the SolidWorks components that contribute to
-        // the <collision> mesh. May be empty, in which case the visual mesh is
-        // reused for collision (URDF backward-compatible behavior).
-        public List<Component2> CollisionComponents;
+        // CollisionGroups carries one entry per <collision> mesh emitted for
+        // this link. Empty means "no <collision> elements" (URDF consumers will
+        // fall back to visual; MJCF emits none unless ExportFiles populates it).
+        [DataMember(IsRequired = false)]
+        public List<MeshGroup> CollisionGroups;
+
+        // When true, the CollisionGroups list is ignored at export time and the
+        // VisualGroups are reused as collision meshes. Lets users avoid
+        // re-picking the same components for both visual and collision when the
+        // two sets coincide. The CollisionGroups data is still serialized so
+        // unchecking the toggle restores any previously-defined collision
+        // groups.
+        [DataMember(IsRequired = false)]
+        public bool CollisionUsesVisual;
 
         // InertialComponents are used only when InertialSource == Custom. May be empty
         // even when Custom is selected, in which case the visual components are used
         // as a fallback (with a warning logged).
         public List<Component2> InertialComponents;
 
+        // Legacy DataMembers preserved so old configs (pre-multi-group) keep
+        // deserializing without data loss. After Link.OnDeserialized runs, the
+        // values get migrated into VisualGroups / CollisionGroups (when those
+        // are not already populated) and the rest of the pipeline reads from
+        // the groups.
         [DataMember]
         public List<byte[]> SWComponentPIDs;
 
@@ -86,6 +108,104 @@ namespace SW2URDF.URDF
         [DataMember(IsRequired = false)]
         public List<SiteSpec> Sites;
 
+        // VisualComponents is a flattened view across all visual groups. Setter
+        // collapses to a single default group containing the supplied list.
+        // Existing call sites use this as "the bag of visual components" and
+        // don't need to be aware of the multi-group split.
+        public List<Component2> VisualComponents
+        {
+            get
+            {
+                List<Component2> all = new List<Component2>();
+                if (VisualGroups != null)
+                {
+                    foreach (MeshGroup g in VisualGroups)
+                    {
+                        if (g.Components != null)
+                        {
+                            all.AddRange(g.Components);
+                        }
+                    }
+                }
+                return all;
+            }
+            set
+            {
+                List<Component2> incoming = value ?? new List<Component2>();
+                EnsureVisualGroupsInitialized();
+                if (VisualGroups.Count == 0)
+                {
+                    VisualGroups.Add(new MeshGroup(MeshGroup.DefaultVisualName(Name))
+                    {
+                        Components = new List<Component2>(incoming),
+                    });
+                }
+                else
+                {
+                    // Replace the first group's components and discard any
+                    // additional groups: the legacy "set all visual components"
+                    // semantic flattens to a single group.
+                    VisualGroups[0].Components = new List<Component2>(incoming);
+                    while (VisualGroups.Count > 1)
+                    {
+                        VisualGroups.RemoveAt(VisualGroups.Count - 1);
+                    }
+                }
+            }
+        }
+
+        // CollisionComponents is a flattened view across all collision groups.
+        // Setter mirrors VisualComponents: collapse to a single group.
+        public List<Component2> CollisionComponents
+        {
+            get
+            {
+                List<Component2> all = new List<Component2>();
+                if (CollisionGroups != null)
+                {
+                    foreach (MeshGroup g in CollisionGroups)
+                    {
+                        if (g.Components != null)
+                        {
+                            all.AddRange(g.Components);
+                        }
+                    }
+                }
+                return all;
+            }
+            set
+            {
+                List<Component2> incoming = value ?? new List<Component2>();
+                if (CollisionGroups == null)
+                {
+                    CollisionGroups = new List<MeshGroup>();
+                }
+                if (incoming.Count == 0)
+                {
+                    // Legacy callers used "set to empty" to mean "no collision
+                    // mesh". Drop all groups so URDF consumers fall back to
+                    // visual.
+                    CollisionGroups.Clear();
+                    return;
+                }
+                if (CollisionGroups.Count == 0)
+                {
+                    CollisionGroups.Add(new MeshGroup(MeshGroup.DefaultCollisionName(Name))
+                    {
+                        Components = new List<Component2>(incoming),
+                    });
+                }
+                else
+                {
+                    CollisionGroups[0].Components = new List<Component2>(incoming);
+                    while (CollisionGroups.Count > 1)
+                    {
+                        CollisionGroups.RemoveAt(CollisionGroups.Count - 1);
+                    }
+                }
+            }
+        }
+
         // Backward-compatible alias for VisualComponents. Older code paths still refer
         // to "SWComponents" as the single bag of bodies; expose them as the visual set.
         public List<Component2> SWComponents
@@ -98,8 +218,8 @@ namespace SW2URDF.URDF
         {
             Parent = null;
             Children = new List<Link>();
-            VisualComponents = new List<Component2>();
-            CollisionComponents = new List<Component2>();
+            VisualGroups = new List<MeshGroup>();
+            CollisionGroups = new List<MeshGroup>();
             InertialComponents = new List<Component2>();
             SWComponentPIDs = new List<byte[]>();
             CollisionComponentPIDs = new List<byte[]>();
@@ -139,8 +259,8 @@ namespace SW2URDF.URDF
         {
             Parent = parent;
             Children = new List<Link>();
-            VisualComponents = new List<Component2>();
-            CollisionComponents = new List<Component2>();
+            VisualGroups = new List<MeshGroup>();
+            CollisionGroups = new List<MeshGroup>();
             InertialComponents = new List<Component2>();
             SWComponentPIDs = new List<byte[]>();
             CollisionComponentPIDs = new List<byte[]>();
@@ -163,6 +283,74 @@ namespace SW2URDF.URDF
             ChildElements.Add(Joint);
         }
 
+        // Migration step: populate VisualGroups / CollisionGroups from the legacy
+        // single-list PIDs when an older config (which knew nothing about groups)
+        // is read in. Idempotent: once VisualGroups is non-empty the legacy
+        // fields are ignored.
+        [OnDeserialized]
+        private void OnDeserialized(StreamingContext _)
+        {
+            MigrateLegacyComponents();
+        }
+
+        // Idempotent migration that callers can also invoke manually after
+        // unpacking into a Link tree (e.g. legacy XML deserialization that
+        // bypasses the DataContract serializer).
+        public void MigrateLegacyComponents()
+        {
+            if (Sites == null)
+            {
+                Sites = new List<SiteSpec>();
+            }
+            if (InertialComponents == null)
+            {
+                InertialComponents = new List<Component2>();
+            }
+
+            if (VisualGroups == null)
+            {
+                VisualGroups = new List<MeshGroup>();
+            }
+            if (VisualGroups.Count == 0
+                && SWComponentPIDs != null
+                && SWComponentPIDs.Count > 0)
+            {
+                VisualGroups.Add(new MeshGroup(MeshGroup.DefaultVisualName(Name))
+                {
+                    ComponentPIDs = new List<byte[]>(SWComponentPIDs),
+                    Components = new List<Component2>(),
+                });
+            }
+
+            if (CollisionGroups == null)
+            {
+                CollisionGroups = new List<MeshGroup>();
+            }
+            if (CollisionGroups.Count == 0
+                && CollisionComponentPIDs != null
+                && CollisionComponentPIDs.Count > 0)
+            {
+                CollisionGroups.Add(new MeshGroup(MeshGroup.DefaultCollisionName(Name))
+                {
+                    ComponentPIDs = new List<byte[]>(CollisionComponentPIDs),
+                    Components = new List<Component2>(),
+                });
+            }
+        }
+
+        // EnsureVisualGroupsInitialized guarantees a non-null VisualGroups list
+        // (but does not inject a default group). Used by the VisualComponents
+        // setter so we don't NPE when the field hasn't been initialized yet
+        // (e.g. on a fresh Link constructed via DataContract deserialization
+        // before the property setter runs).
+        private void EnsureVisualGroupsInitialized()
+        {
+            if (VisualGroups == null)
+            {
+                VisualGroups = new List<MeshGroup>();
+            }
+        }
+
         public override void WriteURDF(XmlWriter writer)
         {
             writer.WriteStartElement("link");
@@ -172,13 +360,61 @@ namespace SW2URDF.URDF
             {
                 Inertial.WriteURDF(writer);
             }
-            if (Visual != null)
+
+            // Emit one <visual> element per visual group, using the link's
+            // single Visual as the shared origin/material template. We swap in
+            // each group's mesh filename for the duration of the write and
+            // restore it afterwards so the in-memory model is unchanged.
+            string savedVisualMesh = Visual.Geometry.Mesh.Filename;
+            try
             {
-                Visual.WriteURDF(writer);
+                if (VisualGroups != null && VisualGroups.Count > 0)
+                {
+                    foreach (MeshGroup group in VisualGroups)
+                    {
+                        Visual.Geometry.Mesh.Filename = group.MeshFilename ?? savedVisualMesh;
+                        if (Visual.ElementContainsData())
+                        {
+                            Visual.WriteURDF(writer);
+                        }
+                    }
+                }
+                else if (Visual != null && Visual.ElementContainsData())
+                {
+                    // No groups configured but the template carries a filename
+                    // (e.g. legacy single-mesh path that hasn't been migrated).
+                    Visual.WriteURDF(writer);
+                }
             }
-            if (Collision != null)
+            finally
             {
-                Collision.WriteURDF(writer);
+                Visual.Geometry.Mesh.Filename = savedVisualMesh;
+            }
+
+            // Same template trick for collision: swap in per-group mesh filenames
+            // and restore.
+            string savedCollisionMesh = Collision.Geometry.Mesh.Filename;
+            try
+            {
+                if (CollisionGroups != null && CollisionGroups.Count > 0)
+                {
+                    foreach (MeshGroup group in CollisionGroups)
+                    {
+                        Collision.Geometry.Mesh.Filename = group.MeshFilename ?? savedCollisionMesh;
+                        if (Collision.ElementContainsData())
+                        {
+                            Collision.WriteURDF(writer);
+                        }
+                    }
+                }
+                else if (Collision != null && Collision.ElementContainsData())
+                {
+                    Collision.WriteURDF(writer);
+                }
+            }
+            finally
+            {
+                Collision.Geometry.Mesh.Filename = savedCollisionMesh;
             }
 
             writer.WriteEndElement();
@@ -242,6 +478,9 @@ namespace SW2URDF.URDF
 
         public override void AppendToCSVDictionary(List<string> context, OrderedDictionary dictionary)
         {
+            // CSV exports the flattened component lists to keep parity with old
+            // configs. Multi-group structure is preserved separately via the
+            // group-name columns appended below.
             string visualComponentsContext = "Link.SWComponents";
             dictionary.Add(visualComponentsContext, ComponentNamesJoined(VisualComponents));
 
@@ -256,6 +495,12 @@ namespace SW2URDF.URDF
 
             string sitesContext = "Link.Sites";
             dictionary.Add(sitesContext, SitesJoined(Sites));
+
+            string visualGroupsContext = "Link.VisualGroups";
+            dictionary.Add(visualGroupsContext, GroupsJoined(VisualGroups));
+
+            string collisionGroupsContext = "Link.CollisionGroups";
+            dictionary.Add(collisionGroupsContext, GroupsJoined(CollisionGroups));
 
             base.AppendToCSVDictionary(context, dictionary);
         }
@@ -281,6 +526,25 @@ namespace SW2URDF.URDF
                 sites.Select(s => (s.Name ?? "") + "|" + (s.CoordinateSystemName ?? "")));
         }
 
+        // Encodes the named-group structure as "GroupName=comp1,comp2;OtherGroup=comp3".
+        // The flat component lists in the SWComponents / CollisionComponents columns
+        // remain authoritative for legacy importers; this column lets the CSV reader
+        // re-bucket components when a group structure is desired.
+        private static string GroupsJoined(List<MeshGroup> groups)
+        {
+            if (groups == null || groups.Count == 0)
+            {
+                return string.Empty;
+            }
+            return string.Join(";", groups.Select(g =>
+            {
+                string compNames = (g.Components == null)
+                    ? string.Empty
+                    : string.Join(",", g.Components.Select(c => c.Name2));
+                return (g.Name ?? "") + "=" + compNames;
+            }));
+        }
+
         public override void SetElement(URDFElement externalElement)
         {
             base.SetElement(externalElement);
@@ -289,13 +553,8 @@ namespace SW2URDF.URDF
 
         public void SetSWComponents(Link externalLink)
         {
-            VisualComponents = (externalLink.VisualComponents != null) ?
-                new List<Component2>(externalLink.VisualComponents) :
-                new List<Component2>();
-
-            CollisionComponents = (externalLink.CollisionComponents != null) ?
-                new List<Component2>(externalLink.CollisionComponents) :
-                new List<Component2>();
+            VisualGroups = CloneGroups(externalLink.VisualGroups);
+            CollisionGroups = CloneGroups(externalLink.CollisionGroups);
 
             InertialComponents = (externalLink.InertialComponents != null) ?
                 new List<Component2>(externalLink.InertialComponents) :
@@ -327,6 +586,21 @@ namespace SW2URDF.URDF
             SWMainComponentPID = externalLink.SWMainComponentPID;
 
             isFixedFrame = externalLink.isFixedFrame;
+            CollisionUsesVisual = externalLink.CollisionUsesVisual;
+        }
+
+        private static List<MeshGroup> CloneGroups(List<MeshGroup> source)
+        {
+            List<MeshGroup> result = new List<MeshGroup>();
+            if (source == null)
+            {
+                return result;
+            }
+            foreach (MeshGroup g in source)
+            {
+                result.Add(g.Clone());
+            }
+            return result;
         }
 
         public string[] GetJointNames(bool includeFixed)
@@ -372,12 +646,13 @@ namespace SW2URDF.URDF
             switch (InertialSource)
             {
                 case InertialSource.Collision:
-                    if (CollisionComponents != null && CollisionComponents.Count > 0)
+                    List<Component2> collision = CollisionComponents;
+                    if (collision != null && collision.Count > 0)
                     {
-                        return CollisionComponents;
+                        return collision;
                     }
                     isFallback = true;
-                    return VisualComponents ?? new List<Component2>();
+                    return VisualComponents;
 
                 case InertialSource.Custom:
                     if (InertialComponents != null && InertialComponents.Count > 0)
@@ -385,11 +660,11 @@ namespace SW2URDF.URDF
                         return InertialComponents;
                     }
                     isFallback = true;
-                    return VisualComponents ?? new List<Component2>();
+                    return VisualComponents;
 
                 case InertialSource.Visual:
                 default:
-                    return VisualComponents ?? new List<Component2>();
+                    return VisualComponents;
             }
         }
     }

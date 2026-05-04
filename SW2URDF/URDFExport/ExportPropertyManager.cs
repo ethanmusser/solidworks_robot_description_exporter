@@ -58,7 +58,25 @@ namespace SW2URDF.URDFExport
         //General objects required for the PropertyManager page
 
         private readonly PropertyManagerPage2 PMPage;
+        // PMSetupGroup is the top-of-page anchor: it hosts the global controls
+        // (Preview/Export, Load Configuration, Imported File label, the four
+        // Compute checkboxes, and the Link Tree). Wrapping these in a group
+        // box declared first is the supported way to keep them above the
+        // per-link sub-sections; loose top-level controls aren't reliably
+        // ordered above subsequent group boxes.
+        // PMGroup hosts the link/joint property inputs (link name, joint name,
+        // coord systems, axis, joint type, child count). PMComponentsGroup hosts
+        // the visual / collision / inertial component selection blocks - they
+        // are split into separate sub-sections so the side-bar reads top-down
+        // as: Setup -> Link & Joint Properties -> Components -> Sites.
+        private PropertyManagerPageGroup PMSetupGroup;
         private PropertyManagerPageGroup PMGroup;
+        private PropertyManagerPageGroup PMComponentsGroup;
+        // The Visual / Collision selection boxes hold the components for the
+        // CURRENTLY ACTIVE group of that role on the active link. When the user
+        // switches groups (via the listbox) or links (via the tree), we save
+        // the SelectionBox contents back into the previously-active group and
+        // re-load the new group's contents.
         private PropertyManagerPageSelectionbox PMSelectionVisual;
         private PropertyManagerPageSelectionbox PMSelectionCollision;
         private PropertyManagerPageSelectionbox PMSelectionInertial;
@@ -77,6 +95,48 @@ namespace SW2URDF.URDFExport
         private PropertyManagerPageCheckbox PMComputeJointKinematics;
         private PropertyManagerPageCheckbox PMComputeJointLimits;
 
+        // Visual Groups sub-section: lets the user define multiple named groups
+        // of components, each producing its own STL / mesh asset / geom on
+        // export. The listbox shows the existing groups; selecting a row
+        // populates the SelectionBox above with that group's components for
+        // editing. Add Group / Remove Selected Group manage the list.
+        private PropertyManagerPageListbox PMListBoxVisualGroups;
+        private PropertyManagerPageTextbox PMTextBoxVisualGroupName;
+        private PropertyManagerPageButton PMButtonVisualGroupAdd;
+        private PropertyManagerPageButton PMButtonVisualGroupRemove;
+
+        // Collision Groups sub-section, mirrors Visual Groups. The label fields
+        // are captured so SetCollisionEditorVisible can hide / show the whole
+        // collision editor when the user toggles "Use visual groups as
+        // collision".
+        private PropertyManagerPageListbox PMListBoxCollisionGroups;
+        private PropertyManagerPageTextbox PMTextBoxCollisionGroupName;
+        private PropertyManagerPageButton PMButtonCollisionGroupAdd;
+        private PropertyManagerPageButton PMButtonCollisionGroupRemove;
+        private PropertyManagerPageLabel PMLabelCollisionGroupsHelp;
+        private PropertyManagerPageLabel PMLabelCollisionGroupsName;
+
+        // "Use visual groups as collision" toggle. When checked, the collision
+        // editor below it is hidden and the export pipeline reuses the visual
+        // meshes for collision.
+        private PropertyManagerPageCheckbox PMCheckCollisionUsesVisual;
+
+        // Index of the visual / collision group whose components are currently
+        // shown in the corresponding SelectionBox. Reset to 0 on every link
+        // switch and adjusted as the user picks rows in the listbox.
+        private int activeVisualGroupIndex = 0;
+        private int activeCollisionGroupIndex = 0;
+
+        // Guard against re-entrancy: when LoadActiveVisualGroupIntoSelectionBox /
+        // LoadActiveCollisionGroupIntoSelectionBox programmatically populate a
+        // SelectionBox via CommonSwOperations.SelectComponents, every added item
+        // fires OnSelectionboxListChanged. That handler would otherwise commit a
+        // partial selection back to the active group and bounce the listbox count
+        // while the load is in progress. The flag is set true around those
+        // programmatic loads. PropertyManager events are delivered on the
+        // SolidWorks UI thread, so a plain bool is safe here.
+        private bool suppressGroupListboxRefresh;
+
         // Sites sub-section: a small inline editor on the per-link page.
         private PropertyManagerPageGroup PMSitesGroup;
         private PropertyManagerPageListbox PMListBoxSites;
@@ -85,10 +145,12 @@ namespace SW2URDF.URDFExport
         private PropertyManagerPageButton PMButtonSiteAdd;
         private PropertyManagerPageButton PMButtonSiteRemove;
 
-        // Import / Export action group lives below the Sites group so that the
-        // "Load Configuration..." and "Preview and Export..." buttons are at the
-        // bottom of the side-bar where users naturally finish their workflow.
-        private PropertyManagerPageGroup PMActionsGroup;
+        // Import controls (Load Configuration button + the four post-import
+        // recompute checkboxes + the "Imported File:" label) all live as
+        // top-level controls on PMPage; there is no longer an "Import" group
+        // box. The post-import controls are created hidden (options = 0) and
+        // become visible after a successful CSV merge via TreeMergeCompleted ->
+        // EnableControl.
 
         private PropertyManagerPageLabel PMLabelJointName;
         private PropertyManagerPageLabel PMLabelParentLink;
@@ -146,7 +208,25 @@ namespace SW2URDF.URDFExport
         private const int SitesHelpLabelID = 46;
         private const int SitesNameLabelID = 47;
         private const int SitesListLabelID = 48;
-        private const int ActionsGroupID = 49;
+        private const int SetupGroupID = 49;
+        private const int ComponentsGroupID = 50;
+
+        // Visual Groups editor controls.
+        private const int VisualGroupsHelpLabelID = 60;
+        private const int VisualGroupsListBoxID = 61;
+        private const int VisualGroupsNameLabelID = 62;
+        private const int VisualGroupsNameTextBoxID = 63;
+        private const int VisualGroupsAddButtonID = 64;
+        private const int VisualGroupsRemoveButtonID = 65;
+
+        // Collision Groups editor controls.
+        private const int CollisionGroupsHelpLabelID = 70;
+        private const int CollisionGroupsListBoxID = 71;
+        private const int CollisionGroupsNameLabelID = 72;
+        private const int CollisionGroupsNameTextBoxID = 73;
+        private const int CollisionGroupsAddButtonID = 74;
+        private const int CollisionGroupsRemoveButtonID = 75;
+        private const int CheckCollisionUsesVisualID = 76;
 
         // Marks for the visual/collision/inertial selection boxes so SolidWorks can
         // attribute the user's selection to the right list. -1 (default mark) is reserved
@@ -437,9 +517,339 @@ namespace SW2URDF.URDFExport
                     RemoveSelectedSiteFromForm();
                     break;
 
+                case VisualGroupsAddButtonID:
+                    AddVisualGroupFromForm();
+                    break;
+
+                case VisualGroupsRemoveButtonID:
+                    RemoveSelectedVisualGroupFromForm();
+                    break;
+
+                case CollisionGroupsAddButtonID:
+                    AddCollisionGroupFromForm();
+                    break;
+
+                case CollisionGroupsRemoveButtonID:
+                    RemoveSelectedCollisionGroupFromForm();
+                    break;
+
                 default:
                     break;
             }
+        }
+
+        // Saves the components currently selected in the visual SelectionBox
+        // into the active visual group of the active link, creates a new empty
+        // group, and refreshes the listbox so the user can populate it.
+        private void AddVisualGroupFromForm()
+        {
+            LinkNode node = (LinkNode)Tree.SelectedNode;
+            if (node == null)
+            {
+                return;
+            }
+            EnsureGroupsInitialized(node);
+
+            // Commit the user's current selection into the previously-active
+            // group before we create a new one.
+            CommitActiveVisualGroupSelection(node);
+
+            string requestedName = (PMTextBoxVisualGroupName.Text ?? "").Trim();
+            string newName = !string.IsNullOrEmpty(requestedName)
+                ? requestedName
+                : NextDefaultGroupName(node.Link.VisualGroups, MeshGroup.DefaultVisualName(node.Link.Name));
+            node.Link.VisualGroups.Add(new MeshGroup(newName));
+            PMTextBoxVisualGroupName.Text = "";
+
+            activeVisualGroupIndex = node.Link.VisualGroups.Count - 1;
+            RefreshVisualGroupsListbox(node);
+            LoadActiveVisualGroupIntoSelectionBox(node);
+        }
+
+        private void RemoveSelectedVisualGroupFromForm()
+        {
+            LinkNode node = (LinkNode)Tree.SelectedNode;
+            if (node == null)
+            {
+                return;
+            }
+            EnsureGroupsInitialized(node);
+            if (node.Link.VisualGroups.Count == 0)
+            {
+                return;
+            }
+            short selected = PMListBoxVisualGroups.CurrentSelection;
+            if (selected < 0 || selected >= node.Link.VisualGroups.Count)
+            {
+                return;
+            }
+            node.Link.VisualGroups.RemoveAt(selected);
+            if (activeVisualGroupIndex >= node.Link.VisualGroups.Count)
+            {
+                activeVisualGroupIndex = node.Link.VisualGroups.Count - 1;
+            }
+            if (activeVisualGroupIndex < 0)
+            {
+                activeVisualGroupIndex = 0;
+            }
+            RefreshVisualGroupsListbox(node);
+            LoadActiveVisualGroupIntoSelectionBox(node);
+        }
+
+        private void AddCollisionGroupFromForm()
+        {
+            LinkNode node = (LinkNode)Tree.SelectedNode;
+            if (node == null)
+            {
+                return;
+            }
+            EnsureGroupsInitialized(node);
+
+            CommitActiveCollisionGroupSelection(node);
+
+            string requestedName = (PMTextBoxCollisionGroupName.Text ?? "").Trim();
+            string newName = !string.IsNullOrEmpty(requestedName)
+                ? requestedName
+                : NextDefaultGroupName(node.Link.CollisionGroups, MeshGroup.DefaultCollisionName(node.Link.Name));
+            node.Link.CollisionGroups.Add(new MeshGroup(newName));
+            PMTextBoxCollisionGroupName.Text = "";
+
+            activeCollisionGroupIndex = node.Link.CollisionGroups.Count - 1;
+            RefreshCollisionGroupsListbox(node);
+            LoadActiveCollisionGroupIntoSelectionBox(node);
+        }
+
+        private void RemoveSelectedCollisionGroupFromForm()
+        {
+            LinkNode node = (LinkNode)Tree.SelectedNode;
+            if (node == null)
+            {
+                return;
+            }
+            EnsureGroupsInitialized(node);
+            if (node.Link.CollisionGroups.Count == 0)
+            {
+                return;
+            }
+            short selected = PMListBoxCollisionGroups.CurrentSelection;
+            if (selected < 0 || selected >= node.Link.CollisionGroups.Count)
+            {
+                return;
+            }
+            node.Link.CollisionGroups.RemoveAt(selected);
+            if (activeCollisionGroupIndex >= node.Link.CollisionGroups.Count)
+            {
+                activeCollisionGroupIndex = node.Link.CollisionGroups.Count - 1;
+            }
+            if (activeCollisionGroupIndex < 0)
+            {
+                activeCollisionGroupIndex = 0;
+            }
+            RefreshCollisionGroupsListbox(node);
+            LoadActiveCollisionGroupIntoSelectionBox(node);
+        }
+
+        // Commits the visual SelectionBox's current contents into the active
+        // visual group on the active link. Called whenever the user is about
+        // to change the active group or active node.
+        private void CommitActiveVisualGroupSelection(LinkNode node)
+        {
+            if (node == null)
+            {
+                return;
+            }
+            EnsureGroupsInitialized(node);
+            if (activeVisualGroupIndex < 0 || activeVisualGroupIndex >= node.Link.VisualGroups.Count)
+            {
+                return;
+            }
+            MeshGroup group = node.Link.VisualGroups[activeVisualGroupIndex];
+            if (group.Components == null)
+            {
+                group.Components = new List<Component2>();
+            }
+            group.Components.Clear();
+            CommonSwOperations.GetSelectedComponents(
+                ActiveSWModel, group.Components, PMSelectionVisual.Mark);
+        }
+
+        private void CommitActiveCollisionGroupSelection(LinkNode node)
+        {
+            if (node == null)
+            {
+                return;
+            }
+            EnsureGroupsInitialized(node);
+            if (activeCollisionGroupIndex < 0 || activeCollisionGroupIndex >= node.Link.CollisionGroups.Count)
+            {
+                return;
+            }
+            MeshGroup group = node.Link.CollisionGroups[activeCollisionGroupIndex];
+            if (group.Components == null)
+            {
+                group.Components = new List<Component2>();
+            }
+            group.Components.Clear();
+            CommonSwOperations.GetSelectedComponents(
+                ActiveSWModel, group.Components, PMSelectionCollision.Mark);
+        }
+
+        // Loads the active visual group's components into the visual
+        // SelectionBox. Called after the active group changes.
+        private void LoadActiveVisualGroupIntoSelectionBox(LinkNode node)
+        {
+            // Drop the previous selection (only the visual mark) so we don't
+            // accumulate components from the previously-active group.
+            ActiveSWModel.ClearSelection2(true);
+            if (node == null)
+            {
+                return;
+            }
+            EnsureGroupsInitialized(node);
+            if (activeVisualGroupIndex < 0 || activeVisualGroupIndex >= node.Link.VisualGroups.Count)
+            {
+                return;
+            }
+            MeshGroup group = node.Link.VisualGroups[activeVisualGroupIndex];
+            if (group.Components == null)
+            {
+                return;
+            }
+            // Programmatically populating the SelectionBox fires
+            // OnSelectionboxListChanged once per added item. Suppress the
+            // commit+refresh pipeline during the load so the listbox count
+            // does not flicker.
+            suppressGroupListboxRefresh = true;
+            try
+            {
+                CommonSwOperations.SelectComponents(
+                    ActiveSWModel, group.Components, false, PMSelectionVisual.Mark);
+            }
+            finally
+            {
+                suppressGroupListboxRefresh = false;
+            }
+        }
+
+        private void LoadActiveCollisionGroupIntoSelectionBox(LinkNode node)
+        {
+            ActiveSWModel.ClearSelection2(true);
+            if (node == null)
+            {
+                return;
+            }
+            EnsureGroupsInitialized(node);
+            if (activeCollisionGroupIndex < 0 || activeCollisionGroupIndex >= node.Link.CollisionGroups.Count)
+            {
+                return;
+            }
+            MeshGroup group = node.Link.CollisionGroups[activeCollisionGroupIndex];
+            if (group.Components == null)
+            {
+                return;
+            }
+            // See LoadActiveVisualGroupIntoSelectionBox for why this is guarded.
+            suppressGroupListboxRefresh = true;
+            try
+            {
+                CommonSwOperations.SelectComponents(
+                    ActiveSWModel, group.Components, false, PMSelectionCollision.Mark);
+            }
+            finally
+            {
+                suppressGroupListboxRefresh = false;
+            }
+        }
+
+        public void RefreshVisualGroupsListbox(LinkNode node)
+        {
+            PMListBoxVisualGroups.Clear();
+            if (node == null || node.Link.VisualGroups == null)
+            {
+                return;
+            }
+            for (int i = 0; i < node.Link.VisualGroups.Count; i++)
+            {
+                MeshGroup g = node.Link.VisualGroups[i];
+                int count = (g.Components != null) ? g.Components.Count : 0;
+                string label = (string.IsNullOrEmpty(g.Name) ? "(unnamed)" : g.Name) +
+                    " (" + count + " comp.)";
+                PMListBoxVisualGroups.AddItems(label);
+            }
+            if (activeVisualGroupIndex >= 0 && activeVisualGroupIndex < node.Link.VisualGroups.Count)
+            {
+                PMListBoxVisualGroups.CurrentSelection = (short)activeVisualGroupIndex;
+            }
+        }
+
+        public void RefreshCollisionGroupsListbox(LinkNode node)
+        {
+            PMListBoxCollisionGroups.Clear();
+            if (node == null || node.Link.CollisionGroups == null)
+            {
+                return;
+            }
+            for (int i = 0; i < node.Link.CollisionGroups.Count; i++)
+            {
+                MeshGroup g = node.Link.CollisionGroups[i];
+                int count = (g.Components != null) ? g.Components.Count : 0;
+                string label = (string.IsNullOrEmpty(g.Name) ? "(unnamed)" : g.Name) +
+                    " (" + count + " comp.)";
+                PMListBoxCollisionGroups.AddItems(label);
+            }
+            if (activeCollisionGroupIndex >= 0 && activeCollisionGroupIndex < node.Link.CollisionGroups.Count)
+            {
+                PMListBoxCollisionGroups.CurrentSelection = (short)activeCollisionGroupIndex;
+            }
+        }
+
+        // Ensures the link has a non-null VisualGroups / CollisionGroups list
+        // and at least one visual group (so the SelectionBox always has a
+        // place to commit to). Collision is allowed to be empty (URDF
+        // fallback).
+        private void EnsureGroupsInitialized(LinkNode node)
+        {
+            if (node == null || node.Link == null)
+            {
+                return;
+            }
+            node.Link.MigrateLegacyComponents();
+            if (node.Link.VisualGroups == null)
+            {
+                node.Link.VisualGroups = new List<MeshGroup>();
+            }
+            if (node.Link.VisualGroups.Count == 0)
+            {
+                node.Link.VisualGroups.Add(new MeshGroup(MeshGroup.DefaultVisualName(node.Link.Name)));
+            }
+            if (node.Link.CollisionGroups == null)
+            {
+                node.Link.CollisionGroups = new List<MeshGroup>();
+            }
+        }
+
+        // Builds a default name for a brand-new group that doesn't collide
+        // with the existing names on the link (e.g. "<link>_visual_2").
+        private static string NextDefaultGroupName(List<MeshGroup> groups, string baseName)
+        {
+            HashSet<string> existing = new HashSet<string>();
+            foreach (MeshGroup g in groups)
+            {
+                if (!string.IsNullOrEmpty(g.Name))
+                {
+                    existing.Add(g.Name);
+                }
+            }
+            if (!existing.Contains(baseName))
+            {
+                return baseName;
+            }
+            int n = 2;
+            while (existing.Contains(baseName + "_" + n))
+            {
+                n++;
+            }
+            return baseName + "_" + n;
         }
 
         private void AddSiteFromForm()
@@ -582,6 +992,34 @@ namespace SW2URDF.URDFExport
         {
             // Move focus to next selection box if right-mouse button pressed
             PMPage.SetCursor((int)swPropertyManagerPageCursors_e.swPropertyManagerPageCursors_Advance);
+
+            // The Visual / Collision SelectionBoxes mirror the active group's
+            // components; when the user adds or removes a pick we must commit
+            // back to the group and rebuild the listbox row text so the
+            // "(N comp.)" count stays in sync without requiring a re-click.
+            // The suppress flag short-circuits programmatic populates done by
+            // LoadActive*GroupIntoSelectionBox.
+            if (suppressGroupListboxRefresh)
+            {
+                return;
+            }
+
+            LinkNode active = (Tree != null) ? (LinkNode)Tree.SelectedNode : null;
+            if (active == null)
+            {
+                return;
+            }
+
+            if (Id == SelectionVisualID)
+            {
+                CommitActiveVisualGroupSelection(active);
+                RefreshVisualGroupsListbox(active);
+            }
+            else if (Id == SelectionCollisionID)
+            {
+                CommitActiveCollisionGroupSelection(active);
+                RefreshCollisionGroupsListbox(active);
+            }
         }
 
         bool IPropertyManagerPage2Handler9.OnSubmitSelection(
@@ -803,13 +1241,113 @@ namespace SW2URDF.URDFExport
 
         #endregion TreeView handler methods
 
-        //A method that sets up the Property Manager Page
+        //A method that sets up the Property Manager Page.
+        //
+        // Visual order (top -> bottom):
+        //   Sub-section "Setup": Preview/Export, Load Configuration,
+        //                "Imported File:" label (hidden until CSV import),
+        //                4 "Compute X" checkboxes (hidden until CSV import),
+        //                Link Tree (host control)
+        //   Sub-section "Link & Joint Properties"
+        //   Sub-section "Components" (visual / collision toggle / collision /
+        //                inertial)
+        //   Sub-section "Sites (MJCF)"
+        //
+        // The Tree object's full setup (event wiring, handle bind, root node,
+        // focus) happens at the bottom of this method so the first
+        // TreeAfterSelect -> FillPropertyManager call sees fully-constructed
+        // PM controls.
         private void SetupPropertyManagerPage(ref string caption, ref string tip,
             ref long options, ref int controlType, ref int alignment)
         {
-            //Begin adding the controls to the page
-            //Create the group box
-            caption = "Configure and Organize Links";
+            // === Sub-section "Setup" (declared first to anchor the top of the page) ===
+            // SolidWorks renders AddGroupBox items in declaration order, but
+            // free top-level controls (PMPage.AddControl2 outside any group)
+            // are not guaranteed to sit above subsequent group boxes. Wrapping
+            // the global controls (Preview/Export, Load Configuration, the
+            // post-import options, and the Link Tree) in their own group box
+            // declared first is the supported way to keep them at the top of
+            // the page across SolidWorks versions.
+            caption = "Setup";
+            options = (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible +
+                (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Expanded;
+            PMSetupGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
+                SetupGroupID, caption, (int)options);
+
+            // Setup row 1: Preview and Export... button.
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMButtonExport = PMSetupGroup.AddControl2(ButtonExportID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Button,
+                "Preview and Export...", 0, (int)options,
+                "Preview the generated description and export the package");
+
+            // Setup row 2: Load Configuration... button.
+            PMButtonLoad = PMSetupGroup.AddControl2(LoadConfigurationID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Button,
+                "Load Configuration...", 0, (int)options,
+                "Import values from a CSV file");
+
+            // Setup row 3: "Imported File:" label, hidden until a CSV import.
+            // options = 0 keeps it invisible by default; TreeMergeCompleted ->
+            // EnableControl flips Visible / Enabled to true after a successful
+            // CSV merge.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Imported File: ";
+            tip = "";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = 0;
+            PMLabelCSVFilename = PMSetupGroup.AddControl2(
+                LoadedCSVFilenameID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            // Setup rows 4-7: post-import "Compute X" checkboxes. Same hidden-
+            // by-default treatment as the label above; gate which CSV-loaded
+            // values get recomputed from CAD on export. Only the user-visible
+            // label text and field assignments differ across the four.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Checkbox;
+            caption = "Compute Mass and Inertia";
+            tip = "External values have been loaded. Check this box to recompute the Mass and Inertia values";
+            options = 0;
+            PMComputeMassInertia = PMSetupGroup.AddControl2(
+                ComputeMassInertiaID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMComputeMassInertia.Checked = true;
+
+            caption = "Compute Visual and Collision";
+            tip = "External values have been loaded. Check this box to recompute the visual and collision values";
+            PMComputeVisualCollision = PMSetupGroup.AddControl2(
+                ComputeVisualCollisionID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMComputeVisualCollision.Checked = true;
+
+            caption = "Compute Joint Kinematics";
+            tip = "External values have been loaded. Check this box to recompute the joint kinematics";
+            PMComputeJointKinematics = PMSetupGroup.AddControl2(
+                ComputeJointKinematicsID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMComputeJointKinematics.Checked = true;
+
+            caption = "Compute Joint Limits";
+            tip = "External values have been loaded. Check this box to recompute the joint limits";
+            PMComputeJointLimits = PMSetupGroup.AddControl2(
+                ComputeJointLimitsID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMComputeJointLimits.Checked = true;
+
+            // Setup row 8: Link Tree host control. Only the host
+            // PropertyManagerPageWindowFromHandle is created here. The actual
+            // TreeView (event handlers, root node, focus) is wired up at the
+            // very end of this method so the first TreeAfterSelect ->
+            // FillPropertyManager call sees fully-constructed PM controls.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_WindowFromHandle;
+            caption = "Link Tree";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMTree = PMSetupGroup.AddControl2(dotNetTree,
+                (short)swPropertyManagerPageControlType_e.swControlType_WindowFromHandle, caption, 0, (int)options, "");
+            PMTree.Height = 163;
+
+            // === Sub-section "Link & Joint Properties" ===
+            // Per-link inputs that don't involve component selection:
+            // names, coord systems, axis, joint type, child count.
+            caption = "Link & Joint Properties";
             options = (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible +
                 (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Expanded;
             PMGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(GroupID, caption, (int)options);
@@ -836,7 +1374,7 @@ namespace SW2URDF.URDFExport
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            
+
             //Create the link name text box
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Textbox;
             caption = "base_link";
@@ -947,7 +1485,35 @@ namespace SW2URDF.URDFExport
             PMComboBoxJointType.AddItems(new string[] {
                 "Automatically Detect", "continuous", "revolute", "prismatic", "fixed" });
 
-            // === Component selection: Visual / Collision / Inertial ===
+            //Number of child links - kept inside Link & Joint Properties so the
+            //per-link basics (names, frames, joint, child count) are grouped.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Number of child links";
+            tip = "Enter the number of child links and they will be automatically added";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Numberbox;
+            caption = "";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
+            tip = "Enter the number of child links and they will be automatically added";
+            options = (int)swAddControlOptions_e.swControlOptions_Enabled +
+                (int)swAddControlOptions_e.swControlOptions_Visible;
+            PMNumberBoxChildCount = PMGroup.AddControl2(
+                NumBoxChildCountID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMNumberBoxChildCount.SetRange2(
+                (int)swNumberboxUnitType_e.swNumberBox_UnitlessInteger, 0, int.MaxValue, true, 1, 1, 1);
+            PMNumberBoxChildCount.Value = 0;
+
+            // === Sub-section "Components" ===
+            // Inertial source selector + Visual / Collision group editors +
+            // optional Custom-mode Inertial Components selection box.
+            caption = "Components";
+            options = (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible +
+                (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Expanded;
+            PMComponentsGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
+                ComponentsGroupID, caption, (int)options);
 
             swSelectType_e[] filters = new swSelectType_e[1];
             filters[0] = swSelectType_e.swSelCOMPONENTS;
@@ -960,7 +1526,7 @@ namespace SW2URDF.URDFExport
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMLabelInertialSource = (PropertyManagerPageLabel)PMGroup.AddControl2(
+            PMLabelInertialSource = (PropertyManagerPageLabel)PMComponentsGroup.AddControl2(
                 LabelInertialSourceID, (short)controlType, caption, (short)alignment, (int)options, tip);
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Combobox;
@@ -969,7 +1535,7 @@ namespace SW2URDF.URDFExport
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMComboBoxInertialSource = (PropertyManagerPageCombobox)PMGroup.AddControl2(
+            PMComboBoxInertialSource = (PropertyManagerPageCombobox)PMComponentsGroup.AddControl2(
                 ComboInertialSourceID, (short)controlType, caption, (short)alignment, (int)options, tip);
             PMComboBoxInertialSource.Style =
                 (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
@@ -979,23 +1545,51 @@ namespace SW2URDF.URDFExport
                 "Custom (Inertial Components)" });
             PMComboBoxInertialSource.CurrentSelection = 0;
 
-            // --- Visual components ---
+            // --- Visual Groups -------------------------------------------------
+            // Each visual group becomes one STL + one <visual> (URDF) /
+            // <mesh>+<geom class="visual"> (MJCF) on export. Single-group case
+            // keeps the historical "<link>_visual.STL" filename and behaves
+            // identically to the legacy single-list UI.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
-            caption = "Visual Components";
-            tip = "Select components used to build the visual mesh for this link/body";
+            caption = "Visual Groups";
+            tip = "Define one or more named groups of components. Each group is exported as its own visual mesh.";
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMLabelVisualComponents = (PropertyManagerPageLabel)PMGroup.AddControl2(
+            PMLabelVisualComponents = (PropertyManagerPageLabel)PMComponentsGroup.AddControl2(
                 LabelVisualID, (short)controlType, caption, (short)alignment, (int)options, tip);
 
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Click a row to load that group's components into the box below. To add a new group, type a name and click Add Group.";
+            tip = "Components selected in the box below belong to the highlighted group.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMComponentsGroup.AddControl2(
+                VisualGroupsHelpLabelID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Listbox;
+            caption = "";
+            tip = "Visual groups defined for this link. Click a row to edit it; click Remove Selected Group to delete it.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMListBoxVisualGroups = (PropertyManagerPageListbox)PMComponentsGroup.AddControl2(
+                VisualGroupsListBoxID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMListBoxVisualGroups.Height = 50;
+
+            // SelectionBox sits directly under the listbox so the visual flow
+            // is "pick a row -> edit its components below". The bottom half of
+            // the editor (name label / textbox / Add / Remove) handles the
+            // separate workflow of creating or removing groups.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
-            caption = "Visual Components";
+            caption = "Components for the highlighted visual group";
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMSelectionVisual = (PropertyManagerPageSelectionbox)PMGroup.AddControl2(
-                SelectionVisualID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMSelectionVisual = (PropertyManagerPageSelectionbox)PMComponentsGroup.AddControl2(
+                SelectionVisualID, (short)controlType, caption, (short)alignment, (int)options,
+                "Components belonging to the visual group selected above.");
             PMSelectionVisual.AllowSelectInMultipleBoxes = true;
             PMSelectionVisual.SingleEntityOnly = false;
             PMSelectionVisual.AllowMultipleSelectOfSameEntity = false;
@@ -1003,29 +1597,143 @@ namespace SW2URDF.URDFExport
             PMSelectionVisual.SetSelectionFilters(filterObj);
             PMSelectionVisual.Mark = VisualSelectionMark;
 
-            // --- Collision components ---
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
-            caption = "Collision Components";
-            tip = "Select components used to build the collision mesh. Empty re-uses the visual mesh.";
+            caption = "Group name (for new group)";
+            tip = "Used as the new group's display name and as the suffix on its mesh filename.";
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMLabelCollisionComponents = (PropertyManagerPageLabel)PMGroup.AddControl2(
-                LabelCollisionID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMComponentsGroup.AddControl2(
+                VisualGroupsNameLabelID, (short)controlType, caption, (short)alignment, (int)options, tip);
 
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
-            caption = "Collision Components";
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Textbox;
+            caption = "";
+            tip = "Group name for the next group to add.";
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMSelectionCollision = (PropertyManagerPageSelectionbox)PMGroup.AddControl2(
-                SelectionCollisionID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMTextBoxVisualGroupName = (PropertyManagerPageTextbox)PMComponentsGroup.AddControl2(
+                VisualGroupsNameTextBoxID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
+            caption = "Add Visual Group";
+            tip = "Save the current selection into the highlighted group, then create a new empty group.";
+            alignment = 0;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMButtonVisualGroupAdd = (PropertyManagerPageButton)PMComponentsGroup.AddControl2(
+                VisualGroupsAddButtonID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
+            caption = "Remove Selected Visual Group";
+            tip = "Delete the highlighted visual group from this link.";
+            alignment = 0;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMButtonVisualGroupRemove = (PropertyManagerPageButton)PMComponentsGroup.AddControl2(
+                VisualGroupsRemoveButtonID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            // --- "Use visual groups as collision" toggle ----------------------
+            // Sits between the Visual Groups block and the Collision Groups
+            // editor. When checked, SetCollisionEditorVisible(false) hides the
+            // entire collision editor below and ExportHelper reuses the visual
+            // meshes for collision via Link.CollisionUsesVisual.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Checkbox;
+            caption = "Use visual groups as collision";
+            tip = "When checked, the visual groups are reused as collision meshes; the collision editor below is hidden so you don't have to re-pick the same components.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMCheckCollisionUsesVisual = PMComponentsGroup.AddControl2(
+                CheckCollisionUsesVisualID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMCheckCollisionUsesVisual.Checked = false;
+
+            // --- Collision Groups ----------------------------------------------
+            // Mirrors Visual Groups. An empty Collision Groups list falls back
+            // to using the visual meshes for collision (URDF/MJCF backward-
+            // compat behavior).
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Collision Groups";
+            tip = "Define one or more named groups of components. Each group is exported as its own collision mesh. Empty list reuses the visual meshes for collision.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMLabelCollisionComponents = (PropertyManagerPageLabel)PMComponentsGroup.AddControl2(
+                LabelCollisionID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Click a row to load that group's components into the box below. To add a new group, type a name and click Add Group.";
+            tip = "Components selected in the box below belong to the highlighted group.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMLabelCollisionGroupsHelp = (PropertyManagerPageLabel)PMComponentsGroup.AddControl2(
+                CollisionGroupsHelpLabelID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Listbox;
+            caption = "";
+            tip = "Collision groups defined for this link.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMListBoxCollisionGroups = (PropertyManagerPageListbox)PMComponentsGroup.AddControl2(
+                CollisionGroupsListBoxID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMListBoxCollisionGroups.Height = 50;
+
+            // SelectionBox sits directly under the listbox so the visual flow
+            // is "pick a row -> edit its components below". The bottom half of
+            // the editor (name label / textbox / Add / Remove) handles the
+            // separate workflow of creating or removing groups.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
+            caption = "Components for the highlighted collision group";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMSelectionCollision = (PropertyManagerPageSelectionbox)PMComponentsGroup.AddControl2(
+                SelectionCollisionID, (short)controlType, caption, (short)alignment, (int)options,
+                "Components belonging to the collision group selected above.");
             PMSelectionCollision.AllowSelectInMultipleBoxes = true;
             PMSelectionCollision.SingleEntityOnly = false;
             PMSelectionCollision.AllowMultipleSelectOfSameEntity = false;
             PMSelectionCollision.Height = 40;
             PMSelectionCollision.SetSelectionFilters(filterObj);
             PMSelectionCollision.Mark = CollisionSelectionMark;
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Group name (for new group)";
+            tip = "Used as the new group's display name and as the suffix on its mesh filename.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMLabelCollisionGroupsName = (PropertyManagerPageLabel)PMComponentsGroup.AddControl2(
+                CollisionGroupsNameLabelID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Textbox;
+            caption = "";
+            tip = "Group name for the next group to add.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMTextBoxCollisionGroupName = (PropertyManagerPageTextbox)PMComponentsGroup.AddControl2(
+                CollisionGroupsNameTextBoxID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
+            caption = "Add Collision Group";
+            tip = "Save the current selection into the highlighted group, then create a new empty group.";
+            alignment = 0;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMButtonCollisionGroupAdd = (PropertyManagerPageButton)PMComponentsGroup.AddControl2(
+                CollisionGroupsAddButtonID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
+            caption = "Remove Selected Collision Group";
+            tip = "Delete the highlighted collision group from this link.";
+            alignment = 0;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMButtonCollisionGroupRemove = (PropertyManagerPageButton)PMComponentsGroup.AddControl2(
+                CollisionGroupsRemoveButtonID, (short)controlType, caption, (short)alignment, (int)options, tip);
 
             // --- Inertial components (only used when Inertial Source = Custom) ---
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
@@ -1034,7 +1742,7 @@ namespace SW2URDF.URDFExport
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMLabelInertialComponents = (PropertyManagerPageLabel)PMGroup.AddControl2(
+            PMLabelInertialComponents = (PropertyManagerPageLabel)PMComponentsGroup.AddControl2(
                 LabelInertialID, (short)controlType, caption, (short)alignment, (int)options, tip);
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
@@ -1042,7 +1750,7 @@ namespace SW2URDF.URDFExport
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMSelectionInertial = (PropertyManagerPageSelectionbox)PMGroup.AddControl2(
+            PMSelectionInertial = (PropertyManagerPageSelectionbox)PMComponentsGroup.AddControl2(
                 SelectionInertialID, (short)controlType, caption, (short)alignment, (int)options, tip);
             PMSelectionInertial.AllowSelectInMultipleBoxes = true;
             PMSelectionInertial.SingleEntityOnly = false;
@@ -1051,16 +1759,18 @@ namespace SW2URDF.URDFExport
             PMSelectionInertial.SetSelectionFilters(filterObj);
             PMSelectionInertial.Mark = InertialSelectionMark;
 
-            // === Sites sub-section (MJCF only; ignored by URDF writer) ===
-            // Workflow is: type a name -> pick a reference coord system -> click
-            // Add Site. The list at the bottom shows what has already been added.
+            // === Sub-section "Sites (MJCF)" ===
+            // Layout mirrors the Visual / Collision groups editor:
+            //   help -> sites listbox + label -> name input -> coord-system combo
+            //   -> Add | Remove buttons (side-by-side).
+            // MJCF-only; ignored by the URDF writer.
             caption = "Sites (MJCF)";
             options = (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible;
             PMSitesGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
                 SitesGroupID, caption, (int)options);
 
-            // Help label so users know the box is not a selection target like the
-            // visual / collision selection boxes above.
+            // Help label so users know the box is not a selection target like
+            // the visual / collision selection boxes above.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             caption = "Type a site name, pick a reference coord. system, then click Add Site.";
             tip = "Sites are MJCF-only frames attached to a body. They are ignored when exporting URDF.";
@@ -1069,6 +1779,27 @@ namespace SW2URDF.URDFExport
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
             PMSitesGroup.AddControl2(
                 SitesHelpLabelID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            // Sites listbox + its header label, placed directly under the help
+            // label so this section reads top-down like the Groups editor.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            caption = "Sites defined for this link";
+            tip = "Read-only summary. Use Remove Selected Site to delete one.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMSitesGroup.AddControl2(
+                SitesListLabelID, (short)controlType, caption, (short)alignment, (int)options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Listbox;
+            caption = "";
+            tip = "Sites already added to this link. Select one and click Remove Selected Site to delete it.";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            PMListBoxSites = (PropertyManagerPageListbox)PMSitesGroup.AddControl2(
+                SitesListBoxID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMListBoxSites.Height = 50;
 
             // Site name label + textbox.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
@@ -1102,7 +1833,8 @@ namespace SW2URDF.URDFExport
                 (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
             PMComboBoxSiteCoordSys.Height = 18;
 
-            // Add site button.
+            // Add | Remove site buttons, laid out side-by-side at the bottom of
+            // the Sites editor.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
             caption = "Add Site";
             tip = "Add the entered site to this link";
@@ -1112,30 +1844,6 @@ namespace SW2URDF.URDFExport
             PMButtonSiteAdd = (PropertyManagerPageButton)PMSitesGroup.AddControl2(
                 SitesAddButtonID, (short)controlType, caption, (short)alignment, (int)options, tip);
 
-            // Label above the read-only listing of already-added sites.
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
-            caption = "Sites defined for this link";
-            tip = "Read-only summary. Use Remove Selected Site to delete one.";
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            options = (int)swAddControlOptions_e.swControlOptions_Visible +
-                (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMSitesGroup.AddControl2(
-                SitesListLabelID, (short)controlType, caption, (short)alignment, (int)options, tip);
-
-            // List of existing sites (display + selection target for the Remove
-            // button below). Not a SolidWorks SelectionBox; the user does not click
-            // into the SolidWorks tree from here.
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Listbox;
-            caption = "";
-            tip = "Sites already added to this link. Select one and click Remove Selected Site to delete it.";
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            options = (int)swAddControlOptions_e.swControlOptions_Visible +
-                (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMListBoxSites = (PropertyManagerPageListbox)PMSitesGroup.AddControl2(
-                SitesListBoxID, (short)controlType, caption, (short)alignment, (int)options, tip);
-            PMListBoxSites.Height = 50;
-
-            // Remove site button.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
             caption = "Remove Selected Site";
             tip = "Remove the selected site from the list";
@@ -1145,110 +1853,11 @@ namespace SW2URDF.URDFExport
             PMButtonSiteRemove = (PropertyManagerPageButton)PMSitesGroup.AddControl2(
                 SitesRemoveButtonID, (short)controlType, caption, (short)alignment, (int)options, tip);
 
-            //Create the number box label
-            //Create the link name text box label
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
-            caption = "Number of child links";
-            tip = "Enter the number of child links and they will be automatically added";
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            options = (int)swAddControlOptions_e.swControlOptions_Visible +
-                (int)swAddControlOptions_e.swControlOptions_Enabled;
-            
-            //Create the number box
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Numberbox;
-            caption = "";
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            tip = "Enter the number of child links and they will be automatically added";
-            options = (int)swAddControlOptions_e.swControlOptions_Enabled +
-                (int)swAddControlOptions_e.swControlOptions_Visible;
-            PMNumberBoxChildCount = PMGroup.AddControl2(
-                NumBoxChildCountID, (short)controlType, caption, (short)alignment, (int)options, tip);
-            PMNumberBoxChildCount.SetRange2(
-                (int)swNumberboxUnitType_e.swNumberBox_UnitlessInteger, 0, int.MaxValue, true, 1, 1, 1);
-            PMNumberBoxChildCount.Value = 0;
-
-            // === Import / Export action group ===
-            // Sits below the Sites group so the workflow flows top-down: first
-            // configure the link tree, then sites, and finally import / export.
-            caption = "Import / Export";
-            options = (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible +
-                (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Expanded;
-            PMActionsGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
-                ActionsGroupID, caption, (int)options);
-
-            // Load Configuration button
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
-            caption = "Load Configuration...";
-            tip = "Import values from a CSV file";
-            alignment = 0;
-            options = (int)swAddControlOptions_e.swControlOptions_Visible +
-                (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMButtonLoad = PMActionsGroup.AddControl2(
-                LoadConfigurationID, (short)controlType, caption, (short)alignment, (int)options, tip);
-            (PMButtonLoad as IPropertyManagerPageControl).Width = 200;
-
-            // Loaded CSV Filename label
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
-            caption = "Imported File: ";
-            tip = "";
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            options = 0;
-            PMLabelCSVFilename = PMActionsGroup.AddControl2(
-                LoadedCSVFilenameID, (short)controlType, caption, (short)alignment, (int)options, tip);
-
-            // Create Check Boxes to select whether to recompute values
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Checkbox;
-            caption = "Compute Mass and Inertia";
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            tip = "External values have been loaded. Check this box to recompute the Mass and Inertia values";
-            options = 0;
-            PMComputeMassInertia = PMActionsGroup.AddControl2(
-                ComputeMassInertiaID, (short)controlType, caption, (short)alignment, (int)options, tip);
-            PMComputeMassInertia.Checked = true;
-
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Checkbox;
-            caption = "Compute Visual and Collision";
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            tip = "External values have been loaded. Check this box to recompute the visual and collision values";
-            options = 0;
-            PMComputeVisualCollision = PMActionsGroup.AddControl2(
-                ComputeVisualCollisionID, (short)controlType, caption, (short)alignment, (int)options, tip);
-            PMComputeVisualCollision.Checked = true;
-
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Checkbox;
-            caption = "Compute Joint Kinematics";
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            tip = "External values have been loaded. Check this box to recompute the joint kinematics";
-            options = 0;
-            PMComputeJointKinematics = PMActionsGroup.AddControl2(
-                ComputeJointKinematicsID, (short)controlType, caption, (short)alignment, (int)options, tip);
-            PMComputeJointKinematics.Checked = true;
-
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Checkbox;
-            caption = "Compute Joint Limits";
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            tip = "External values have been loaded. Check this box to recompute the joint limits";
-            options = 0;
-            PMComputeJointLimits = PMActionsGroup.AddControl2(
-                ComputeJointLimitsID, (short)controlType, caption, (short)alignment, (int)options, tip);
-            PMComputeJointLimits.Checked = true;
-
-            options = (int)swAddControlOptions_e.swControlOptions_Visible +
-                (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMButtonExport = PMActionsGroup.AddControl2(ButtonExportID,
-                (short)swPropertyManagerPageControlType_e.swControlType_Button,
-                "Preview and Export...", 0, (int)options,
-                "Preview the generated description and export the package");
-            (PMButtonExport as IPropertyManagerPageControl).Width = 200;
-
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_WindowFromHandle;
-            caption = "Link Tree";
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            options = (int)swAddControlOptions_e.swControlOptions_Visible +
-                (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMTree = PMPage.AddControl2(dotNetTree,
-                (short)swPropertyManagerPageControlType_e.swControlType_WindowFromHandle, caption, 0, (int)options, "");
-            PMTree.Height = 163;
+            // === Tree object setup (deferred to the end) ===
+            // Wired up here so the first TreeAfterSelect -> FillPropertyManager
+            // call sees fully-constructed PMComboBox / PMListBox / PMSelection
+            // controls. The host PMTree control was created at the top of the
+            // method as a top-level page control.
             Tree = new TreeView
             {
                 Height = 163,
@@ -1267,15 +1876,11 @@ namespace SW2URDF.URDFExport
 
             ToolStripMenuItem addChild = new ToolStripMenuItem();
             ToolStripMenuItem removeChild = new ToolStripMenuItem();
-            //ToolStripMenuItem renameChild = new ToolStripMenuItem();
             addChild.Text = "Add Child Link";
             addChild.Click += new EventHandler(AddChildClick);
 
             removeChild.Text = "Remove";
             removeChild.Click += new EventHandler(RemoveChildClick);
-            //renameChild.Text = "Rename";
-            //renameChild.Click += new System.EventHandler(this.renameChild_Click);
-            //docMenu.Items.AddRange(new ToolStripMenuItem[] { addChild, removeChild, renameChild });
             docMenu.Items.AddRange(new ToolStripMenuItem[] { addChild, removeChild });
             LinkNode node = CreateEmptyNode(null);
             node.ContextMenuStrip = docMenu;
@@ -1285,6 +1890,34 @@ namespace SW2URDF.URDFExport
             PMPage.SetFocus(dotNetTree);
         }
 
+        // Toggle the visibility of every control in the Collision Groups
+        // editor. Used by OnCheckboxCheck to hide the editor when the user
+        // checks "Use visual groups as collision". Both Visible and Enabled are
+        // flipped together so a hidden control is also non-interactive.
+        private void SetCollisionEditorVisible(bool visible)
+        {
+            object[] collisionEditorControls = new object[]
+            {
+                PMLabelCollisionComponents,
+                PMLabelCollisionGroupsHelp,
+                PMListBoxCollisionGroups,
+                PMLabelCollisionGroupsName,
+                PMTextBoxCollisionGroupName,
+                PMSelectionCollision,
+                PMButtonCollisionGroupAdd,
+                PMButtonCollisionGroupRemove,
+            };
+            foreach (object ctl in collisionEditorControls)
+            {
+                IPropertyManagerPageControl pageControl = ctl as IPropertyManagerPageControl;
+                if (pageControl != null)
+                {
+                    pageControl.Visible = visible;
+                    pageControl.Enabled = visible;
+                }
+            }
+        }
+
         #region Not implemented handler methods
 
         // These methods are still active. The exceptions that are thrown only cause the debugger
@@ -1292,8 +1925,24 @@ namespace SW2URDF.URDFExport
         // regularly called anyway
         void IPropertyManagerPage2Handler9.OnCheckboxCheck(int Id, bool Checked)
         {
-            logger.Info("OnCheckboxCheck called. This method no longer throws an Exception. " +
-                " It just silently does nothing. Ok, except for this logging message");
+            if (Id == CheckCollisionUsesVisualID)
+            {
+                SetCollisionEditorVisible(!Checked);
+
+                // Persist the toggle on the active node so a later save round-
+                // trip captures it. SaveActiveNode is also called when the
+                // user navigates away, but flipping this flag immediately keeps
+                // the data model in sync with the UI for any code path that
+                // peeks at node.Link.CollisionUsesVisual before the next save.
+                LinkNode active = (LinkNode)Tree?.SelectedNode;
+                if (active != null)
+                {
+                    active.Link.CollisionUsesVisual = Checked;
+                }
+                return;
+            }
+
+            logger.Info("OnCheckboxCheck called for Id=" + Id + ". No special handler registered.");
         }
 
         void IPropertyManagerPage2Handler9.OnComboboxEditChanged(int Id, string Text)
@@ -1322,8 +1971,39 @@ namespace SW2URDF.URDFExport
 
         void IPropertyManagerPage2Handler9.OnListboxSelectionChanged(int Id, int Item)
         {
-            logger.Info("OnListboxSelectionChanged called. This method no longer throws an " +
-                "Exception. It just silently does nothing. Ok, except for this logging message");
+            try
+            {
+                LinkNode node = (LinkNode)Tree.SelectedNode;
+                if (node == null)
+                {
+                    return;
+                }
+                if (Id == VisualGroupsListBoxID)
+                {
+                    // Save the previous group's selection before switching.
+                    CommitActiveVisualGroupSelection(node);
+                    if (Item >= 0 && Item < (node.Link.VisualGroups != null ? node.Link.VisualGroups.Count : 0))
+                    {
+                        activeVisualGroupIndex = Item;
+                        LoadActiveVisualGroupIntoSelectionBox(node);
+                        RefreshVisualGroupsListbox(node);
+                    }
+                }
+                else if (Id == CollisionGroupsListBoxID)
+                {
+                    CommitActiveCollisionGroupSelection(node);
+                    if (Item >= 0 && Item < (node.Link.CollisionGroups != null ? node.Link.CollisionGroups.Count : 0))
+                    {
+                        activeCollisionGroupIndex = Item;
+                        LoadActiveCollisionGroupIntoSelectionBox(node);
+                        RefreshCollisionGroupsListbox(node);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                logger.Error("Exception caught handling listbox selection change " + Id, e);
+            }
         }
 
         bool IPropertyManagerPage2Handler9.OnNextPage()

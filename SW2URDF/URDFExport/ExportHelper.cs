@@ -339,66 +339,206 @@ namespace SW2URDF.URDFExport
             string linkName = link.Name.Replace('/', '_');
             string extension = (meshFormat == MeshExportFormat.THREEDXML) ? ".3dxml" : ".STL";
 
-            // Visual pass — uses link.VisualComponents.
-            string visualMeshShort = linkName + "_visual" + extension;
-            string visualMeshRel = package.MeshesDirectory + visualMeshShort;
-            string visualMeshAbs = package.WindowsMeshesDirectory + visualMeshShort;
+            // Make sure VisualGroups / CollisionGroups are populated. For brand-
+            // new links the property setter creates a single default group from
+            // the legacy SWComponents list; legacy configs land in
+            // MigrateLegacyComponents during deserialization. After this call
+            // every populated link has at least one VisualGroup with the
+            // expected components.
+            link.MigrateLegacyComponents();
 
-            // Collision pass — uses link.CollisionComponents (falls back to visual
-            // when the user didn't pick a separate set, matching the legacy behavior
-            // where the URDF visual mesh doubled as collision).
-            List<Component2> visualComponents = link.VisualComponents ?? link.SWComponents ?? new List<Component2>();
-            List<Component2> collisionComponents = link.CollisionComponents ?? new List<Component2>();
-            bool hasDistinctCollision = collisionComponents.Count > 0;
+            List<MeshGroup> visualGroups = link.VisualGroups ?? new List<MeshGroup>();
+            List<MeshGroup> collisionGroups = link.CollisionGroups ?? new List<MeshGroup>();
 
-            string collisionMeshShort = hasDistinctCollision
-                ? linkName + "_collision" + extension
-                : visualMeshShort;
-            string collisionMeshRel = hasDistinctCollision
-                ? package.MeshesDirectory + collisionMeshShort
-                : visualMeshRel;
-            string collisionMeshAbs = hasDistinctCollision
-                ? package.WindowsMeshesDirectory + collisionMeshShort
-                : visualMeshAbs;
-
-            if (exportSTL && visualComponents.Count > 0)
+            // Filter out groups with no components — those would produce empty
+            // STLs and dangling geom references.
+            List<MeshGroup> visualGroupsToExport = new List<MeshGroup>();
+            foreach (MeshGroup g in visualGroups)
             {
-                ExportLinkMesh(link, visualComponents, visualMeshAbs, meshFormat);
+                if (g != null && g.Components != null && g.Components.Count > 0)
+                {
+                    visualGroupsToExport.Add(g);
+                }
             }
-            if (exportSTL && hasDistinctCollision)
+            List<MeshGroup> collisionGroupsToExport = new List<MeshGroup>();
+            foreach (MeshGroup g in collisionGroups)
             {
-                ExportLinkMesh(link, collisionComponents, collisionMeshAbs, meshFormat);
+                if (g != null && g.Components != null && g.Components.Count > 0)
+                {
+                    collisionGroupsToExport.Add(g);
+                }
             }
 
-            link.Visual.Geometry.Mesh.Filename = visualMeshRel;
-            link.Collision.Geometry.Mesh.Filename = collisionMeshRel;
+            // User opted into reusing visual meshes for collision. Drop any
+            // collision groups so the visual-fallback path below runs.
+            if (link.CollisionUsesVisual)
+            {
+                collisionGroupsToExport.Clear();
+            }
 
-            // For MJCF, the asset dictionary references each mesh by a name
-            // (independent of the file path). Only emit a mesh entry when there is
-            // an actual STL on disk for the role.
+            // Per-link MJCF auxiliary, populated as we walk the groups below.
+            MJCFBuilder.LinkAuxiliary aux = null;
             if (mjcfAux != null && !link.isFixedFrame)
             {
-                MJCFBuilder.LinkAuxiliary aux = new MJCFBuilder.LinkAuxiliary();
-                if (visualComponents.Count > 0)
+                aux = new MJCFBuilder.LinkAuxiliary();
+            }
+
+            // ---- Visual groups -----------------------------------------------
+            for (int i = 0; i < visualGroupsToExport.Count; i++)
+            {
+                MeshGroup group = visualGroupsToExport[i];
+
+                // Single-group case: keep the legacy "<linkname>_visual" filename
+                // so existing URDF consumers and downstream tools see no diff.
+                string baseName = ChooseVisualMeshBaseName(linkName, group, i, visualGroupsToExport.Count);
+
+                string meshShort = baseName + extension;
+                string meshRel = package.MeshesDirectory + meshShort;
+                string meshAbs = package.WindowsMeshesDirectory + meshShort;
+
+                if (exportSTL)
                 {
-                    aux.VisualMeshName = linkName + "_visual";
-                    aux.VisualMeshFile = Path.GetFileName(visualMeshShort);
+                    ExportLinkMesh(link, group.Components, meshAbs, meshFormat);
                 }
-                if (hasDistinctCollision)
+                group.MeshFilename = meshRel;
+
+                if (aux != null)
                 {
-                    aux.CollisionMeshName = linkName + "_collision";
-                    aux.CollisionMeshFile = Path.GetFileName(collisionMeshShort);
+                    aux.VisualMeshes.Add(new MJCFBuilder.MeshAssetRef
+                    {
+                        Name = baseName,
+                        File = Path.GetFileName(meshShort),
+                    });
                 }
-                else if (visualComponents.Count > 0)
+            }
+
+            // Set the legacy single-filename slot on link.Visual to the first
+            // group's filename. This keeps compat with code that reads
+            // link.Visual.Geometry.Mesh.Filename directly (e.g. legacy
+            // visualisations); the URDF writer overrides it per-group.
+            if (visualGroupsToExport.Count > 0)
+            {
+                link.Visual.Geometry.Mesh.Filename = visualGroupsToExport[0].MeshFilename;
+            }
+
+            // ---- Collision groups --------------------------------------------
+            // When the user did not supply any collision groups, fall back to
+            // reusing the visual meshes as collision (URDF/MJCF backward-compat).
+            if (collisionGroupsToExport.Count == 0)
+            {
+                for (int i = 0; i < visualGroupsToExport.Count; i++)
                 {
-                    // Reuse the visual mesh as the collision geom so the body still
-                    // participates in physics (matches URDF backward-compat).
-                    aux.CollisionMeshName = linkName + "_visual";
-                    aux.CollisionMeshFile = Path.GetFileName(visualMeshShort);
+                    MeshGroup vg = visualGroupsToExport[i];
+                    if (aux != null)
+                    {
+                        aux.CollisionMeshes.Add(new MJCFBuilder.MeshAssetRef
+                        {
+                            Name = ChooseVisualMeshBaseName(linkName, vg, i, visualGroupsToExport.Count),
+                            File = Path.GetFileName(vg.MeshFilename ?? string.Empty),
+                        });
+                    }
                 }
+                if (visualGroupsToExport.Count > 0)
+                {
+                    link.Collision.Geometry.Mesh.Filename = visualGroupsToExport[0].MeshFilename;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < collisionGroupsToExport.Count; i++)
+                {
+                    MeshGroup group = collisionGroupsToExport[i];
+
+                    string baseName = ChooseCollisionMeshBaseName(linkName, group, i, collisionGroupsToExport.Count);
+
+                    string meshShort = baseName + extension;
+                    string meshRel = package.MeshesDirectory + meshShort;
+                    string meshAbs = package.WindowsMeshesDirectory + meshShort;
+
+                    if (exportSTL)
+                    {
+                        ExportLinkMesh(link, group.Components, meshAbs, meshFormat);
+                    }
+                    group.MeshFilename = meshRel;
+
+                    if (aux != null)
+                    {
+                        aux.CollisionMeshes.Add(new MJCFBuilder.MeshAssetRef
+                        {
+                            Name = baseName,
+                            File = Path.GetFileName(meshShort),
+                        });
+                    }
+                }
+
+                link.Collision.Geometry.Mesh.Filename = collisionGroupsToExport[0].MeshFilename;
+            }
+
+            if (aux != null)
+            {
                 aux.Sites = ComputeSiteTransforms(link);
                 mjcfAux[link.Name] = aux;
             }
+        }
+
+        // Builds a stable, unique base name for a visual mesh file. When there
+        // is exactly one visual group we keep the historical "<link>_visual"
+        // filename so existing URDFs / model viewers / scripts are unaffected.
+        // Multi-group links use "<link>_<group-name>" with the group name
+        // sanitised to be filesystem-safe.
+        private static string ChooseVisualMeshBaseName(
+            string linkName, MeshGroup group, int index, int totalGroups)
+        {
+            if (totalGroups == 1)
+            {
+                return linkName + "_visual";
+            }
+            string sanitised = SanitiseGroupName(group != null ? group.Name : null);
+            if (string.IsNullOrEmpty(sanitised))
+            {
+                sanitised = "visual" + (index + 1);
+            }
+            return linkName + "_" + sanitised;
+        }
+
+        // Same idea as ChooseVisualMeshBaseName but for collision groups.
+        private static string ChooseCollisionMeshBaseName(
+            string linkName, MeshGroup group, int index, int totalGroups)
+        {
+            if (totalGroups == 1)
+            {
+                return linkName + "_collision";
+            }
+            string sanitised = SanitiseGroupName(group != null ? group.Name : null);
+            if (string.IsNullOrEmpty(sanitised))
+            {
+                sanitised = "collision" + (index + 1);
+            }
+            return linkName + "_" + sanitised;
+        }
+
+        // Removes characters that would interfere with mesh filenames or asset
+        // names in URDF/MJCF (slashes, whitespace runs, control chars).
+        private static string SanitiseGroupName(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return string.Empty;
+            }
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            foreach (char c in raw.Trim())
+            {
+                if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
+                {
+                    sb.Append(c);
+                }
+                else if (char.IsWhiteSpace(c) || c == '/' || c == '\\' || c == '.')
+                {
+                    sb.Append('_');
+                }
+                // drop anything else (parens, brackets, quotes, etc.)
+            }
+            return sb.ToString();
         }
 
         // Single-pass mesh export for a specified component subset. Hides everything

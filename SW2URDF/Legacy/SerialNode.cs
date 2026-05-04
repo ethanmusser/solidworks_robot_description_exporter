@@ -1,4 +1,4 @@
-﻿using log4net;
+using log4net;
 using SW2URDF.URDF;
 using SW2URDF.Utilities;
 using System.Collections.Generic;
@@ -59,6 +59,9 @@ namespace SW2URDF.Legacy
             node.Link.Joint.AxisName = axisName;
             node.Link.Joint.CoordinateSystemName = coordsysName;
             node.Link.SWComponentPIDs = componentPIDs;
+            // Pull the legacy single PID list into the new VisualGroups model so
+            // every downstream consumer can read components via groups.
+            node.Link.MigrateLegacyComponents();
             node.Link.Joint.Type = jointType;
             node.IsBaseNode = isBaseNode;
             node.IsIncomplete = isIncomplete;

@@ -54,11 +54,29 @@ namespace SW2URDF.URDFExport
             }
         }
 
-        // Populates the combo box with feature names
+        // Populates the combo box with feature names. The "Automatically
+        // Generate" entry is meaningful for joint comboboxes (Reference Coord
+        // System / Reference Axis) where the exporter synthesizes a frame
+        // from the SolidWorks mates; see ExportHelperExtension.GetRefCoordSys
+        // / GetRefAxis for the concrete behavior.
         private void FillComboBox(PropertyManagerPageCombobox box, List<string> featureNames)
         {
             box.Clear();
             box.AddItems("Automatically Generate");
+            foreach (string name in featureNames)
+            {
+                box.AddItems(name);
+            }
+        }
+
+        // Variant of FillComboBox without the "Automatically Generate"
+        // placeholder. Used by combos where that entry has no meaningful
+        // implementation (e.g., the Sites coord-system combo - AddSiteFromForm
+        // rejects "Automatically Generate" with an error message anyway, so
+        // dropping it from the list avoids a self-rejecting selectable entry).
+        private void FillComboBoxNoAuto(PropertyManagerPageCombobox box, List<string> featureNames)
+        {
+            box.Clear();
             foreach (string name in featureNames)
             {
                 box.AddItems(name);
@@ -340,23 +358,24 @@ namespace SW2URDF.URDFExport
                         PMComboBoxGlobalCoordsys.get_ItemText(-1);
                 }
 
-                if (previouslySelectedNode.Link.VisualComponents == null)
-                {
-                    previouslySelectedNode.Link.VisualComponents = new List<Component2>();
-                }
-                if (previouslySelectedNode.Link.CollisionComponents == null)
-                {
-                    previouslySelectedNode.Link.CollisionComponents = new List<Component2>();
-                }
+                EnsureGroupsInitialized(previouslySelectedNode);
+
+                // Persist the "Use visual groups as collision" toggle before
+                // committing the per-group selections so that downstream code
+                // can rely on it being current.
+                previouslySelectedNode.Link.CollisionUsesVisual =
+                    PMCheckCollisionUsesVisual.Checked;
+
+                // Commit the SelectionBox contents back into the
+                // previously-active visual / collision group on the link
+                // we're leaving.
+                CommitActiveVisualGroupSelection(previouslySelectedNode);
+                CommitActiveCollisionGroupSelection(previouslySelectedNode);
+
                 if (previouslySelectedNode.Link.InertialComponents == null)
                 {
                     previouslySelectedNode.Link.InertialComponents = new List<Component2>();
                 }
-
-                CommonSwOperations.GetSelectedComponents(
-                    ActiveSWModel, previouslySelectedNode.Link.VisualComponents, PMSelectionVisual.Mark);
-                CommonSwOperations.GetSelectedComponents(
-                    ActiveSWModel, previouslySelectedNode.Link.CollisionComponents, PMSelectionCollision.Mark);
                 CommonSwOperations.GetSelectedComponents(
                     ActiveSWModel, previouslySelectedNode.Link.InertialComponents, PMSelectionInertial.Mark);
 
@@ -387,8 +406,6 @@ namespace SW2URDF.URDFExport
                 node.Link.Name = "base_link";
                 node.Link.Joint.AxisName = "";
                 node.Link.Joint.CoordinateSystemName = "Automatically Generate";
-                node.Link.VisualComponents = new List<Component2>();
-                node.Link.CollisionComponents = new List<Component2>();
                 node.Link.InertialComponents = new List<Component2>();
                 node.Link.Sites = new List<SiteSpec>();
                 node.Link.InertialSource = InertialSource.Visual;
@@ -402,14 +419,21 @@ namespace SW2URDF.URDFExport
                 node.Link.Joint.AxisName = "Automatically Generate";
                 node.Link.Joint.CoordinateSystemName = "Automatically Generate";
                 node.Link.Joint.Type = "Automatically Detect";
-                node.Link.VisualComponents = new List<Component2>();
-                node.Link.CollisionComponents = new List<Component2>();
                 node.Link.InertialComponents = new List<Component2>();
                 node.Link.Sites = new List<SiteSpec>();
                 node.Link.InertialSource = InertialSource.Visual;
                 node.IsBaseNode = false;
                 node.IsIncomplete = true;
             }
+            // Seed a single empty visual group so the SelectionBox always has
+            // a place to commit user picks into. Collision starts empty so the
+            // URDF/MJCF fallback "reuse visual mesh" behavior kicks in until
+            // the user explicitly creates a collision group.
+            node.Link.VisualGroups = new List<MeshGroup>
+            {
+                new MeshGroup(MeshGroup.DefaultVisualName(node.Link.Name)),
+            };
+            node.Link.CollisionGroups = new List<MeshGroup>();
             node.Name = node.Link.Name;
             node.Text = node.Link.Name;
             node.ContextMenuStrip = docMenu;
@@ -422,15 +446,11 @@ namespace SW2URDF.URDFExport
             PMTextBoxLinkName.Text = node.Link.Name;
             PMNumberBoxChildCount.Value = node.Nodes.Count;
 
-            // Make sure the new collections are non-null for legacy configurations.
-            if (node.Link.VisualComponents == null)
-            {
-                node.Link.VisualComponents = new List<Component2>();
-            }
-            if (node.Link.CollisionComponents == null)
-            {
-                node.Link.CollisionComponents = new List<Component2>();
-            }
+            // Migrate any legacy single-list config into the new groups model
+            // and ensure the lists are non-null. After this call, node.Link
+            // always has at least one VisualGroup (so the SelectionBox has a
+            // place to commit into).
+            EnsureGroupsInitialized(node);
             if (node.Link.InertialComponents == null)
             {
                 node.Link.InertialComponents = new List<Component2>();
@@ -440,12 +460,21 @@ namespace SW2URDF.URDFExport
                 node.Link.Sites = new List<SiteSpec>();
             }
 
-            // Re-populate the three selection boxes. Use distinct marks to keep them separated.
+            // Reset which group is being edited; default to the first group on
+            // each link switch.
+            activeVisualGroupIndex = 0;
+            activeCollisionGroupIndex = (node.Link.CollisionGroups.Count > 0) ? 0 : -1;
+
+            // Refresh the listboxes BEFORE re-populating selection boxes; the
+            // selection box population calls ClearSelection2.
+            RefreshVisualGroupsListbox(node);
+            RefreshCollisionGroupsListbox(node);
+
+            // Pre-populate the SelectionBoxes for the active groups + the
+            // single inertial-components box.
             ActiveSWModel.ClearSelection2(true);
-            CommonSwOperations.SelectComponents(
-                ActiveSWModel, node.Link.VisualComponents, false, PMSelectionVisual.Mark);
-            CommonSwOperations.SelectComponents(
-                ActiveSWModel, node.Link.CollisionComponents, false, PMSelectionCollision.Mark);
+            LoadActiveVisualGroupIntoSelectionBox(node);
+            LoadActiveCollisionGroupIntoSelectionBox(node);
             CommonSwOperations.SelectComponents(
                 ActiveSWModel, node.Link.InertialComponents, false, PMSelectionInertial.Mark);
 
@@ -464,10 +493,18 @@ namespace SW2URDF.URDFExport
                     break;
             }
 
-            // Sites region.
-            FillComboBox(PMComboBoxSiteCoordSys, Exporter.GetRefCoordinateSystems());
+            // Sites region. The site combobox doesn't get an
+            // "Automatically Generate" entry because AddSiteFromForm rejects
+            // it - sites need a real coord system.
+            FillComboBoxNoAuto(PMComboBoxSiteCoordSys, Exporter.GetRefCoordinateSystems());
             PMTextBoxSiteName.Text = "";
             RefreshSitesListbox(node);
+
+            // "Use visual groups as collision" toggle. Re-sync the editor
+            // visibility on every node switch so the UI matches the data
+            // model.
+            PMCheckCollisionUsesVisual.Checked = node.Link.CollisionUsesVisual;
+            SetCollisionEditorVisible(!node.Link.CollisionUsesVisual);
 
             //Setting joint properties
             if (!node.IsBaseNode && node.Parent != null)
