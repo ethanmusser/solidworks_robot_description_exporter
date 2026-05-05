@@ -59,6 +59,7 @@ namespace SW2URDF.URDFExport.CSV
             {"Link.CollisionGroups","Collision Groups"},
             { "Link.CoordSysName","Coordinate System"},
             { "Link.AxisName","Axis Name"},
+            { "Link.Joint.AxisFlipped","Joint Axis Flipped"},
             { "Link.Joint.name","Joint Name"},
             { "Link.Joint.type","Joint Type"},
             { "Link.Joint.Origin.xyz.x","Joint Origin X"},

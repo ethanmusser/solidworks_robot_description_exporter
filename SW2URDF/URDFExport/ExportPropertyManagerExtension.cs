@@ -351,6 +351,11 @@ namespace SW2URDF.URDFExport
                     previouslySelectedNode.Link.Joint.AxisName = PMComboBoxAxes.get_ItemText(-1);
                     previouslySelectedNode.Link.Joint.CoordinateSystemName = PMComboBoxCoordSys.get_ItemText(-1);
                     previouslySelectedNode.Link.Joint.Type = PMComboBoxJointType.get_ItemText(-1);
+                    // currentAxisFlipped is also written through immediately on
+                    // every bitmap-button click in OnButtonPress so the overlay
+                    // arrow and persisted state stay in lockstep; this
+                    // node-switch save is the safety net for any other path.
+                    previouslySelectedNode.Link.Joint.AxisFlipped = currentAxisFlipped;
                 }
                 else
                 {
@@ -552,6 +557,14 @@ namespace SW2URDF.URDFExport
                 SelectComboBox(PMComboBoxCoordSys, node.Link.Joint.CoordinateSystemName);
                 SelectComboBox(PMComboBoxAxes, node.Link.Joint.AxisName);
                 SelectComboBox(PMComboBoxJointType, node.Link.Joint.Type);
+
+                // Restore the persisted "Reverse Direction" toggle for this
+                // joint and (re)render the overlay arrow in the model view so
+                // the user sees the saved direction as soon as they land on
+                // the node. The bitmap button has no visual "pressed" state -
+                // the overlay arrow IS the feedback.
+                currentAxisFlipped = node.Link.Joint.AxisFlipped;
+                RefreshAxisDirectionPreview();
             }
             else
             {
@@ -565,6 +578,11 @@ namespace SW2URDF.URDFExport
                 EnableControls(!node.IsBaseNode);
                 FillComboBox(PMComboBoxGlobalCoordsys, Exporter.GetRefCoordinateSystems());
                 SelectComboBox(PMComboBoxGlobalCoordsys, node.Link.Joint.CoordinateSystemName);
+
+                // Base node has no joint axis: clear any previously-rendered
+                // overlay so we don't leave a stale arrow in the viewport.
+                currentAxisFlipped = false;
+                Exporter.ClearAxisOverlay();
             }
         }
 
@@ -579,6 +597,7 @@ namespace SW2URDF.URDFExport
                                                     (PropertyManagerPageControl)PMLabelCoordSys,
                                                     (PropertyManagerPageControl)PMComboBoxAxes,
                                                     (PropertyManagerPageControl)PMLabelAxes,
+                                                    (PropertyManagerPageControl)PMBitmapAxisFlip,
                                                     (PropertyManagerPageControl)PMComboBoxJointType,
                                                     (PropertyManagerPageControl)PMLabelJointType };
 

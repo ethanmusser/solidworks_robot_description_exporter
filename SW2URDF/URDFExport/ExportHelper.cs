@@ -88,6 +88,26 @@ namespace SW2URDF.URDFExport
         private readonly List<string> ReferenceCoordinateSystemNames;
         private readonly List<string> ReferenceAxesNames;
 
+        // Transient bodies displayed via IBody2.Display3 for the
+        // PropertyManager joint axis direction overlay. Stored as
+        // (anchorComponent, body) pairs because IBody2.Display3 anchors
+        // each temp body to a specific top-level Component2 (NOT null,
+        // NOT a ModelDoc2 - the SW API rejects both with non-zero return
+        // codes per Display3's documented Return Value table) and
+        // IBody2.Hide expects the same Component2 to release it.
+        //
+        // The anchor we use is the assembly's root component
+        // (Configuration.GetRootComponent3(true)) because its local
+        // frame IS the assembly global frame, so body geometry already
+        // expressed in world coords needs no extra ApplyTransform.
+        //
+        // We hold each (component, body) pair so we can call body.Hide
+        // on the same anchor when the user changes the axis / coord
+        // system / flip toggle, or when the PM closes - dropping refs
+        // without hiding leaks display state.
+        private readonly List<KeyValuePair<Component2, IBody2>> axisOverlayBodies =
+            new List<KeyValuePair<Component2, IBody2>>();
+
         private bool ComputeInertialValues;
         private bool ComputeVisualCollision;
         private bool ComputeJointKinematics;

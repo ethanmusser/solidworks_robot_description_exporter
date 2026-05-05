@@ -28,6 +28,8 @@ using SW2URDF.URDF;
 using SW2URDF.Utilities;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Globalization;
 using System.Linq;
 using System.Windows;
 
@@ -1334,10 +1336,91 @@ namespace SW2URDF.URDFExport
                     nonLocalizedChild.Joint.Axis.GetXYZ(), idealOrigin));
         }
 
-        // Calculates the axis from a Reference Axis in the model
+        // Calculates the axis from a Reference Axis in the model. Honors the
+        // per-joint AxisFlipped intent set in the PropertyManager so that the
+        // user's "Reverse Direction" choice survives every export
+        // (otherwise the freshly-read SW vector would silently re-pick its
+        // own sign on each export).
         private void EstimateAxis(Joint Joint)
         {
-            Joint.Axis.SetXYZ(EstimateAxis(Joint.AxisName));
+            double[] axisXYZ = EstimateAxis(Joint.AxisName);
+            if (Joint.AxisFlipped)
+            {
+                axisXYZ[0] = -axisXYZ[0];
+                axisXYZ[1] = -axisXYZ[1];
+                axisXYZ[2] = -axisXYZ[2];
+            }
+            Joint.Axis.SetXYZ(axisXYZ);
+        }
+
+        // Result of PreviewAxisDirection: enough information for the
+        // PropertyManager to render an overlay arrow at the joint origin in
+        // the assembly viewport without mutating any Joint state.
+        // Both vectors are in assembly-global coordinates.
+        public struct AxisPreview
+        {
+            public bool IsValid;
+            public double[] OriginGlobal;
+            public double[] AxisGlobal;
+        }
+
+        // Resolves the given coord-sys + axis names to a global-frame origin
+        // and (possibly flipped) axis direction. Pure: does NOT mutate any
+        // Joint or write to the model. Used by the PM live preview hook to
+        // (re)draw the overlay arrow whenever the user changes the axis,
+        // coord system, or flip toggle. Returns IsValid=false when the
+        // selections are missing, are placeholder ("Automatically Generate" /
+        // "None"), or cannot be resolved.
+        public AxisPreview PreviewAxisDirection(string coordsysName, string axisName, bool flipped)
+        {
+            AxisPreview empty = new AxisPreview { IsValid = false };
+
+            if (string.IsNullOrWhiteSpace(coordsysName) ||
+                string.IsNullOrWhiteSpace(axisName) ||
+                coordsysName == "Automatically Generate" ||
+                axisName == "Automatically Generate" ||
+                axisName == "None")
+            {
+                return empty;
+            }
+
+            MathTransform coordsysTransform = GetCoordinateSystemTransform(coordsysName);
+            if (coordsysTransform == null)
+            {
+                return empty;
+            }
+            double[] origin = MathOps.GetXYZ(coordsysTransform);
+
+            double[] axis;
+            try
+            {
+                axis = EstimateAxis(axisName);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("PreviewAxisDirection: EstimateAxis(" + axisName + ") failed: " + ex.Message);
+                return empty;
+            }
+
+            if (axis == null ||
+                (Math.Abs(axis[0]) < 1e-12 && Math.Abs(axis[1]) < 1e-12 && Math.Abs(axis[2]) < 1e-12))
+            {
+                return empty;
+            }
+
+            if (flipped)
+            {
+                axis[0] = -axis[0];
+                axis[1] = -axis[1];
+                axis[2] = -axis[2];
+            }
+
+            return new AxisPreview
+            {
+                IsValid = true,
+                OriginGlobal = origin,
+                AxisGlobal = axis,
+            };
         }
 
         //This doesn't seem to get the right values for the estimatedAxis. Check the actual values
@@ -1560,6 +1643,374 @@ namespace SW2URDF.URDFExport
         public List<string> GetRefAxes()
         {
             return new List<string>(ReferenceAxesNames);
+        }
+
+        // ----- Joint axis direction overlay (PropertyManager preview) -----
+        //
+        // Renders a transient "arrow" body in the SolidWorks viewport via
+        // IBody2.Display3 so the user can see which way the resolved joint
+        // axis points. The arrow is built as two cylinders - a thin shaft
+        // followed by a slightly wider, shorter "head" - which gives an
+        // unambiguous directional cue without depending on
+        // CreateBodyFromCone (parameter layout varies across SW versions and
+        // the cone primitive is more brittle than CreateBodyFromCyl).
+        //
+        // Display3 bodies have ZERO document side effects: they are not
+        // features, not sketches, not in the FeatureManager tree, and are
+        // never saved with the document. They are session-scoped and remain
+        // visible until explicitly hidden, so we hold each IBody2 we create
+        // in `axisOverlayBodies` and call Hide() on every refresh and on PM
+        // close (see ExportPropertyManager.OnClose -> ClearAxisOverlay).
+        //
+        // The selection flag is `swTempBodySelectable` (= 1), NOT
+        // `swTempBodySelectOptionNone` (= 0). Despite SW docs implying "None"
+        // means "displayed, not selectable", in practice value 0 does NOT
+        // render the body in the viewport while value 1 does. Picking the
+        // overlay arrow is harmless (it's not a feature, has no entity ID
+        // for downstream selection logic, and the next refresh wipes it),
+        // so accepting "selectable" is a fine trade for "actually visible".
+        //
+        // Redraw uses `IModelView.GraphicsRedraw(null)` as the primary path,
+        // falling back to `IModelDoc2.GraphicsRedraw2()`. Inside a
+        // PropertyManagerPage, `GraphicsRedraw2` alone is unreliable for
+        // forcing a temp-body refresh; the model-view-level redraw is the
+        // path that actually flushes the new IBody2.Display3 state.
+
+        // Fraction of the assembly's bounding-box diagonal used for the
+        // axis overlay arrow length. 15% is large enough to see clearly
+        // against any link's geometry but small enough not to dominate
+        // the viewport. Bracketed by AxisOverlayLengthMin / Max so
+        // pathological assemblies (a single tiny screw, a 100m skyscraper
+        // import) still produce a sensible arrow.
+        private const double AxisOverlayLengthFraction = 0.15;
+        private const double AxisOverlayLengthMin = 0.02;
+        private const double AxisOverlayLengthMax = 5.0;
+        private const double AxisOverlayLengthFallback = 0.05;
+
+        // BGR color int for the overlay (SW Display3 takes a Win32 BGR int,
+        // which is what ColorTranslator.ToWin32 returns). Fully-qualified
+        // System.Drawing.Color disambiguates from SW2URDF.URDF.Color.
+        private static readonly int AxisOverlayColor =
+            ColorTranslator.ToWin32(System.Drawing.Color.OrangeRed);
+
+        // (Re)draws the joint axis direction overlay arrow at the given
+        // world-space origin pointing in the given world-space direction.
+        // Both inputs are expressed in assembly-global coordinates. Safe to
+        // call repeatedly; previous overlay bodies are hidden + dropped on
+        // each call so only the most recent arrow is visible. All failures
+        // are logged and swallowed - a viewport problem must not break the
+        // PropertyManager.
+        public void DrawAxisOverlay(double[] originGlobal, double[] axisGlobal)
+        {
+            if (originGlobal == null || originGlobal.Length < 3 ||
+                axisGlobal == null || axisGlobal.Length < 3)
+            {
+                ClearAxisOverlay();
+                return;
+            }
+
+            // Defensive normalize so the arrow length is independent of the
+            // caller's vector magnitude.
+            double mag = Math.Sqrt(
+                axisGlobal[0] * axisGlobal[0] +
+                axisGlobal[1] * axisGlobal[1] +
+                axisGlobal[2] * axisGlobal[2]);
+            if (mag < 1e-12)
+            {
+                ClearAxisOverlay();
+                return;
+            }
+            double ax = axisGlobal[0] / mag;
+            double ay = axisGlobal[1] / mag;
+            double az = axisGlobal[2] / mag;
+
+            ClearAxisOverlay();
+
+            try
+            {
+                IModeler modeler = (IModeler)iSwApp.GetModeler();
+                if (modeler == null)
+                {
+                    logger.Warn("DrawAxisOverlay: GetModeler() returned null; skipping overlay");
+                    return;
+                }
+
+                // IBody2::Display3 anchor must be a top-level PART
+                // component (not null, not a ModelDoc2, not a subassembly,
+                // not the root component). See the AGENTS.md "Joint axis
+                // direction" section for the full Display3 contract that
+                // we hard-won the diagnosis of.
+                Component2 anchorComp = FindTopLevelPartAnchor();
+                if (anchorComp == null)
+                {
+                    logger.Warn("DrawAxisOverlay: no top-level part anchor found - skipping render");
+                    return;
+                }
+                MathTransform anchorInverse = null;
+                try
+                {
+                    anchorInverse = anchorComp.Transform2?.Inverse() as MathTransform;
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn("DrawAxisOverlay: Transform2.Inverse failed: " + ex.Message);
+                }
+
+                double overlayLength = ComputeAxisOverlayLength();
+
+                // Geometry: shaft is a thin cylinder for the first 75%
+                // of the arrow, head is a CONE (sharp-tipped) for the
+                // remaining 25% so it visibly distinguishes the positive
+                // end. Earlier revisions used a wider cylinder for the
+                // head and the user (correctly) called it out as not
+                // arrow-shaped.
+                double shaftLength = overlayLength * 0.75;
+                double shaftRadius = overlayLength * 0.02;
+                double headLength = overlayLength * 0.25;
+                double headRadius = overlayLength * 0.06;
+                double headStartX = originGlobal[0] + shaftLength * ax;
+                double headStartY = originGlobal[1] + shaftLength * ay;
+                double headStartZ = originGlobal[2] + shaftLength * az;
+
+                // CreateBodyFromCyl param order (8 doubles):
+                //   originX, originY, originZ, axisX, axisY, axisZ, radius, length
+                // origin = base-circle center, axis = unit direction the
+                // cylinder extends along.
+                double[] shaftParams = new double[]
+                {
+                    originGlobal[0], originGlobal[1], originGlobal[2],
+                    ax, ay, az,
+                    shaftRadius, shaftLength,
+                };
+                IBody2 shaft = (IBody2)modeler.CreateBodyFromCyl(shaftParams);
+
+                // CreateBodyFromCone param order (9 doubles):
+                //   originX, originY, originZ, axisX, axisY, axisZ,
+                //   baseRadius, topRadius, length
+                // baseRadius = wide end (at origin); topRadius = 0 for a
+                // sharp tip; axis points from base toward apex.
+                double[] headParams = new double[]
+                {
+                    headStartX, headStartY, headStartZ,
+                    ax, ay, az,
+                    headRadius, 0.0, headLength,
+                };
+                IBody2 head = (IBody2)modeler.CreateBodyFromCone(headParams);
+
+                int shaftRc = DisplayOverlayBody(shaft, anchorComp, anchorInverse);
+                int headRc = DisplayOverlayBody(head, anchorComp, anchorInverse);
+
+                logger.Info(string.Format(CultureInfo.InvariantCulture,
+                    "DrawAxisOverlay: anchor={0} origin=({1:F3},{2:F3},{3:F3}) axis=({4:F2},{5:F2},{6:F2}) len={7:F3} shaftRc={8} headRc={9}",
+                    anchorComp.Name2,
+                    originGlobal[0], originGlobal[1], originGlobal[2],
+                    ax, ay, az, overlayLength,
+                    shaftRc, headRc));
+
+                IssueViewportRedraw("DrawAxisOverlay");
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("DrawAxisOverlay failed: " + ex.Message);
+            }
+        }
+
+        // Common Display3 plumbing for the shaft + head bodies: applies
+        // the anchor's inverse transform (so world-space body coords land
+        // correctly when SW interprets them in the anchor's local frame),
+        // calls Display3, registers the (anchor, body) pair so
+        // ClearAxisOverlay can release it later, and returns the
+        // Display3 return code (0 = success; 1, 2, 3 = various rejection
+        // modes documented next to the Display3 call site).
+        private int DisplayOverlayBody(IBody2 body, Component2 anchorComp, MathTransform anchorInverse)
+        {
+            if (body == null || anchorComp == null)
+            {
+                return -1;
+            }
+            if (anchorInverse != null)
+            {
+                body.ApplyTransform(anchorInverse);
+            }
+            int rc = body.Display3(anchorComp, AxisOverlayColor,
+                (int)swTempBodySelectOptions_e.swTempBodySelectable);
+            axisOverlayBodies.Add(new KeyValuePair<Component2, IBody2>(anchorComp, body));
+            return rc;
+        }
+
+        // Returns a sensible arrow length in meters for the active model:
+        // a fraction of the assembly's bounding-box diagonal, clamped to
+        // [Min, Max] so pathological assemblies still produce a usable
+        // arrow. Falls back to a fixed 5cm size if the bounding-box query
+        // fails or the doc isn't an assembly.
+        private double ComputeAxisOverlayLength()
+        {
+            try
+            {
+                AssemblyDoc asmDoc = ActiveSWModel as AssemblyDoc;
+                if (asmDoc == null)
+                {
+                    return AxisOverlayLengthFallback;
+                }
+                object boxObj = asmDoc.GetBox(0);
+                if (!(boxObj is double[] box) || box.Length < 6)
+                {
+                    return AxisOverlayLengthFallback;
+                }
+                double dx = box[3] - box[0];
+                double dy = box[4] - box[1];
+                double dz = box[5] - box[2];
+                double diag = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                if (diag < 1e-9)
+                {
+                    return AxisOverlayLengthFallback;
+                }
+                double length = diag * AxisOverlayLengthFraction;
+                if (length < AxisOverlayLengthMin) length = AxisOverlayLengthMin;
+                if (length > AxisOverlayLengthMax) length = AxisOverlayLengthMax;
+                return length;
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("ComputeAxisOverlayLength: " + ex.Message);
+                return AxisOverlayLengthFallback;
+            }
+        }
+
+        // Hides every overlay body we previously displayed and drops our
+        // refs. Idempotent - safe to call when no overlay is currently
+        // shown. Called on every overlay refresh, on PM node-switch into a
+        // base node (which has no joint axis), and on PM OnClose.
+        public void ClearAxisOverlay()
+        {
+            if (axisOverlayBodies.Count == 0)
+            {
+                return;
+            }
+            foreach (KeyValuePair<Component2, IBody2> entry in axisOverlayBodies)
+            {
+                Component2 anchor = entry.Key;
+                IBody2 body = entry.Value;
+                if (body == null)
+                {
+                    continue;
+                }
+                try
+                {
+                    // Pair with Display3(anchorComp, ...) above:
+                    // IBody2.Hide(Part) takes the same Component2 we
+                    // anchored Display3 to, undoing the swModifyBlock
+                    // blocking state Display3 set when called with
+                    // swTempBodySelectable. Per the SW Display3 docs
+                    // remarks: "Unset the blocking state by calling
+                    // IBody2::Hide."
+                    body.Hide(anchor);
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn("ClearAxisOverlay: Hide failed: " + ex.Message);
+                }
+            }
+            axisOverlayBodies.Clear();
+
+            IssueViewportRedraw("ClearAxisOverlay");
+        }
+
+        // Common redraw helper for the axis overlay: prefers an
+        // IModelView-level redraw (the one PM-mode SW actually honors for
+        // newly-Displayed temp bodies) and falls back to ModelDoc2
+        // GraphicsRedraw2 if no active view is reachable. All failures
+        // are logged + swallowed - a viewport problem must not break the
+        // PM. The ModelView path is the working one in PM mode; the
+        // GraphicsRedraw2 fallback exists for safety but did NOT flush
+        // newly-displayed temp bodies in our testing.
+        private void IssueViewportRedraw(string callsite)
+        {
+            ModelView view = null;
+            try
+            {
+                view = ActiveSWModel?.ActiveView as ModelView;
+            }
+            catch (Exception ex)
+            {
+                logger.Warn(callsite + ": resolving ActiveView threw (" + ex.Message + ")");
+            }
+
+            if (view != null)
+            {
+                try
+                {
+                    view.GraphicsRedraw(null);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn(callsite + ": ModelView.GraphicsRedraw failed (" + ex.Message + ") - falling back to GraphicsRedraw2");
+                }
+            }
+            else
+            {
+                logger.Warn(callsite + ": ActiveView null - falling back to ModelDoc2.GraphicsRedraw2 (PM-mode unreliable)");
+            }
+
+            try
+            {
+                ActiveSWModel?.GraphicsRedraw2();
+            }
+            catch (Exception ex)
+            {
+                logger.Warn(callsite + ": GraphicsRedraw2 fallback failed: " + ex.Message);
+            }
+        }
+
+        // Walks the active assembly's root component children and
+        // returns the first top-level component whose ModelDoc2 is a
+        // part (swDocPART). IBody2.Display3's Component arg has two
+        // hard constraints from the SW docs that together rule out the
+        // root component itself: "Component cannot be in a subassembly"
+        // (so we must stay at depth 1) AND a return code of 3 ("Not a
+        // part instance") if we hand it the root or any subassembly
+        // component. The first top-level part instance satisfies both.
+        // Returns null on a part doc (no children), an empty assembly,
+        // or an assembly composed entirely of subassemblies.
+        private Component2 FindTopLevelPartAnchor()
+        {
+            try
+            {
+                Configuration cfg = ActiveSWModel?.GetActiveConfiguration() as Configuration;
+                Component2 root = cfg?.GetRootComponent3(true);
+                if (root == null)
+                {
+                    return null;
+                }
+                object children = root.GetChildren();
+                if (!(children is object[] childArr))
+                {
+                    return null;
+                }
+                foreach (object child in childArr)
+                {
+                    Component2 comp = child as Component2;
+                    if (comp == null)
+                    {
+                        continue;
+                    }
+                    ModelDoc2 doc = comp.GetModelDoc2() as ModelDoc2;
+                    if (doc == null)
+                    {
+                        continue;
+                    }
+                    if (doc.GetType() == (int)swDocumentTypes_e.swDocPART)
+                    {
+                        return comp;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("FindTopLevelPartAnchor: " + ex.Message);
+            }
+            return null;
         }
 
         //This method adds in the limits from a limit mate, to make a joint a revolute joint.

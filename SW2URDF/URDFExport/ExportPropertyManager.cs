@@ -133,6 +133,17 @@ namespace SW2URDF.URDFExport
         // meshes for collision.
         private PropertyManagerPageCheckbox PMCheckCollisionUsesVisual;
 
+        // "Reverse Direction" toggle for the joint axis. swControlType_BitmapButton
+        // mimicking the same flip button SW uses on its own coord-system /
+        // extrude / hole-wizard PMs (uses the standard
+        // swBitmapButtonImage_reverse_direction icon). The button is a CLICK
+        // event, not a check event, so we maintain the toggle state ourselves
+        // in currentAxisFlipped. The overlay arrow drawn via
+        // ExportHelper.DrawAxisOverlay is the user's visual feedback for
+        // whether flip is on - the button itself has no "pressed" visual state.
+        private PropertyManagerPageBitmapButton PMBitmapAxisFlip;
+        private bool currentAxisFlipped;
+
         // Index of the visual / collision group whose components are currently
         // shown in the corresponding SelectionBox. Reset to 0 on every link
         // switch and adjusted as the user picks rows in the listbox.
@@ -253,6 +264,9 @@ namespace SW2URDF.URDFExport
         private const int CollisionGroupsAddButtonID = 74;
         private const int CollisionGroupsRemoveButtonID = 75;
         private const int CheckCollisionUsesVisualID = 76;
+
+        // "Reverse Direction" bitmap button next to the Reference Axis combo.
+        private const int BitmapAxisFlipID = 80;
 
         // Marks for the visual/collision/inertial selection boxes so SolidWorks can
         // attribute the user's selection to the right list. -1 (default mark) is reserved
@@ -590,9 +604,81 @@ namespace SW2URDF.URDFExport
                     RemoveSelectedCollisionGroupFromForm();
                     break;
 
+                case BitmapAxisFlipID:
+                    ToggleAxisFlip();
+                    break;
+
                 default:
                     break;
             }
+        }
+
+        // Handler for the "Reverse Direction" bitmap button next to the
+        // Reference Axis combobox. swControlType_BitmapButton fires CLICK
+        // events (not check events) so we maintain the toggle state ourselves
+        // in currentAxisFlipped. The new state is written through to the
+        // active node's Joint.AxisFlipped immediately (rather than waiting
+        // for SaveActiveNode) so the persisted state and the redrawn overlay
+        // arrow stay in lockstep without needing a "dirty" flag.
+        private void ToggleAxisFlip()
+        {
+            currentAxisFlipped = !currentAxisFlipped;
+
+            LinkNode active = (LinkNode)Tree.SelectedNode;
+            if (active != null && !active.IsBaseNode && active.Link != null && active.Link.Joint != null)
+            {
+                active.Link.Joint.AxisFlipped = currentAxisFlipped;
+            }
+
+            RefreshAxisDirectionPreview();
+        }
+
+        // Re-resolves the joint coord-sys + axis (with the current flip state)
+        // and (re)draws the overlay arrow in the SW viewport. Called whenever
+        // the user changes the axis combobox, the coord-sys combobox, the
+        // flip button, or switches links in the tree. Pure UI side effect:
+        // does NOT mutate any Joint state - that lives on currentAxisFlipped
+        // and is persisted by ToggleAxisFlip / SaveActiveNode.
+        private void RefreshAxisDirectionPreview()
+        {
+            if (PMComboBoxAxes == null || PMComboBoxCoordSys == null)
+            {
+                return;
+            }
+
+            string axisName = PMComboBoxAxes.get_ItemText(-1);
+            string coordSysName = PMComboBoxCoordSys.get_ItemText(-1);
+
+            // Use SW's own selection coloring to highlight the chosen axis
+            // line in the model view. Skips placeholders ("None" /
+            // "Automatically Generate") because those have no resolvable SW
+            // feature. Same primitive SelectFeatures uses on tree-node
+            // switch, so the highlight behavior is consistent across both
+            // entry paths.
+            if (!string.IsNullOrWhiteSpace(axisName) &&
+                axisName != "None" && axisName != "Automatically Generate")
+            {
+                try
+                {
+                    ActiveSWModel.Extension.SelectByID2(
+                        axisName, "AXIS", 0, 0, 0, true, -1, null, 0);
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn("RefreshAxisDirectionPreview: SelectByID2 highlight failed: " + ex.Message);
+                }
+            }
+
+            ExportHelper.AxisPreview preview =
+                Exporter.PreviewAxisDirection(coordSysName, axisName, currentAxisFlipped);
+
+            if (!preview.IsValid)
+            {
+                Exporter.ClearAxisOverlay();
+                return;
+            }
+
+            Exporter.DrawAxisOverlay(preview.OriginGlobal, preview.AxisGlobal);
         }
 
         // Saves the components currently selected in the visual SelectionBox
@@ -1068,6 +1154,18 @@ namespace SW2URDF.URDFExport
             finally
             {
                 pageIsClosing = false;
+                // Clear any axis overlay arrow we drew via IBody2.Display3.
+                // Transient bodies are session-scoped (not saved with the
+                // document) but they remain visible in the viewport until
+                // explicitly hidden, so we must drop our refs here.
+                try
+                {
+                    Exporter.ClearAxisOverlay();
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn("Failed to clear axis overlay on PM close: " + ex.Message);
+                }
                 // NOTE: we deliberately do NOT call Dispose() here. The Tree
                 // TreeView's child nodes (the LinkNode hierarchy) are
                 // about to be transferred to AssemblyExportForm in
@@ -1631,6 +1729,21 @@ namespace SW2URDF.URDFExport
             PMComboBoxAxes.Style =
                 (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
 
+            // "Reverse Direction" bitmap button - same standard icon SW uses on
+            // its own coord-system / extrude PMs. Stacked on the row below the
+            // axis combobox; SW does not reliably honor side-by-side layout
+            // hints for PM controls (see AGENTS.md "PropertyManagerPage layout
+            // quirks"). The icon makes the intent clear regardless of position.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_BitmapButton;
+            caption = "Reverse Direction";
+            tip = "Reverse the positive direction of the reference axis";
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
+            options = (int)swAddControlOptions_e.swControlOptions_Visible;
+            PMBitmapAxisFlip = (PropertyManagerPageBitmapButton)PMGroup.AddControl2(
+                BitmapAxisFlipID, (short)controlType, caption, (short)alignment, (int)options, tip);
+            PMBitmapAxisFlip.SetStandardBitmaps(
+                (int)swPropertyManagerPageBitmapButtons_e.swBitmapButtonImage_reverse_direction);
+
             //Create the joint type label
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             caption = "Joint Type";
@@ -2121,8 +2234,18 @@ namespace SW2URDF.URDFExport
 
         void IPropertyManagerPage2Handler9.OnComboboxSelectionChanged(int Id, int Item)
         {
-            logger.Info("OnComboboxSelectionChanged called. This method no longer throws an " +
-                "Exception. It just silently does nothing. Ok, except for this logging message");
+            // The axis combobox (PMComboBoxAxes) and the joint coord-sys combobox
+            // (PMComboBoxCoordSys) are both registered with ComboBoxCoordSysID
+            // (along with PMComboBoxJointType - a pre-existing ID-sharing oddity
+            // in this file). Any selection change in that group should refresh
+            // the overlay arrow; the helper re-reads both combos fresh so it
+            // doesn't matter which one fired the event. Joint-type changes
+            // also fire here and are a no-op for the overlay (no axis change),
+            // so the extra refresh is harmless.
+            if (Id == ComboBoxCoordSysID)
+            {
+                RefreshAxisDirectionPreview();
+            }
         }
 
         void IPropertyManagerPage2Handler9.OnGroupCheck(int Id, bool Checked)
