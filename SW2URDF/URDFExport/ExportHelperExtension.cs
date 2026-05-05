@@ -602,6 +602,229 @@ namespace SW2URDF.URDFExport
             }
         }
 
+        // Names of all temporary export-only coord systems we create are prefixed
+        // with this so SweepOrphanedExportFrames can find and reap them after a
+        // crashed export. Picked to be visually distinct from anything a user
+        // would name in SolidWorks.
+        private const string TempExportFramePrefix = "__sw_export_";
+
+        // Materializes a unique top-level coord system in the assembly equivalent
+        // to the link's joint frame and returns the name to feed
+        // swFileSaveAsCoordinateSystem. When the link's stored coord-system name
+        // is already at the assembly level (no "<component>" suffix) the existing
+        // name is returned and createdTemp is false -- we leave SolidWorks's STL
+        // export path untouched in that case.
+        //
+        // Why this exists: SaveAs's swFileSaveAsCoordinateSystem resolves names
+        // against the active document (the assembly). When the user picks a
+        // coord system that lives inside a sub-component (e.g.
+        // "Coordinate System1 <LINK-5>"), SetLinkSpecificSTLPreferences only
+        // sees the bare "Coordinate System1" -- and if the same name exists in
+        // multiple sub-component instances (or at none of them at the assembly
+        // level), SW silently picks the wrong frame, producing STLs whose
+        // geometry sits at a constant wrong offset from the link's body frame.
+        // See AGENTS.md for the full diagnosis trail.
+        private string EnsureUniqueAssemblyExportFrame(Link link, out bool createdTemp)
+        {
+            createdTemp = false;
+            string coordsysName = link?.Joint?.CoordinateSystemName;
+            if (string.IsNullOrEmpty(coordsysName))
+            {
+                return coordsysName;
+            }
+
+            // No "<component>" suffix means the coord system already lives at
+            // the assembly level, where swFileSaveAsCoordinateSystem can resolve
+            // it unambiguously. Nothing to do.
+            if (!(coordsysName.Contains("<") && coordsysName.Contains(">")))
+            {
+                return coordsysName;
+            }
+
+            MathTransform globalTransform;
+            try
+            {
+                globalTransform = GetCoordinateSystemTransform(coordsysName);
+            }
+            catch (Exception e)
+            {
+                logger.Warn("Failed to resolve global transform for " + coordsysName +
+                    " on link " + link.Name + "; falling back to bare name (mesh may be misplaced).", e);
+                return coordsysName;
+            }
+
+            if (globalTransform == null)
+            {
+                logger.Warn("Resolved global transform for " + coordsysName + " on link " +
+                    link.Name + " was null; falling back to bare name (mesh may be misplaced).");
+                return coordsysName;
+            }
+
+            Origin tempOrigin = new Origin(false);
+            tempOrigin.SetXYZ(MathOps.GetXYZ(globalTransform));
+            tempOrigin.SetRPY(MathOps.GetRPY(globalTransform));
+
+            string sanitisedLinkName = SanitiseForFeatureName(link.Name);
+            string uniqueSuffix = Guid.NewGuid().ToString("N").Substring(0, 8);
+            string tempName = TempExportFramePrefix + sanitisedLinkName + "_" + uniqueSuffix;
+
+            if (referenceSketchName == null)
+            {
+                referenceSketchName = Setup3DSketch();
+            }
+
+            try
+            {
+                CreateRefOrigin(tempOrigin, tempName);
+            }
+            catch (Exception e)
+            {
+                logger.Warn("Failed to create temporary export coord system " + tempName +
+                    " for link " + link.Name + "; falling back to bare name (mesh may be misplaced).", e);
+                return coordsysName;
+            }
+
+            // Sanity check: confirm the feature actually got created with the
+            // requested name. SW silently no-ops InsertCoordinateSystem in some
+            // failure modes (e.g. invalid sketch entity selection).
+            if (!ActiveSWModel.Extension.SelectByID2(
+                    tempName, "COORDSYS", 0, 0, 0, false, 0, null, 0))
+            {
+                logger.Warn("Temporary export coord system " + tempName +
+                    " was not found after creation for link " + link.Name +
+                    "; falling back to bare name (mesh may be misplaced).");
+                return coordsysName;
+            }
+            ActiveSWModel.ClearSelection2(true);
+
+            createdTemp = true;
+            return tempName;
+        }
+
+        // Removes a temporary export coord system created by
+        // EnsureUniqueAssemblyExportFrame. Safe to call with any name; logs and
+        // swallows failures (the orphan sweep on the next export is the safety
+        // net).
+        private void DeleteTempExportFrame(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return;
+
+            // Defensive guard: only ever delete features we own. Avoids
+            // catastrophic data loss if a caller somehow passed a user-owned
+            // coord system name.
+            if (!name.StartsWith(TempExportFramePrefix))
+            {
+                logger.Warn("Refusing to delete coord system '" + name + "' -- name does not " +
+                    "start with the temporary-export prefix '" + TempExportFramePrefix + "'.");
+                return;
+            }
+
+            try
+            {
+                ActiveSWModel.ClearSelection2(true);
+                bool selected = ActiveSWModel.Extension.SelectByID2(
+                    name, "COORDSYS", 0, 0, 0, false, 0, null, 0);
+                if (!selected)
+                {
+                    logger.Warn("Could not select temporary export coord system '" + name +
+                        "' for cleanup; orphan sweep will reap it next export.");
+                    return;
+                }
+                ActiveSWModel.EditDelete();
+                ActiveSWModel.ClearSelection2(true);
+            }
+            catch (Exception e)
+            {
+                logger.Warn("Exception while deleting temporary export coord system '" + name +
+                    "'; orphan sweep will reap it next export.", e);
+            }
+        }
+
+        // Removes any leftover __sw_export_* coord systems at the assembly top
+        // level. Called once at the start of each export so a crashed prior
+        // export does not pollute the assembly indefinitely.
+        public void SweepOrphanedExportFrames()
+        {
+            // Only meaningful for assemblies; the part exporter does not create
+            // these temporaries.
+            if (ActiveSWModel == null ||
+                ActiveSWModel.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                return;
+            }
+
+            List<string> orphans = new List<string>();
+            try
+            {
+                // topLevelOnly = true: temporaries are always created at the
+                // assembly root, never inside sub-components.
+                Dictionary<string, List<Feature>> features =
+                    GetFeaturesOfType("CoordSys", true);
+                if (features != null)
+                {
+                    foreach (KeyValuePair<string, List<Feature>> kvp in features)
+                    {
+                        if (kvp.Value == null) continue;
+                        foreach (Feature feat in kvp.Value)
+                        {
+                            if (feat == null || feat.Name == null) continue;
+                            if (feat.Name.StartsWith(TempExportFramePrefix))
+                            {
+                                orphans.Add(feat.Name);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                logger.Warn("Failed to enumerate top-level coord systems while sweeping orphans; " +
+                    "skipping cleanup this export.", e);
+                return;
+            }
+
+            if (orphans.Count == 0)
+            {
+                return;
+            }
+
+            logger.Info("Sweeping " + orphans.Count + " orphaned export coord system(s) from prior runs: " +
+                string.Join(", ", orphans));
+            foreach (string name in orphans)
+            {
+                DeleteTempExportFrame(name);
+            }
+        }
+
+        // Restricted-charset sanitiser for SolidWorks feature names. We only
+        // accept letters, digits, '-' and '_'; everything else collapses to
+        // '_'. Length is capped so feature names stay legible in the SW tree.
+        private static string SanitiseForFeatureName(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return "link";
+            }
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            foreach (char c in raw.Trim())
+            {
+                if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
+                {
+                    sb.Append(c);
+                }
+                else
+                {
+                    sb.Append('_');
+                }
+            }
+            string result = sb.ToString();
+            if (result.Length > 40)
+            {
+                result = result.Substring(0, 40);
+            }
+            return result;
+        }
+
         // Creates a Reference Axis to be used to calculate the joint axis
         private void CreateRefAxis(Joint Joint)
         {
@@ -934,46 +1157,146 @@ namespace SW2URDF.URDFExport
             }
         }
 
+        // Bundle returned by ResolveFeatureReference: enough information to query
+        // a coord system / axis feature in the right document AND configuration
+        // and then map the result back to assembly-global space.
+        private struct ResolvedFeatureReference
+        {
+            // Document inside which the feature lives. Equals ActiveSWModel for
+            // top-level (assembly-scope) features; the part doc for sub-component
+            // features.
+            public ModelDoc2 OwningDoc;
+            // Bare feature name with the "<...>" suffix stripped.
+            public string FeatureName;
+            // null for top-level features; comp.Transform2 for sub-component
+            // features so callers can multiply local -> assembly global.
+            public MathTransform ComponentTransform;
+            // null for top-level features; comp.ReferencedConfiguration for
+            // sub-component features so callers can switch the part doc to the
+            // right config before reading.
+            public string ConfigurationName;
+        }
+
+        // Single source of truth for "Coordinate System 1 <Comp-Name>"-style
+        // references. Parses the suffix, locates the matching Component2 in
+        // the assembly, and returns the doc / bare name / component transform
+        // / referenced config bundled together. Used by
+        // GetCoordinateSystemTransform and GetRefAxis -- both used to inline
+        // the same parse + lookup loop, with the latent gotcha that
+        // comp.ReferencedConfiguration was never captured (so config-dependent
+        // features like coord systems anchored to length-driven dimensions
+        // were always read in the part doc's currently-active configuration,
+        // typically Default, regardless of which configuration the assembly
+        // instance referenced).
+        //
+        // KNOWN LIMITATION: per SOLIDWORKS forum guidance,
+        // IComponent2.ReferencedConfiguration is unreliable for components
+        // nested below the top-level assembly. assy.GetComponents(false) does
+        // recurse into sub-assemblies, so a deep match is possible here, but
+        // the resulting ConfigurationName may not reflect what the user
+        // expects. If a deep-nested-config use case shows up later, switch to
+        // IAssemblyDoc.CompConfigProperties4.
+        private ResolvedFeatureReference ResolveFeatureReference(string nameWithSuffix)
+        {
+            ResolvedFeatureReference r = new ResolvedFeatureReference
+            {
+                OwningDoc = ActiveSWModel,
+                FeatureName = nameWithSuffix,
+                ComponentTransform = null,
+                ConfigurationName = null,
+            };
+            if (string.IsNullOrEmpty(nameWithSuffix)) return r;
+            if (!(nameWithSuffix.Contains("<") && nameWithSuffix.Contains(">"))) return r;
+
+            int indexFirst = nameWithSuffix.IndexOf('<');
+            int indexLast = nameWithSuffix.IndexOf('>', indexFirst);
+            if (indexLast <= indexFirst) return r;
+
+            string componentStr = nameWithSuffix.Substring(indexFirst + 1, indexLast - indexFirst - 1);
+            r.FeatureName = nameWithSuffix.Substring(0, indexFirst).Trim();
+
+            AssemblyDoc assy = (AssemblyDoc)ActiveSWModel;
+            object[] components = assy.GetComponents(false);
+            foreach (Component2 comp in components)
+            {
+                if (comp.Name2 == componentStr)
+                {
+                    r.OwningDoc = comp.GetModelDoc2();
+                    r.ComponentTransform = comp.Transform2;
+                    r.ConfigurationName = comp.ReferencedConfiguration;
+                    break;
+                }
+            }
+            return r;
+        }
+
+        // Switch/restore wrapper: ensures `partDoc` is in the named
+        // configuration while `action` runs, then restores the prior
+        // configuration in a finally block. No-ops cleanly when there is
+        // nothing to switch (partDoc is null/the assembly, configName is
+        // empty, or it already matches). The query SOLIDWORKS APIs we care
+        // about (GetCoordinateSystemTransformByName, SelectByID2 for AXIS)
+        // implicitly read from the doc's currently-active configuration --
+        // there is no overload that accepts a config parameter. Hence the
+        // switch.
+        private T WithComponentConfiguration<T>(ModelDoc2 partDoc, string configName, Func<T> action)
+        {
+            if (partDoc == null || partDoc == ActiveSWModel) return action();
+
+            string savedConfig = null;
+            bool switched = false;
+            try
+            {
+                savedConfig = partDoc.ConfigurationManager?.ActiveConfiguration?.Name;
+                if (!string.IsNullOrEmpty(configName) &&
+                    !string.Equals(configName, savedConfig, StringComparison.Ordinal))
+                {
+                    if (partDoc.ShowConfiguration2(configName))
+                    {
+                        switched = true;
+                        logger.Info("Switched " + partDoc.GetTitle() + " from config '" +
+                            savedConfig + "' to '" + configName + "' for feature lookup");
+                    }
+                    else
+                    {
+                        logger.Warn("ShowConfiguration2('" + configName + "') failed on " +
+                            partDoc.GetTitle() + "; querying in current config '" + savedConfig + "' instead.");
+                    }
+                }
+                return action();
+            }
+            finally
+            {
+                if (switched && !string.IsNullOrEmpty(savedConfig))
+                {
+                    try { partDoc.ShowConfiguration2(savedConfig); }
+                    catch (Exception e)
+                    {
+                        logger.Warn("Failed to restore active configuration '" + savedConfig +
+                            "' on " + partDoc.GetTitle(), e);
+                    }
+                }
+            }
+        }
+
         // Method to get the SolidWorks MathTransform from a coordinate system. This method can account for
         // coordinate systems that are embedded in subcomponents, and apply the correct transformation to return
         // it to a global transform. It assumes that the coordinate system name is formatted like:
         // "Coordinate System 1 <assy/subassy/comp>" where the full Component2.Name2 is between the <>
         private MathTransform GetCoordinateSystemTransform(string CoordinateSystemName)
         {
-            ModelDoc2 ComponentModel = ActiveSWModel;
-            MathTransform ComponentTransform = default;
             if (CoordinateSystemName == null)
             {
                 throw new Exception("Coordinate system string is null");
             }
-            if (CoordinateSystemName.Contains("<") && CoordinateSystemName.Contains(">"))
-            {
-                string componentStr = "";
-                int indexFirst = CoordinateSystemName.IndexOf('<');
-                int indexLast = CoordinateSystemName.IndexOf('>', indexFirst);
-                if (indexLast > indexFirst)
-                {
-                    componentStr =
-                        CoordinateSystemName.Substring(indexFirst + 1, indexLast - indexFirst - 1);
-                    string CoordinateSystemNameUnTrimmed = CoordinateSystemName.Substring(0, indexFirst);
-                    CoordinateSystemName = CoordinateSystemNameUnTrimmed.Trim();
-                }
-                AssemblyDoc assy = (AssemblyDoc)ActiveSWModel;
-                object[] components = assy.GetComponents(false);
-                foreach (Component2 comp in components)
-                {
-                    if (comp.Name2 == componentStr)
-                    {
-                        ComponentModel = comp.GetModelDoc2();
-                        ComponentTransform = comp.Transform2;
-                    }
-                }
-            }
-            MathTransform LocalCoordsysTransform =
-                ComponentModel.Extension.GetCoordinateSystemTransformByName(CoordinateSystemName);
-            MathTransform GlobalCoordsysTransform = (ComponentTransform == null) ?
-                LocalCoordsysTransform : LocalCoordsysTransform.Multiply(ComponentTransform);
-            return GlobalCoordsysTransform;
+
+            ResolvedFeatureReference r = ResolveFeatureReference(CoordinateSystemName);
+
+            MathTransform local = WithComponentConfiguration(
+                r.OwningDoc, r.ConfigurationName,
+                () => r.OwningDoc.Extension.GetCoordinateSystemTransformByName(r.FeatureName));
+
+            return r.ComponentTransform == null ? local : local.Multiply(r.ComponentTransform);
         }
 
         private void MoveOrigin(Link parent, Link nonLocalizedChild)
@@ -1028,57 +1351,41 @@ namespace SW2URDF.URDFExport
 
         private double[] GetRefAxis(string axisStr)
         {
-            ModelDoc2 ComponentModel = ActiveSWModel;
-            string axisName = axisStr;
-            MathTransform ComponentTransform = default;
+            ResolvedFeatureReference r = ResolveFeatureReference(axisStr);
 
-            if (axisStr.Contains("<") && axisStr.Contains(">"))
+            // The SelectByID2 -> SelectionManager -> GetRefAxisParams chain
+            // implicitly reads from the part doc's currently-active
+            // configuration, so it has to live inside the config-switched
+            // block. Returning null signals "no axis found"; the array
+            // returned otherwise is already PNorm-normalised but still in
+            // the part doc's local frame -- we apply the component transform
+            // outside the block since it does not depend on active config.
+            double[] axisVector = WithComponentConfiguration(r.OwningDoc, r.ConfigurationName, () =>
             {
-                string componentStr = "";
-                int indexFirst = axisStr.IndexOf('<');
-                int indexLast = axisStr.IndexOf('>', indexFirst);
-                if (indexLast > indexFirst)
+                if (!r.OwningDoc.Extension.SelectByID2(r.FeatureName, "AXIS", 0, 0, 0, false, 0, null, 0))
                 {
-                    componentStr = axisStr.Substring(indexFirst + 1, indexLast - indexFirst - 1);
-                    string CoordinateSystemNameUnTrimmed = axisStr.Substring(0, indexFirst);
-                    axisName = CoordinateSystemNameUnTrimmed.Trim();
+                    return null;
                 }
-                AssemblyDoc assy = (AssemblyDoc)ActiveSWModel;
-                object[] components = assy.GetComponents(false);
-                foreach (Component2 comp in components)
-                {
-                    if (comp.Name2 == componentStr)
-                    {
-                        ComponentModel = comp.GetModelDoc2();
-                        ComponentTransform = comp.Transform2;
-                    }
-                }
-            }
-            //Calculate!
-            double[] axisParams;
-            double[] axisVector = new double[3];
 
-            bool selected =
-                ComponentModel.Extension.SelectByID2(axisName, "AXIS", 0, 0, 0, false, 0, null, 0);
-            if (selected)
-            {
-                Feature feat = ComponentModel.SelectionManager.GetSelectedObject6(1, 0);
+                Feature feat = r.OwningDoc.SelectionManager.GetSelectedObject6(1, 0);
                 RefAxis axis = (RefAxis)feat.GetSpecificFeature2();
 
                 // GetRefAxisParams returns {startX, startY, startZ, endX, endY, endZ}
-                axisParams = axis.GetRefAxisParams();
-                axisVector[0] = axisParams[0] - axisParams[3];
-                axisVector[1] = axisParams[1] - axisParams[4];
-                axisVector[2] = axisParams[2] - axisParams[5];
+                double[] axisParams = axis.GetRefAxisParams();
+                double[] v = new double[3];
+                v[0] = axisParams[0] - axisParams[3];
+                v[1] = axisParams[1] - axisParams[4];
+                v[2] = axisParams[2] - axisParams[5];
 
-                // Normalize and cleanup
-                axisVector = MathOps.PNorm(axisVector, 2);
+                return MathOps.PNorm(v, 2);
+            });
 
-                // Transform to proper coordinates
-                axisVector = GlobalAxis(axisVector, ComponentTransform);
+            if (axisVector == null)
+            {
+                return new double[3];
             }
 
-            return axisVector;
+            return GlobalAxis(axisVector, r.ComponentTransform);
         }
 
         //This is called whenever the pull down menu is changed and the axis needs to be

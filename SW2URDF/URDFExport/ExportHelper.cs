@@ -175,6 +175,11 @@ namespace SW2URDF.URDFExport
                 WriteROSPackageFiles(package);
             }
 
+            // Reap any temporary export coord systems left behind by a crashed
+            // prior run before SaveSTL starts creating new ones. Safe no-op when
+            // the assembly has none.
+            SweepOrphanedExportFrames();
+
             //Customizing STL preferences to how I want them
             logger.Info("Saving existing STL preferences");
             SaveUserPreferences();
@@ -644,6 +649,18 @@ namespace SW2URDF.URDFExport
             return result;
         }
 
+        // TODO: this path has the same bare-name resolution bug that SaveSTL
+        // had (passes only the bit before "<...>" to swFileSaveAsCoordinateSystem,
+        // so sub-component coord systems with non-unique names cannot be
+        // disambiguated). The LocalizeLink call below masks it for URDF by
+        // injecting a compensating offset into link.Visual.Origin, but that
+        // compensation is wrong for any consumer that interprets the 3dxml's
+        // own frame as authoritative (e.g. a hypothetical MJCF-from-3dxml
+        // path). The clean fix is to mirror SaveSTL: call
+        // EnsureUniqueAssemblyExportFrame, swap exportCoordSysName into
+        // SetLinkSpecificSTLPreferences, and drop the LocalizeLink workaround.
+        // Deferred to avoid breaking existing URDF+3dxml consumers that rely
+        // on the current LocalizeLink behavior.
         private void Save3dxml(Link link, string windowsMeshFilename, List<Component2> components)
         {
             int errors = 0;
@@ -746,29 +763,55 @@ namespace SW2URDF.URDFExport
 
             logger.Info(link.Name + ": Reference geometry name " + names["component"]);
 
-            CommonSwOperations.ShowComponents(ActiveSWModel, components);
+            // SaveAs's swFileSaveAsCoordinateSystem only accepts coord systems
+            // visible at the active document level; a sub-component coord system
+            // like "Coordinate System1 <LINK-5>" cannot be addressed unambiguously
+            // (the bare "Coordinate System1" might match nothing or several
+            // instances). Materialize an equivalent assembly-level coord system
+            // for the duration of this SaveAs and tear it down in the finally
+            // below. For coord systems already at the assembly level
+            // EnsureUniqueAssemblyExportFrame returns the existing name and
+            // createdTempFrame stays false (no behavior change for those links).
+            // See AGENTS.md > "MJCF-driven feature extensions" for the full
+            // diagnosis trail behind this layering.
+            bool createdTempFrame;
+            string exportCoordSysName = EnsureUniqueAssemblyExportFrame(link, out createdTempFrame);
+            logger.Info(link.Name + ": Using coord system '" + exportCoordSysName +
+                "' for SaveAs (temp=" + createdTempFrame + ")");
 
-            int saveOptions = (int)swSaveAsOptions_e.swSaveAsOptions_Silent |
-                (int)swSaveAsOptions_e.swSaveAsOptions_Copy;
-            SetLinkSpecificSTLPreferences(names["geo"], link.STLQualityFine, ActiveDoc);
-
-            logger.Info("Saving STL to " + windowsMeshFilename);
-            ActiveDoc.Extension.SaveAs(windowsMeshFilename,
-                (int)swSaveAsVersion_e.swSaveAsCurrentVersion, saveOptions, null, ref errors, ref warnings);
-            if (errors + warnings != 0)
+            try
             {
-                logger.Warn("Exporting STL for link " + link.Name + " failed with error " + errors + 
-                    " or warnings " + warnings);
-            }
-            CommonSwOperations.HideComponents(ActiveSWModel, components);
+                CommonSwOperations.ShowComponents(ActiveSWModel, components);
 
-            bool success = CorrectSTLMesh(windowsMeshFilename);
-            if (!success)
-            {
-                logger.Warn("There was an issue exporting the STL for " + link.Name + ". It " +
-                    "may not be readable by CAD programs that aren't SolidWorks");
+                int saveOptions = (int)swSaveAsOptions_e.swSaveAsOptions_Silent |
+                    (int)swSaveAsOptions_e.swSaveAsOptions_Copy;
+                SetLinkSpecificSTLPreferences(exportCoordSysName, link.STLQualityFine, ActiveDoc);
+
+                logger.Info("Saving STL to " + windowsMeshFilename);
+                ActiveDoc.Extension.SaveAs(windowsMeshFilename,
+                    (int)swSaveAsVersion_e.swSaveAsCurrentVersion, saveOptions, null, ref errors, ref warnings);
+                if (errors + warnings != 0)
+                {
+                    logger.Warn("Exporting STL for link " + link.Name + " failed with error " + errors +
+                        " or warnings " + warnings);
+                }
+                CommonSwOperations.HideComponents(ActiveSWModel, components);
+
+                bool success = CorrectSTLMesh(windowsMeshFilename);
+                if (!success)
+                {
+                    logger.Warn("There was an issue exporting the STL for " + link.Name + ". It " +
+                        "may not be readable by CAD programs that aren't SolidWorks");
+                }
+                return success;
             }
-            return success;
+            finally
+            {
+                if (createdTempFrame)
+                {
+                    DeleteTempExportFrame(exportCoordSysName);
+                }
+            }
         }
 
         public void ExportLink(bool zIsUp)
