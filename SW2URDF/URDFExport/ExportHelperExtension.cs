@@ -24,11 +24,11 @@ using MathNet.Numerics.LinearAlgebra;
 using MathNet.Numerics.LinearAlgebra.Double;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
+using SolidWorks.Interop.swpublished;
 using SW2URDF.URDF;
 using SW2URDF.Utilities;
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using System.Windows;
@@ -1647,34 +1647,32 @@ namespace SW2URDF.URDFExport
 
         // ----- Joint axis direction overlay (PropertyManager preview) -----
         //
-        // Renders a transient "arrow" body in the SolidWorks viewport via
-        // IBody2.Display3 so the user can see which way the resolved joint
-        // axis points. The arrow is built as two cylinders - a thin shaft
-        // followed by a slightly wider, shorter "head" - which gives an
-        // unambiguous directional cue without depending on
-        // CreateBodyFromCone (parameter layout varies across SW versions and
-        // the cone primitive is more brittle than CreateBodyFromCyl).
+        // Renders a SolidWorks-native DragArrowManipulator on the picked
+        // joint axis so the user can see which way "positive" points. We
+        // use an IDragArrowManipulator (the same gizmo SW's coord-system
+        // and mate PMs use for their flip arrows) instead of raw
+        // IBody2.Display3 temp bodies because manipulators render ON
+        // TOP of geometry by design - they ignore the depth buffer, so an
+        // axis hidden inside a tube or behind a link is still visible.
+        // Display3 bodies, by contrast, are subject to normal depth test
+        // and disappear behind opaque geometry; that was the trigger to
+        // migrate. The Display3 path was non-trivial to land (see git
+        // history and AGENTS.md) but the user explicitly requested
+        // "visible through other bodies" which only the manipulator API
+        // gives us natively.
         //
-        // Display3 bodies have ZERO document side effects: they are not
-        // features, not sketches, not in the FeatureManager tree, and are
-        // never saved with the document. They are session-scoped and remain
-        // visible until explicitly hidden, so we hold each IBody2 we create
-        // in `axisOverlayBodies` and call Hide() on every refresh and on PM
-        // close (see ExportPropertyManager.OnClose -> ClearAxisOverlay).
-        //
-        // The selection flag is `swTempBodySelectable` (= 1), NOT
-        // `swTempBodySelectOptionNone` (= 0). Despite SW docs implying "None"
-        // means "displayed, not selectable", in practice value 0 does NOT
-        // render the body in the viewport while value 1 does. Picking the
-        // overlay arrow is harmless (it's not a feature, has no entity ID
-        // for downstream selection logic, and the next refresh wipes it),
-        // so accepting "selectable" is a fine trade for "actually visible".
-        //
-        // Redraw uses `IModelView.GraphicsRedraw(null)` as the primary path,
-        // falling back to `IModelDoc2.GraphicsRedraw2()`. Inside a
-        // PropertyManagerPage, `GraphicsRedraw2` alone is unreliable for
-        // forcing a temp-body refresh; the model-view-level redraw is the
-        // path that actually flushes the new IBody2.Display3 state.
+        // The handler argument to CreateManipulator is REQUIRED. Passing
+        // null causes SW to silently refuse to create the manipulator
+        // (we did not test what passing null actually does - the canonical
+        // SW C# example unambiguously constructs a handler, so we mirror
+        // that). For our display-only use we provide a no-op handler
+        // (AxisOverlayManipulatorHandler) that returns true / does
+        // nothing for every callback. If we later want click-to-flip
+        // behavior on the arrow itself (mirroring SW's coord-system PM),
+        // wire OnDirectionFlipped to a callback that updates
+        // currentAxisFlipped + Joint.AxisFlipped. AllowFlip is currently
+        // false because the bitmap button is the documented flip control;
+        // exposing two flip mechanisms doubles the surface area.
 
         // Fraction of the assembly's bounding-box diagonal used for the
         // axis overlay arrow length. 15% is large enough to see clearly
@@ -1687,19 +1685,20 @@ namespace SW2URDF.URDFExport
         private const double AxisOverlayLengthMax = 5.0;
         private const double AxisOverlayLengthFallback = 0.05;
 
-        // BGR color int for the overlay (SW Display3 takes a Win32 BGR int,
-        // which is what ColorTranslator.ToWin32 returns). Fully-qualified
-        // System.Drawing.Color disambiguates from SW2URDF.URDF.Color.
-        private static readonly int AxisOverlayColor =
-            ColorTranslator.ToWin32(System.Drawing.Color.OrangeRed);
+        // Cached no-op handler for the DragArrowManipulator - lazily
+        // built on first DrawAxisOverlay and reused thereafter. The
+        // handler has no per-call state so a single instance shared
+        // across manipulators is safe; allocating a new one per draw
+        // would create unnecessary COM-callable wrappers.
+        private AxisOverlayManipulatorHandler axisManipulatorHandler;
 
         // (Re)draws the joint axis direction overlay arrow at the given
         // world-space origin pointing in the given world-space direction.
-        // Both inputs are expressed in assembly-global coordinates. Safe to
-        // call repeatedly; previous overlay bodies are hidden + dropped on
-        // each call so only the most recent arrow is visible. All failures
-        // are logged and swallowed - a viewport problem must not break the
-        // PropertyManager.
+        // Both inputs are expressed in assembly-global coordinates. Safe
+        // to call repeatedly; the previous manipulator is removed before
+        // a new one is created so only the most recent arrow is visible.
+        // All failures are logged and swallowed - a viewport problem
+        // must not break the PropertyManager.
         public void DrawAxisOverlay(double[] originGlobal, double[] axisGlobal)
         {
             if (originGlobal == null || originGlobal.Length < 3 ||
@@ -1709,8 +1708,8 @@ namespace SW2URDF.URDFExport
                 return;
             }
 
-            // Defensive normalize so the arrow length is independent of the
-            // caller's vector magnitude.
+            // Defensive normalize so the arrow length is independent of
+            // the caller's vector magnitude.
             double mag = Math.Sqrt(
                 axisGlobal[0] * axisGlobal[0] +
                 axisGlobal[1] * axisGlobal[1] +
@@ -1728,114 +1727,73 @@ namespace SW2URDF.URDFExport
 
             try
             {
-                IModeler modeler = (IModeler)iSwApp.GetModeler();
-                if (modeler == null)
+                ModelViewManager mvm = ActiveSWModel?.ModelViewManager;
+                if (mvm == null)
                 {
-                    logger.Warn("DrawAxisOverlay: GetModeler() returned null; skipping overlay");
+                    logger.Warn("DrawAxisOverlay: ModelViewManager null; skipping overlay");
                     return;
                 }
 
-                // IBody2::Display3 anchor must be a top-level PART
-                // component (not null, not a ModelDoc2, not a subassembly,
-                // not the root component). See the AGENTS.md "Joint axis
-                // direction" section for the full Display3 contract that
-                // we hard-won the diagnosis of.
-                Component2 anchorComp = FindTopLevelPartAnchor();
-                if (anchorComp == null)
+                MathUtility mathUtil = iSwApp.GetMathUtility() as MathUtility;
+                if (mathUtil == null)
                 {
-                    logger.Warn("DrawAxisOverlay: no top-level part anchor found - skipping render");
+                    logger.Warn("DrawAxisOverlay: GetMathUtility returned null; skipping overlay");
                     return;
                 }
-                MathTransform anchorInverse = null;
-                try
+
+                if (axisManipulatorHandler == null)
                 {
-                    anchorInverse = anchorComp.Transform2?.Inverse() as MathTransform;
+                    axisManipulatorHandler = new AxisOverlayManipulatorHandler();
                 }
-                catch (Exception ex)
+
+                // CreateManipulator REQUIRES a non-null handler; passing
+                // null is an undocumented case the canonical SW C# example
+                // pointedly avoids. Our handler is a no-op stub that
+                // returns true / does nothing for every callback.
+                Manipulator mgr = mvm.CreateManipulator(
+                    (int)swManipulatorType_e.swDragArrowManipulator,
+                    axisManipulatorHandler);
+                if (mgr == null)
                 {
-                    logger.Warn("DrawAxisOverlay: Transform2.Inverse failed: " + ex.Message);
+                    logger.Warn("DrawAxisOverlay: CreateManipulator returned null; skipping overlay");
+                    return;
+                }
+
+                DragArrowManipulator drag = mgr.GetSpecificManipulator() as DragArrowManipulator;
+                if (drag == null)
+                {
+                    logger.Warn("DrawAxisOverlay: GetSpecificManipulator did not return a DragArrowManipulator; removing");
+                    try { mgr.Remove(); } catch { /* swallowed */ }
+                    return;
                 }
 
                 double overlayLength = ComputeAxisOverlayLength();
 
-                // Geometry: shaft is a thin cylinder for the first 75%
-                // of the arrow, head is a CONE (sharp-tipped) for the
-                // remaining 25% so it visibly distinguishes the positive
-                // end. Earlier revisions used a wider cylinder for the
-                // head and the user (correctly) called it out as not
-                // arrow-shaped.
-                double shaftLength = overlayLength * 0.75;
-                double shaftRadius = overlayLength * 0.02;
-                double headLength = overlayLength * 0.25;
-                double headRadius = overlayLength * 0.06;
-                double headStartX = originGlobal[0] + shaftLength * ax;
-                double headStartY = originGlobal[1] + shaftLength * ay;
-                double headStartZ = originGlobal[2] + shaftLength * az;
+                // Order matters: per the canonical SW example, set all
+                // properties first, THEN Show, THEN Update. Update
+                // commits the property changes to the rendered gizmo.
+                drag.AllowFlip = false;
+                drag.ShowRuler = false;
+                drag.ShowOppositeDirection = false;
+                drag.FixedLength = true;
+                drag.Length = overlayLength;
+                drag.Direction = (MathVector)mathUtil.CreateVector(new double[] { ax, ay, az });
+                drag.Origin = (MathPoint)mathUtil.CreatePoint(new double[] { originGlobal[0], originGlobal[1], originGlobal[2] });
 
-                // CreateBodyFromCyl param order (8 doubles):
-                //   originX, originY, originZ, axisX, axisY, axisZ, radius, length
-                // origin = base-circle center, axis = unit direction the
-                // cylinder extends along.
-                double[] shaftParams = new double[]
-                {
-                    originGlobal[0], originGlobal[1], originGlobal[2],
-                    ax, ay, az,
-                    shaftRadius, shaftLength,
-                };
-                IBody2 shaft = (IBody2)modeler.CreateBodyFromCyl(shaftParams);
+                mgr.Show(ActiveSWModel);
+                drag.Update();
 
-                // CreateBodyFromCone param order (9 doubles):
-                //   originX, originY, originZ, axisX, axisY, axisZ,
-                //   baseRadius, topRadius, length
-                // baseRadius = wide end (at origin); topRadius = 0 for a
-                // sharp tip; axis points from base toward apex.
-                double[] headParams = new double[]
-                {
-                    headStartX, headStartY, headStartZ,
-                    ax, ay, az,
-                    headRadius, 0.0, headLength,
-                };
-                IBody2 head = (IBody2)modeler.CreateBodyFromCone(headParams);
-
-                int shaftRc = DisplayOverlayBody(shaft, anchorComp, anchorInverse);
-                int headRc = DisplayOverlayBody(head, anchorComp, anchorInverse);
+                axisManipulator = mgr;
 
                 logger.Info(string.Format(CultureInfo.InvariantCulture,
-                    "DrawAxisOverlay: anchor={0} origin=({1:F3},{2:F3},{3:F3}) axis=({4:F2},{5:F2},{6:F2}) len={7:F3} shaftRc={8} headRc={9}",
-                    anchorComp.Name2,
+                    "DrawAxisOverlay: origin=({0:F3},{1:F3},{2:F3}) axis=({3:F2},{4:F2},{5:F2}) len={6:F3}",
                     originGlobal[0], originGlobal[1], originGlobal[2],
-                    ax, ay, az, overlayLength,
-                    shaftRc, headRc));
-
-                IssueViewportRedraw("DrawAxisOverlay");
+                    ax, ay, az, overlayLength));
             }
             catch (Exception ex)
             {
                 logger.Warn("DrawAxisOverlay failed: " + ex.Message);
             }
-        }
-
-        // Common Display3 plumbing for the shaft + head bodies: applies
-        // the anchor's inverse transform (so world-space body coords land
-        // correctly when SW interprets them in the anchor's local frame),
-        // calls Display3, registers the (anchor, body) pair so
-        // ClearAxisOverlay can release it later, and returns the
-        // Display3 return code (0 = success; 1, 2, 3 = various rejection
-        // modes documented next to the Display3 call site).
-        private int DisplayOverlayBody(IBody2 body, Component2 anchorComp, MathTransform anchorInverse)
-        {
-            if (body == null || anchorComp == null)
-            {
-                return -1;
-            }
-            if (anchorInverse != null)
-            {
-                body.ApplyTransform(anchorInverse);
-            }
-            int rc = body.Display3(anchorComp, AxisOverlayColor,
-                (int)swTempBodySelectOptions_e.swTempBodySelectable);
-            axisOverlayBodies.Add(new KeyValuePair<Component2, IBody2>(anchorComp, body));
-            return rc;
         }
 
         // Returns a sensible arrow length in meters for the active model:
@@ -1877,140 +1835,28 @@ namespace SW2URDF.URDFExport
             }
         }
 
-        // Hides every overlay body we previously displayed and drops our
-        // refs. Idempotent - safe to call when no overlay is currently
-        // shown. Called on every overlay refresh, on PM node-switch into a
-        // base node (which has no joint axis), and on PM OnClose.
+        // Removes the active overlay manipulator, if any. Idempotent -
+        // safe to call when no overlay is currently shown. Called on
+        // every overlay refresh, on PM node-switch into a base node
+        // (which has no joint axis), and on PM OnClose. Manipulators
+        // hold a Show() reference on the active ModelDoc until Remove()
+        // is called, so dropping the field without Remove() leaks the
+        // arrow into the user's viewport across exports.
         public void ClearAxisOverlay()
         {
-            if (axisOverlayBodies.Count == 0)
+            if (axisManipulator == null)
             {
                 return;
             }
-            foreach (KeyValuePair<Component2, IBody2> entry in axisOverlayBodies)
-            {
-                Component2 anchor = entry.Key;
-                IBody2 body = entry.Value;
-                if (body == null)
-                {
-                    continue;
-                }
-                try
-                {
-                    // Pair with Display3(anchorComp, ...) above:
-                    // IBody2.Hide(Part) takes the same Component2 we
-                    // anchored Display3 to, undoing the swModifyBlock
-                    // blocking state Display3 set when called with
-                    // swTempBodySelectable. Per the SW Display3 docs
-                    // remarks: "Unset the blocking state by calling
-                    // IBody2::Hide."
-                    body.Hide(anchor);
-                }
-                catch (Exception ex)
-                {
-                    logger.Warn("ClearAxisOverlay: Hide failed: " + ex.Message);
-                }
-            }
-            axisOverlayBodies.Clear();
-
-            IssueViewportRedraw("ClearAxisOverlay");
-        }
-
-        // Common redraw helper for the axis overlay: prefers an
-        // IModelView-level redraw (the one PM-mode SW actually honors for
-        // newly-Displayed temp bodies) and falls back to ModelDoc2
-        // GraphicsRedraw2 if no active view is reachable. All failures
-        // are logged + swallowed - a viewport problem must not break the
-        // PM. The ModelView path is the working one in PM mode; the
-        // GraphicsRedraw2 fallback exists for safety but did NOT flush
-        // newly-displayed temp bodies in our testing.
-        private void IssueViewportRedraw(string callsite)
-        {
-            ModelView view = null;
             try
             {
-                view = ActiveSWModel?.ActiveView as ModelView;
+                axisManipulator.Remove();
             }
             catch (Exception ex)
             {
-                logger.Warn(callsite + ": resolving ActiveView threw (" + ex.Message + ")");
+                logger.Warn("ClearAxisOverlay: Remove failed: " + ex.Message);
             }
-
-            if (view != null)
-            {
-                try
-                {
-                    view.GraphicsRedraw(null);
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    logger.Warn(callsite + ": ModelView.GraphicsRedraw failed (" + ex.Message + ") - falling back to GraphicsRedraw2");
-                }
-            }
-            else
-            {
-                logger.Warn(callsite + ": ActiveView null - falling back to ModelDoc2.GraphicsRedraw2 (PM-mode unreliable)");
-            }
-
-            try
-            {
-                ActiveSWModel?.GraphicsRedraw2();
-            }
-            catch (Exception ex)
-            {
-                logger.Warn(callsite + ": GraphicsRedraw2 fallback failed: " + ex.Message);
-            }
-        }
-
-        // Walks the active assembly's root component children and
-        // returns the first top-level component whose ModelDoc2 is a
-        // part (swDocPART). IBody2.Display3's Component arg has two
-        // hard constraints from the SW docs that together rule out the
-        // root component itself: "Component cannot be in a subassembly"
-        // (so we must stay at depth 1) AND a return code of 3 ("Not a
-        // part instance") if we hand it the root or any subassembly
-        // component. The first top-level part instance satisfies both.
-        // Returns null on a part doc (no children), an empty assembly,
-        // or an assembly composed entirely of subassemblies.
-        private Component2 FindTopLevelPartAnchor()
-        {
-            try
-            {
-                Configuration cfg = ActiveSWModel?.GetActiveConfiguration() as Configuration;
-                Component2 root = cfg?.GetRootComponent3(true);
-                if (root == null)
-                {
-                    return null;
-                }
-                object children = root.GetChildren();
-                if (!(children is object[] childArr))
-                {
-                    return null;
-                }
-                foreach (object child in childArr)
-                {
-                    Component2 comp = child as Component2;
-                    if (comp == null)
-                    {
-                        continue;
-                    }
-                    ModelDoc2 doc = comp.GetModelDoc2() as ModelDoc2;
-                    if (doc == null)
-                    {
-                        continue;
-                    }
-                    if (doc.GetType() == (int)swDocumentTypes_e.swDocPART)
-                    {
-                        return comp;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.Warn("FindTopLevelPartAnchor: " + ex.Message);
-            }
-            return null;
+            axisManipulator = null;
         }
 
         //This method adds in the limits from a limit mate, to make a joint a revolute joint.
@@ -2204,5 +2050,45 @@ namespace SW2URDF.URDFExport
     {
         STL,
         THREEDXML
+    }
+
+    // No-op handler passed to ModelViewManager.CreateManipulator for the
+    // joint axis direction overlay. SW requires a non-null handler when
+    // creating a DragArrowManipulator (the canonical SW C# example
+    // explicitly constructs one and we mirror that). We use the
+    // manipulator purely as a passive "this is positive" indicator: the
+    // length is fixed (FixedLength=true), the user cannot drag-flip
+    // (AllowFlip=false), and there is no second-direction handle
+    // (ShowOppositeDirection=false), so none of the drag / value-change /
+    // flip / focus events ever fire from user interaction. The Boolean
+    // returns are "true" by SW convention to indicate the event was
+    // handled successfully (false signals an error to SW).
+    //
+    // [ComVisible(true)] is required because SW invokes these via COM
+    // late-binding, NOT through the .NET interface dispatch table. If
+    // you remove the attribute the manipulator will appear to create
+    // successfully but SW will see no callable methods and silently
+    // drop the manipulator on first display.
+    //
+    // If a future iteration wants click-to-flip on the arrow itself
+    // (matching SW's coord-system PM), set DragArrowManipulator.AllowFlip
+    // = true and wire OnDirectionFlipped to a callback that toggles the
+    // owning ExportPropertyManager's currentAxisFlipped + persists to
+    // Joint.AxisFlipped. The bitmap button would still work as a second
+    // way to flip; both paths converge on the same flag.
+    [System.Runtime.InteropServices.ComVisible(true)]
+    public class AxisOverlayManipulatorHandler : ISwManipulatorHandler2
+    {
+        public bool OnDelete(object pManipulator) { return true; }
+        public bool OnHandleLmbSelected(object pManipulator) { return true; }
+        public bool OnDoubleValueChanged(object pManipulator, int handleIndex, ref double Value) { return true; }
+        public bool OnStringValueChanged(object pManipulator, int handleIndex, ref string Value) { return true; }
+        public void OnDirectionFlipped(object pManipulator) { }
+        public void OnEndDrag(object pManipulator, int handleIndex) { }
+        public void OnEndNoDrag(object pManipulator, int handleIndex) { }
+        public void OnHandleRmbSelected(object pManipulator, int handleIndex) { }
+        public void OnHandleSelected(object pManipulator, int handleIndex) { }
+        public void OnItemSetFocus(object pManipulator, int handleIndex) { }
+        public void OnUpdateDrag(object pManipulator, int handleIndex, object newPosMathPt) { }
     }
 }

@@ -65,6 +65,14 @@ namespace SW2URDF.URDF
         [DataMember]
         public string AxisName;
 
+        // Reverse-direction toggle for the joint axis. Mirrors the "Reverse
+        // Direction" button on SolidWorks' own coord-system / extrude PMs.
+        // When true, EstimateAxis negates the localized axis vector after
+        // LocalizeAxis. IsRequired=false so older configs (which omit this
+        // field entirely) deserialize cleanly with the default `false`.
+        [DataMember(IsRequired = false)]
+        public bool AxisFlipped;
+
         public Joint() : base("joint", false)
         {
             Origin = new Origin(false);
@@ -129,6 +137,9 @@ namespace SW2URDF.URDF
             string axisContext = contextString + ".AxisName";
             dictionary.Add(axisContext, AxisName);
 
+            string axisFlippedContext = contextString + ".Joint.AxisFlipped";
+            dictionary.Add(axisFlippedContext, AxisFlipped.ToString());
+
             base.AppendToCSVDictionary(context, dictionary);
         }
 
@@ -139,9 +150,14 @@ namespace SW2URDF.URDF
             // The base method already performs the type check, so we don't have to for this cast
             Joint joint = (Joint)externalElement;
 
-            // These strings aren't kept as URDFAttribute objects and so they are tracked separately
+            // These plain fields aren't kept as URDFAttribute objects and so
+            // are tracked separately. Without these manual copies, every
+            // Link.Clone() after a DataContractSerializer reload silently
+            // resets them to the zero-init default (see AGENTS.md
+            // four-paths landmine, Joint-scope variant).
             CoordinateSystemName = joint.CoordinateSystemName;
             AxisName = joint.AxisName;
+            AxisFlipped = joint.AxisFlipped;
         }
 
         public override void SetElementFromData(List<string> context, StringDictionary dictionary)
@@ -154,6 +170,10 @@ namespace SW2URDF.URDF
             string axisContext = contextString + ".AxisName";
             AxisName = dictionary[axisContext];
 
+            string axisFlippedContext = contextString + ".Joint.AxisFlipped";
+            string axisFlippedRaw = dictionary[axisFlippedContext];
+            AxisFlipped = bool.TryParse(axisFlippedRaw, out bool parsed) && parsed;
+
             base.SetElementFromData(context, dictionary);
         }
 
@@ -161,6 +181,7 @@ namespace SW2URDF.URDF
         {
             CoordinateSystemName = joint.CoordinateSystemName;
             AxisName = joint.AxisName;
+            AxisFlipped = joint.AxisFlipped;
             Type = joint.Type;
             Axis.SetElement(joint.Axis);
             Origin.SetElement(joint.Origin);
