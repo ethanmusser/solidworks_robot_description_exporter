@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="12.0">
   <Import Project="..\packages\Microsoft.CodeAnalysis.FxCopAnalyzers.2.9.6\build\Microsoft.CodeAnalysis.FxCopAnalyzers.props" Condition="Exists('..\packages\Microsoft.CodeAnalysis.FxCopAnalyzers.2.9.6\build\Microsoft.CodeAnalysis.FxCopAnalyzers.props')" />
   <Import Project="..\packages\Microsoft.NetFramework.Analyzers.2.9.6\build\Microsoft.NetFramework.Analyzers.props" Condition="Exists('..\packages\Microsoft.NetFramework.Analyzers.2.9.6\build\Microsoft.NetFramework.Analyzers.props')" />
@@ -325,6 +325,7 @@
     <Compile Include="Test\TestCommon.cs" />
     <Compile Include="Test\TestCSVImportExport.cs" />
     <Compile Include="Test\TestExportHelper.cs" />
+    <Compile Include="Test\TestJointAxisFlipped.cs" />
     <Compile Include="Test\TestLogger.cs" />
     <Compile Include="Test\TestMathOps.cs" />
     <Compile Include="Test\TestPropertyManager.cs" />
@@ -396,15 +397,32 @@
     <Compile Include="URDF\Mass.cs" />
     <Compile Include="URDF\Material.cs" />
     <Compile Include="URDF\Mesh.cs" />
+    <Compile Include="URDF\MeshGroup.cs" />
     <Compile Include="URDF\Origin.cs" />
     <Compile Include="URDF\PackageXMLWriter.cs" />
     <Compile Include="URDF\ParentLink.cs" />
     <Compile Include="URDF\Robot.cs" />
     <Compile Include="URDF\SafetyController.cs" />
+    <Compile Include="URDF\SiteSpec.cs" />
     <Compile Include="URDF\Texture.cs" />
     <Compile Include="URDF\URDFAttribute.cs" />
     <Compile Include="URDFExport\ExportPropertyManager.cs" />
     <Compile Include="URDFExport\URDFPackage.cs" />
+    <Compile Include="URDFExport\ExportPackage.cs" />
+    <Compile Include="URDFExport\ExportFormat.cs" />
+    <Compile Include="MJCF\MJCFFormat.cs" />
+    <Compile Include="MJCF\Compiler.cs" />
+    <Compile Include="MJCF\Asset.cs" />
+    <Compile Include="MJCF\Body.cs" />
+    <Compile Include="MJCF\MJCFInertial.cs" />
+    <Compile Include="MJCF\MJCFJoint.cs" />
+    <Compile Include="MJCF\Geom.cs" />
+    <Compile Include="MJCF\Site.cs" />
+    <Compile Include="MJCF\MJCFWriter.cs" />
+    <Compile Include="MJCF\MJCFModel.cs" />
+    <Compile Include="MJCF\MJCFBuilder.cs" />
+    <Compile Include="MJCF\MJCFBuilderTypes.cs" />
+    <Compile Include="Test\TestMJCFExport.cs" />
     <Compile Include="URDF\URDFElement.cs" />
     <Compile Include="URDF\URDFWriter.cs" />
     <Compile Include="URDF\Visual.cs" />
