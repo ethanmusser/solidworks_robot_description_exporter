@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Globalization;
 using System.Runtime.Serialization;
 using System.Xml;
@@ -69,64 +67,6 @@ namespace SW2URDF.URDF
             {
                 writer.WriteAttributeString(AttributeType, valueString);
             }
-        }
-
-        public void AppendToCSVDictionary(List<string> context, OrderedDictionary dictionary)
-        {
-            if (Value.GetType() == typeof(double[]))
-            {
-                double[] values = (double[])Value;
-                for (int i = 0; i < values.Length; i++)
-                {
-                    string contextString = string.Join(".", context) + "." + AttributeType + "." + AttributeType[i];
-                    dictionary.Add(contextString, values[i]);
-                }
-            }
-            else
-            {
-                string contextString = string.Join(".", context) + "." + AttributeType;
-                dictionary.Add(contextString, Value);
-            }
-        }
-
-        public void SetValueFromData(List<string> context, StringDictionary dictionary)
-        {
-            string contextString = string.Join(".", context) + "." + AttributeType;
-            if (dictionary.ContainsKey(contextString))
-            {
-                Value = GetValueFromString(dictionary[contextString]);
-            }
-        }
-
-        public static object GetValueFromString(string valueStr)
-        {
-            if (valueStr == null)
-            {
-                return null;
-            }
-            double resultDouble;
-            if (valueStr.Contains(";"))
-            {
-                string[] valueFields = valueStr.Split(';');
-                double[] arry = new double[valueFields.Length];
-                for (int i = 0; i < valueFields.Length; i++)
-                {
-                    if (!Double.TryParse(valueFields[i], out resultDouble))
-                    {
-                        throw new Exception("Parsing failed for CSV field " + valueStr);
-                    }
-                    arry[i] = resultDouble;
-                }
-                return arry;
-            }
-            else
-            {
-                if (Double.TryParse(valueStr, out resultDouble))
-                {
-                    return resultDouble;
-                }
-            }
-            return valueStr;
         }
 
         public bool GetIsRequired()

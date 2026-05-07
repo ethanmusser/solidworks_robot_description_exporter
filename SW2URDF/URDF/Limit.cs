@@ -43,6 +43,47 @@ namespace SW2URDF.URDF
             set => VelocityAttribute.Value = value;
         }
 
+        // Null-safe accessors used by the KinematicTree adapter and
+        // anywhere else that needs to read a limit field without knowing
+        // whether the user has configured it. The non-nullable getters
+        // above unconditionally cast `Value` to double, so they NPE on
+        // a default-constructed Limit (where every URDFAttribute.Value is
+        // null). These wrappers return the field as `double?` and yield
+        // `null` whenever the underlying URDFAttribute has not been set.
+        public double? LowerOrNull => LowerAttribute.IsSet() ? (double?)LowerAttribute.Value : null;
+
+        public double? UpperOrNull => UpperAttribute.IsSet() ? (double?)UpperAttribute.Value : null;
+
+        public double? EffortOrNull => EffortAttribute.IsSet() ? (double?)EffortAttribute.Value : null;
+
+        public double? VelocityOrNull => VelocityAttribute.IsSet() ? (double?)VelocityAttribute.Value : null;
+
+        // Setters used by the Joint Properties UI on link save. Empty
+        // textbox -> Value = null (the writer omits the attribute);
+        // populated -> Value = parsed double. Centralizing the
+        // empty-string handling here keeps the PMPage round-trip simple
+        // and matches the omit-on-blank semantics the URDF / MJCF
+        // writers implement for limits.
+        public void SetLowerOrClear(string text) => SetOrClear(LowerAttribute, text);
+
+        public void SetUpperOrClear(string text) => SetOrClear(UpperAttribute, text);
+
+        public void SetEffortOrClear(string text) => SetOrClear(EffortAttribute, text);
+
+        public void SetVelocityOrClear(string text) => SetOrClear(VelocityAttribute, text);
+
+        private static void SetOrClear(URDFAttribute attr, string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                attr.Value = null;
+            }
+            else
+            {
+                attr.SetDoubleValueFromString(text);
+            }
+        }
+
         public Limit() : base("limit", false)
         {
             EffortAttribute = new URDFAttribute("effort", true, null);

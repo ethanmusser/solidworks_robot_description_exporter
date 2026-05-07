@@ -29,7 +29,6 @@ using SW2URDF.URDF;
 using SW2URDF.Utilities;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Windows;
 
@@ -48,7 +47,8 @@ namespace SW2URDF.URDFExport
             URDFRobot = new Robot();
             URDFRobot.Name = ActiveSWModel.GetTitle();
 
-            Configuration swConfig = ActiveSWModel.ConfigurationManager.ActiveConfiguration;
+            SolidWorks.Interop.sldworks.Configuration swConfig =
+                ActiveSWModel.ConfigurationManager.ActiveConfiguration;
             foreach (string state in swConfig.GetDisplayStates())
             {
                 if (state.Equals("URDF Export"))
@@ -159,35 +159,39 @@ namespace SW2URDF.URDFExport
         // The one used by the Assembly Exporter
         public bool CreateRobotFromTreeView(LinkNode baseNode)
         {
-            ExportErrorWhy = "";
-            URDFRobot = new Robot();
-
-            progressBar.Start(0, CommonSwOperations.GetCount(baseNode.Nodes) + 1, "Building links");
-            int count = 0;
-
-            progressBar.UpdateProgress(count);
-            progressBar.UpdateTitle("Building link: " + baseNode.Name);
-            
-            Link baseLink = CreateLink(baseNode, 1);
-            if (baseLink == null || !string.IsNullOrWhiteSpace(ExportErrorWhy))
+            using (BeginFeatureLookupCache())
             {
-                MessageBox.Show(ExportErrorWhy);
-                logger.Warn(ExportErrorWhy);
-                progressBar.End();
-                return false;
-            }
-            URDFRobot.SetBaseLink(baseLink);
-            baseNode.Link = baseLink;
+                ExportErrorWhy = "";
+                URDFRobot = new Robot();
 
-            progressBar.End();
-            return true;
+                progressBar.Start(0, CommonSwOperations.GetCount(baseNode.Nodes) + 1, "Building links");
+                int count = 0;
+
+                progressBar.UpdateProgress(count);
+                progressBar.UpdateTitle("Building link: " + baseNode.Name);
+
+                Link baseLink = CreateLink(baseNode, 1);
+                if (baseLink == null || !string.IsNullOrWhiteSpace(ExportErrorWhy))
+                {
+                    MessageBox.Show(ExportErrorWhy);
+                    logger.Warn(ExportErrorWhy);
+                    progressBar.End();
+                    return false;
+                }
+                URDFRobot.SetBaseLink(baseLink);
+                baseNode.Link = baseLink;
+
+                progressBar.End();
+                return true;
+            }
         }
 
         private Link CreateBaseLinkFromComponents(LinkNode node)
         {
             // Build the link from the partdoc
             Link link = CreateLinkFromComponents(null, node);
-            if (node.Link.Joint.CoordinateSystemName == "Automatically Generate")
+            if (string.IsNullOrEmpty(node.Link.Joint.CoordinateSystemName) ||
+                node.Link.Joint.CoordinateSystemName == "Automatically Generate")
             {
                 CreateBaseRefOrigin(true);
                 node.Link.Joint.CoordinateSystemName = "Origin_global";
@@ -435,8 +439,11 @@ namespace SW2URDF.URDFExport
                 jointType = "fixed";
                 child.Joint.Type = jointType;
             }
-            else if (coordSysName == "Automatically Generate" ||
-                axisName == "Automatically Generate" || jointType == "Automatically Detect")
+            else if (string.IsNullOrEmpty(coordSysName) ||
+                coordSysName == "Automatically Generate" ||
+                child.Joint.AutoDeriveAxis ||
+                string.IsNullOrEmpty(axisName) ||
+                jointType == "Automatically Detect")
             {
                 // We have to estimate the joint if the user specifies automatic for either the
                 // reference coordinate system, the reference axis or the joint type.
@@ -455,7 +462,7 @@ namespace SW2URDF.URDFExport
                 }
             }
 
-            if (coordSysName == "Automatically Generate")
+            if (string.IsNullOrEmpty(coordSysName) || coordSysName == "Automatically Generate")
             {
                 child.Joint.CoordinateSystemName = "Origin_" + child.Joint.Name;
                 ActiveSWModel.ClearSelection2(true);
@@ -472,7 +479,8 @@ namespace SW2URDF.URDFExport
                 CreateRefOrigin(child.Joint);
             }
 
-            if (axisName == "Automatically Generate")
+            if (child.Joint.AutoDeriveAxis || string.IsNullOrEmpty(axisName) ||
+                axisName == "Automatically Generate")
             {
                 child.Joint.AxisName = "Axis_" + child.Joint.Name;
                 ActiveSWModel.ClearSelection2(true);
@@ -891,7 +899,7 @@ namespace SW2URDF.URDFExport
             if (featuresBefore.Length < featuresAfter.Length)
             {
                 //It was probably added at the end (hence .Reverse())
-                foreach (Feature feat in featuresAfter.Reverse())
+                foreach (Feature feat in featuresAfter.Cast<Feature>().Reverse())
                 {
                     //If the feature in featuresAfter is not in features before, its gotta be the
                     // axis we inserted
@@ -1128,7 +1136,12 @@ namespace SW2URDF.URDFExport
                 child.Joint.Origin.SetXYZ(MathOps.Threshold(child.Joint.Origin.GetXYZ(), 0.00001));
                 child.Joint.Origin.SetRPY(MathOps.Threshold(child.Joint.Origin.GetRPY(), 0.00001));
                 UnsuppressLimitMates(limitMates);
-                if (limitMates.Count > 0 && ComputeJointLimits)
+                // Per-joint AutoComputeLimits gates the SW-mate derivation
+                // for this specific joint. The global ComputeJointLimits
+                // flag is now test-only (TestExportHelper exercises the
+                // false path); production gates exclusively via the
+                // per-joint toggle.
+                if (limitMates.Count > 0 && ComputeJointLimits && child.Joint.AutoComputeLimits)
                 {
                     AddLimits(child.Joint, limitMates, parent.SWMainComponent, child.SWMainComponent);
                 }
@@ -1281,6 +1294,68 @@ namespace SW2URDF.URDFExport
             }
         }
 
+        private IDisposable BeginFeatureLookupCache()
+        {
+            if (featureLookupCacheDepth == 0)
+            {
+                coordinateSystemTransformCache.Clear();
+                referenceAxisCache.Clear();
+            }
+
+            featureLookupCacheDepth++;
+            return new FeatureLookupCacheScope(this);
+        }
+
+        private bool IsFeatureLookupCacheEnabled()
+        {
+            return featureLookupCacheDepth > 0;
+        }
+
+        private void EndFeatureLookupCache()
+        {
+            featureLookupCacheDepth--;
+            if (featureLookupCacheDepth <= 0)
+            {
+                featureLookupCacheDepth = 0;
+                coordinateSystemTransformCache.Clear();
+                referenceAxisCache.Clear();
+            }
+        }
+
+        private static string FeatureLookupCacheKey(string role, ResolvedFeatureReference r)
+        {
+            string docKey = "";
+            if (r.OwningDoc != null)
+            {
+                docKey = r.OwningDoc.GetPathName();
+                if (string.IsNullOrEmpty(docKey))
+                {
+                    docKey = r.OwningDoc.GetTitle();
+                }
+            }
+
+            return role + "|" + docKey + "|" + (r.ConfigurationName ?? "") + "|" + (r.FeatureName ?? "");
+        }
+
+        private sealed class FeatureLookupCacheScope : IDisposable
+        {
+            private ExportHelper owner;
+
+            public FeatureLookupCacheScope(ExportHelper owner)
+            {
+                this.owner = owner;
+            }
+
+            public void Dispose()
+            {
+                if (owner != null)
+                {
+                    owner.EndFeatureLookupCache();
+                    owner = null;
+                }
+            }
+        }
+
         // Method to get the SolidWorks MathTransform from a coordinate system. This method can account for
         // coordinate systems that are embedded in subcomponents, and apply the correct transformation to return
         // it to a global transform. It assumes that the coordinate system name is formatted like:
@@ -1294,9 +1369,24 @@ namespace SW2URDF.URDFExport
 
             ResolvedFeatureReference r = ResolveFeatureReference(CoordinateSystemName);
 
-            MathTransform local = WithComponentConfiguration(
-                r.OwningDoc, r.ConfigurationName,
-                () => r.OwningDoc.Extension.GetCoordinateSystemTransformByName(r.FeatureName));
+            string cacheKey = FeatureLookupCacheKey("coord", r);
+            MathTransform local;
+            if (IsFeatureLookupCacheEnabled() &&
+                coordinateSystemTransformCache.TryGetValue(cacheKey, out local))
+            {
+                logger.Info("Coordinate system lookup cache hit for " + r.FeatureName +
+                    " in config '" + (r.ConfigurationName ?? "") + "'");
+            }
+            else
+            {
+                local = WithComponentConfiguration(
+                    r.OwningDoc, r.ConfigurationName,
+                    () => r.OwningDoc.Extension.GetCoordinateSystemTransformByName(r.FeatureName));
+                if (IsFeatureLookupCacheEnabled() && local != null)
+                {
+                    coordinateSystemTransformCache[cacheKey] = local;
+                }
+            }
 
             return r.ComponentTransform == null ? local : local.Multiply(r.ComponentTransform);
         }
@@ -1375,16 +1465,27 @@ namespace SW2URDF.URDFExport
         {
             AxisPreview empty = new AxisPreview { IsValid = false };
 
+            logger.Info("PreviewAxisDirection: enter coordsys='" + (coordsysName ?? "") +
+                        "' axis='" + (axisName ?? "") + "' flipped=" + flipped);
+
             if (string.IsNullOrWhiteSpace(coordsysName) ||
                 string.IsNullOrWhiteSpace(axisName) ||
                 coordsysName == "Automatically Generate" ||
                 axisName == "Automatically Generate" ||
                 axisName == "None")
             {
+                // Empty / placeholder picks: nothing to preview. With
+                // the SelectionBox-only UI an empty AxisName combined
+                // with AutoDeriveAxis = true is the new "auto" state
+                // (no overlay until the kinematic chain has been
+                // resolved at export time).
+                logger.Info("PreviewAxisDirection: placeholder/empty inputs -> IsValid=false");
                 return empty;
             }
 
+            logger.Info("PreviewAxisDirection: GetCoordinateSystemTransform ENTER");
             MathTransform coordsysTransform = GetCoordinateSystemTransform(coordsysName);
+            logger.Info("PreviewAxisDirection: GetCoordinateSystemTransform RETURNED (null=" + (coordsysTransform == null) + ")");
             if (coordsysTransform == null)
             {
                 return empty;
@@ -1394,7 +1495,9 @@ namespace SW2URDF.URDFExport
             double[] axis;
             try
             {
+                logger.Info("PreviewAxisDirection: EstimateAxis ENTER");
                 axis = EstimateAxis(axisName);
+                logger.Info("PreviewAxisDirection: EstimateAxis RETURNED (null=" + (axis == null) + ")");
             }
             catch (Exception ex)
             {
@@ -1423,12 +1526,20 @@ namespace SW2URDF.URDFExport
             };
         }
 
-        //This doesn't seem to get the right values for the estimatedAxis. Check the actual values
+        // Resolves a SW reference axis Feature.Name to its global-frame
+        // unit direction vector. Read-only with respect to SelectionMgr:
+        // GetRefAxis walks FeatureManager.GetFeatures directly to find
+        // the named RefAxis (see FindNamedFeature) instead of going
+        // through Extension.SelectByID2 + GetSelectedObject6, so the
+        // live-preview path never perturbs the assembly's selection
+        // state. The historical clobber via SelectByID2(Append=false,
+        // mark=0) was the root cause of the "SelectionBox renders
+        // empty after coord-sys / axis pick" symptom - every PM
+        // preview emptied every marked SelectionBox until the user
+        // re-clicked the tab. With FindNamedFeature, the preview
+        // path is side-effect-free.
         public double[] EstimateAxis(string axisName)
         {
-            //Select the axis
-            ActiveSWModel.ClearSelection2(true);
-
             return GetRefAxis(axisName);
         }
 
@@ -1443,25 +1554,55 @@ namespace SW2URDF.URDFExport
             // returned otherwise is already PNorm-normalised but still in
             // the part doc's local frame -- we apply the component transform
             // outside the block since it does not depend on active config.
-            double[] axisVector = WithComponentConfiguration(r.OwningDoc, r.ConfigurationName, () =>
+            string cacheKey = FeatureLookupCacheKey("axis", r);
+            double[] axisVector;
+            if (IsFeatureLookupCacheEnabled() && referenceAxisCache.TryGetValue(cacheKey, out axisVector))
             {
-                if (!r.OwningDoc.Extension.SelectByID2(r.FeatureName, "AXIS", 0, 0, 0, false, 0, null, 0))
+                logger.Info("Reference axis lookup cache hit for " + r.FeatureName +
+                    " in config '" + (r.ConfigurationName ?? "") + "'");
+                axisVector = (double[])axisVector.Clone();
+            }
+            else
+            {
+                axisVector = WithComponentConfiguration(r.OwningDoc, r.ConfigurationName, () =>
                 {
-                    return null;
+                    // Walk r.OwningDoc.FeatureManager directly to resolve
+                    // the named RefAxis without touching SelectionMgr.
+                    // The previous implementation called
+                    // Extension.SelectByID2(... Append=false, mark=0)
+                    // which silently CLOBBERED the assembly's
+                    // SelectionMgr - every PMP SelectionBox display
+                    // (joint coord-sys, joint axis, global coord-sys,
+                    // visual / collision / inertial component boxes)
+                    // would empty out mid-pick because the live axis
+                    // preview path runs on every coord-sys / axis pick.
+                    // FeatureManager.GetFeatures is read-only and does
+                    // not perturb selection state.
+                    Feature feat = FindNamedFeature(r.OwningDoc, "RefAxis", r.FeatureName);
+                    if (feat == null)
+                    {
+                        return null;
+                    }
+                    RefAxis axis = feat.GetSpecificFeature2() as RefAxis;
+                    if (axis == null)
+                    {
+                        return null;
+                    }
+
+                    // GetRefAxisParams returns {startX, startY, startZ, endX, endY, endZ}
+                    double[] axisParams = axis.GetRefAxisParams();
+                    double[] v = new double[3];
+                    v[0] = axisParams[0] - axisParams[3];
+                    v[1] = axisParams[1] - axisParams[4];
+                    v[2] = axisParams[2] - axisParams[5];
+
+                    return MathOps.PNorm(v, 2);
+                });
+                if (IsFeatureLookupCacheEnabled() && axisVector != null)
+                {
+                    referenceAxisCache[cacheKey] = (double[])axisVector.Clone();
                 }
-
-                Feature feat = r.OwningDoc.SelectionManager.GetSelectedObject6(1, 0);
-                RefAxis axis = (RefAxis)feat.GetSpecificFeature2();
-
-                // GetRefAxisParams returns {startX, startY, startZ, endX, endY, endZ}
-                double[] axisParams = axis.GetRefAxisParams();
-                double[] v = new double[3];
-                v[0] = axisParams[0] - axisParams[3];
-                v[1] = axisParams[1] - axisParams[4];
-                v[2] = axisParams[2] - axisParams[5];
-
-                return MathOps.PNorm(v, 2);
-            });
+            }
 
             if (axisVector == null)
             {
@@ -1514,6 +1655,37 @@ namespace SW2URDF.URDFExport
                 return GlobalAxis(axis, transform);
             }
             return axis;
+        }
+
+        // Finds a single named Feature of the requested type-name
+        // (e.g. "RefAxis", "CoordSys") by walking the document's
+        // FeatureManager. Read-only - does NOT touch SelectionMgr,
+        // unlike Extension.SelectByID2 which has a global side effect
+        // even on success. Used by GetRefAxis (live PM preview path
+        // and export path); could be reused for any future feature
+        // resolution that needs to avoid SelectionMgr clobber.
+        private static Feature FindNamedFeature(ModelDoc2 modelDoc, string typeName, string featureName)
+        {
+            if (modelDoc == null || string.IsNullOrEmpty(typeName) || string.IsNullOrEmpty(featureName))
+            {
+                return null;
+            }
+            object[] featureObjects = modelDoc.FeatureManager.GetFeatures(false);
+            if (featureObjects == null)
+            {
+                return null;
+            }
+            foreach (object obj in featureObjects)
+            {
+                Feature candidate = obj as Feature;
+                if (candidate == null) continue;
+                if (candidate.GetTypeName2() != typeName) continue;
+                if (candidate.Name == featureName)
+                {
+                    return candidate;
+                }
+            }
+            return null;
         }
 
         // Creates a list of all the features of this type.
@@ -1701,9 +1873,13 @@ namespace SW2URDF.URDFExport
         // must not break the PropertyManager.
         public void DrawAxisOverlay(double[] originGlobal, double[] axisGlobal)
         {
+            int seq = ++axisOverlayLogSeq;
+            logger.Info("[AxisOverlay #" + seq + "] DrawAxisOverlay: enter");
+
             if (originGlobal == null || originGlobal.Length < 3 ||
                 axisGlobal == null || axisGlobal.Length < 3)
             {
+                logger.Info("[AxisOverlay #" + seq + "] DrawAxisOverlay: bad inputs; clearing");
                 ClearAxisOverlay();
                 return;
             }
@@ -1716,6 +1892,7 @@ namespace SW2URDF.URDFExport
                 axisGlobal[2] * axisGlobal[2]);
             if (mag < 1e-12)
             {
+                logger.Info("[AxisOverlay #" + seq + "] DrawAxisOverlay: zero-magnitude axis; clearing");
                 ClearAxisOverlay();
                 return;
             }
@@ -1723,26 +1900,35 @@ namespace SW2URDF.URDFExport
             double ay = axisGlobal[1] / mag;
             double az = axisGlobal[2] / mag;
 
+            logger.Info("[AxisOverlay #" + seq + "] DrawAxisOverlay: pre-existing overlay clear");
             ClearAxisOverlay();
 
             try
             {
+                logger.Info("[AxisOverlay #" + seq + "] DrawAxisOverlay: querying ModelViewManager");
                 ModelViewManager mvm = ActiveSWModel?.ModelViewManager;
                 if (mvm == null)
                 {
-                    logger.Warn("DrawAxisOverlay: ModelViewManager null; skipping overlay");
+                    logger.Warn("[AxisOverlay #" + seq + "] DrawAxisOverlay: ModelViewManager null; skipping overlay");
                     return;
                 }
 
                 MathUtility mathUtil = iSwApp.GetMathUtility() as MathUtility;
                 if (mathUtil == null)
                 {
-                    logger.Warn("DrawAxisOverlay: GetMathUtility returned null; skipping overlay");
+                    logger.Warn("[AxisOverlay #" + seq + "] DrawAxisOverlay: GetMathUtility returned null; skipping overlay");
                     return;
                 }
 
                 if (axisManipulatorHandler == null)
                 {
+                    // Use the no-op parameterless ctor: the bitmap-button
+                    // "Reverse Direction" control is the SOLE flip path
+                    // (see AGENTS.md "Joint axis direction"). Wiring the
+                    // OnDirectionFlipped callback in addition to AllowFlip =
+                    // true was attempted and confirmed to deadlock against
+                    // SW's manipulator update from inside ToggleAxisFlip ->
+                    // RefreshAxisDirectionPreview -> DrawAxisOverlay.
                     axisManipulatorHandler = new AxisOverlayManipulatorHandler();
                 }
 
@@ -1750,19 +1936,21 @@ namespace SW2URDF.URDFExport
                 // null is an undocumented case the canonical SW C# example
                 // pointedly avoids. Our handler is a no-op stub that
                 // returns true / does nothing for every callback.
+                logger.Info("[AxisOverlay #" + seq + "] DrawAxisOverlay: CreateManipulator(swDragArrowManipulator)");
                 Manipulator mgr = mvm.CreateManipulator(
                     (int)swManipulatorType_e.swDragArrowManipulator,
                     axisManipulatorHandler);
                 if (mgr == null)
                 {
-                    logger.Warn("DrawAxisOverlay: CreateManipulator returned null; skipping overlay");
+                    logger.Warn("[AxisOverlay #" + seq + "] DrawAxisOverlay: CreateManipulator returned null; skipping overlay");
                     return;
                 }
 
+                logger.Info("[AxisOverlay #" + seq + "] DrawAxisOverlay: GetSpecificManipulator");
                 DragArrowManipulator drag = mgr.GetSpecificManipulator() as DragArrowManipulator;
                 if (drag == null)
                 {
-                    logger.Warn("DrawAxisOverlay: GetSpecificManipulator did not return a DragArrowManipulator; removing");
+                    logger.Warn("[AxisOverlay #" + seq + "] DrawAxisOverlay: GetSpecificManipulator did not return a DragArrowManipulator; removing");
                     try { mgr.Remove(); } catch { /* swallowed */ }
                     return;
                 }
@@ -1772,6 +1960,16 @@ namespace SW2URDF.URDFExport
                 // Order matters: per the canonical SW example, set all
                 // properties first, THEN Show, THEN Update. Update
                 // commits the property changes to the rendered gizmo.
+                //
+                // AllowFlip MUST stay false: with AllowFlip = true SW's
+                // manipulator update invokes OnDirectionFlipped on its
+                // own render path, our callback re-enters
+                // RefreshAxisDirectionPreview which calls Manipulator.Remove
+                // / CreateManipulator on the still-updating manipulator,
+                // and SW deadlocks on its own internal lock. Symptom: the
+                // bitmap "Reverse Direction" button hangs SW with the
+                // "not responding" warning and cycles indefinitely. The
+                // bitmap button is the documented sole flip control.
                 drag.AllowFlip = false;
                 drag.ShowRuler = false;
                 drag.ShowOppositeDirection = false;
@@ -1780,20 +1978,48 @@ namespace SW2URDF.URDFExport
                 drag.Direction = (MathVector)mathUtil.CreateVector(new double[] { ax, ay, az });
                 drag.Origin = (MathPoint)mathUtil.CreatePoint(new double[] { originGlobal[0], originGlobal[1], originGlobal[2] });
 
+                logger.Info("[AxisOverlay #" + seq + "] DrawAxisOverlay: Manipulator.Show ENTER");
                 mgr.Show(ActiveSWModel);
+                logger.Info("[AxisOverlay #" + seq + "] DrawAxisOverlay: Manipulator.Show RETURNED");
+
+                logger.Info("[AxisOverlay #" + seq + "] DrawAxisOverlay: DragArrowManipulator.Update ENTER");
                 drag.Update();
+                logger.Info("[AxisOverlay #" + seq + "] DrawAxisOverlay: DragArrowManipulator.Update RETURNED");
 
                 axisManipulator = mgr;
 
-                logger.Info(string.Format(CultureInfo.InvariantCulture,
-                    "DrawAxisOverlay: origin=({0:F3},{1:F3},{2:F3}) axis=({3:F2},{4:F2},{5:F2}) len={6:F3}",
-                    originGlobal[0], originGlobal[1], originGlobal[2],
-                    ax, ay, az, overlayLength));
+                // No success-path logger.Info here on purpose. DrawAxisOverlay
+                // runs on every coord-sys / axis pick, every flip, every node
+                // switch, and every deferred-refresh dequeue - i.e. it is on
+                // a UI hot path. The Logger ConversionPattern includes
+                // %filename:%line, which forces log4net to call
+                // System.Diagnostics.StackTrace.CaptureStackTrace per Info
+                // call. Under a debugger with PDBs loaded that single walk
+                // takes hundreds of ms; multiplied by the (now-fixed)
+                // Manipulator.Show -> OnSelectionboxListChanged ->
+                // DeferRefreshAxisPreview loop it produced an apparent
+                // SW hang whose call stack always landed in
+                // FileNamePatternConverter.Convert. We added a
+                // re-entrancy guard upstream
+                // (axisPreviewRefreshPending) but kept the success log
+                // off as a belt-and-suspenders mitigation: even if a
+                // future code path re-queues refreshes faster than
+                // expected, the hot loop will not be amplified by the
+                // slow log layout. If the success log is ever needed
+                // for debugging, switch the Logger pattern to a
+                // location-free format ("%date %-5level - %message")
+                // first, or wrap this call in a Debug-only conditional
+                // (logger.IsDebugEnabled is cheap).
             }
             catch (Exception ex)
             {
-                logger.Warn("DrawAxisOverlay failed: " + ex.Message);
+                // Failure path keeps logger.Warn deliberately - a single
+                // walk per failure is acceptable, and we DO want this in
+                // the log when debugging "the arrow does not appear".
+                logger.Warn("[AxisOverlay #" + seq + "] DrawAxisOverlay failed: " + ex.Message);
             }
+
+            logger.Info("[AxisOverlay #" + seq + "] DrawAxisOverlay: exit");
         }
 
         // Returns a sensible arrow length in meters for the active model:
@@ -1846,15 +2072,18 @@ namespace SW2URDF.URDFExport
         {
             if (axisManipulator == null)
             {
+                logger.Info("[AxisOverlay] ClearAxisOverlay: no overlay to clear");
                 return;
             }
             try
             {
+                logger.Info("[AxisOverlay] ClearAxisOverlay: Manipulator.Remove ENTER");
                 axisManipulator.Remove();
+                logger.Info("[AxisOverlay] ClearAxisOverlay: Manipulator.Remove RETURNED");
             }
             catch (Exception ex)
             {
-                logger.Warn("ClearAxisOverlay: Remove failed: " + ex.Message);
+                logger.Warn("[AxisOverlay] ClearAxisOverlay: Remove failed: " + ex.Message);
             }
             axisManipulator = null;
         }
@@ -1986,16 +2215,26 @@ namespace SW2URDF.URDFExport
         }
 
         //Verifies that the reference geometry still exists. This can happen if the reference
-        // geometry was deleted but the configuration was kept
+        // geometry was deleted but the configuration was kept. The new
+        // SelectionBox-only UI represents "auto" as AutoDeriveAxis=true
+        // + empty AxisName; the legacy "Automatically Generate" sentinel
+        // is also still accepted by CreateJoint for back-compat with old
+        // saved configs that haven't been touched in the new PMPage yet.
         private void CheckRefGeometryExists(Link link)
         {
-            if (!CheckRefCoordsysExists(link.Joint.CoordinateSystemName))
+            if (!string.IsNullOrEmpty(link.Joint.CoordinateSystemName) &&
+                link.Joint.CoordinateSystemName != "Automatically Generate" &&
+                !CheckRefCoordsysExists(link.Joint.CoordinateSystemName))
             {
-                link.Joint.CoordinateSystemName = "Automatically Generate";
+                link.Joint.CoordinateSystemName = "";
             }
-            if (!CheckRefAxisExists(link.Joint.AxisName))
+            if (!link.Joint.AutoDeriveAxis &&
+                !string.IsNullOrEmpty(link.Joint.AxisName) &&
+                link.Joint.AxisName != "Automatically Generate" &&
+                !CheckRefAxisExists(link.Joint.AxisName))
             {
-                link.Joint.AxisName = "Automatically Generate";
+                link.Joint.AutoDeriveAxis = true;
+                link.Joint.AxisName = "";
             }
         }
 
@@ -2052,17 +2291,12 @@ namespace SW2URDF.URDFExport
         THREEDXML
     }
 
-    // No-op handler passed to ModelViewManager.CreateManipulator for the
-    // joint axis direction overlay. SW requires a non-null handler when
-    // creating a DragArrowManipulator (the canonical SW C# example
-    // explicitly constructs one and we mirror that). We use the
-    // manipulator purely as a passive "this is positive" indicator: the
-    // length is fixed (FixedLength=true), the user cannot drag-flip
-    // (AllowFlip=false), and there is no second-direction handle
-    // (ShowOppositeDirection=false), so none of the drag / value-change /
-    // flip / focus events ever fire from user interaction. The Boolean
-    // returns are "true" by SW convention to indicate the event was
-    // handled successfully (false signals an error to SW).
+    // Handler passed to ModelViewManager.CreateManipulator for the joint axis
+    // direction overlay. SW requires a non-null handler when creating a
+    // DragArrowManipulator (the canonical SW C# example explicitly constructs
+    // one and we mirror that). The manipulator is fixed-length and non-draggable;
+    // the only user interaction we consume is the built-in flip action, which
+    // converges on the same AxisFlipped state as the bitmap button.
     //
     // [ComVisible(true)] is required because SW invokes these via COM
     // late-binding, NOT through the .NET interface dispatch table. If
@@ -2070,20 +2304,28 @@ namespace SW2URDF.URDFExport
     // successfully but SW will see no callable methods and silently
     // drop the manipulator on first display.
     //
-    // If a future iteration wants click-to-flip on the arrow itself
-    // (matching SW's coord-system PM), set DragArrowManipulator.AllowFlip
-    // = true and wire OnDirectionFlipped to a callback that toggles the
-    // owning ExportPropertyManager's currentAxisFlipped + persists to
-    // Joint.AxisFlipped. The bitmap button would still work as a second
-    // way to flip; both paths converge on the same flag.
     [System.Runtime.InteropServices.ComVisible(true)]
     public class AxisOverlayManipulatorHandler : ISwManipulatorHandler2
     {
+        private readonly Action directionFlipped;
+
+        public AxisOverlayManipulatorHandler()
+        {
+        }
+
+        public AxisOverlayManipulatorHandler(Action directionFlipped)
+        {
+            this.directionFlipped = directionFlipped;
+        }
+
         public bool OnDelete(object pManipulator) { return true; }
         public bool OnHandleLmbSelected(object pManipulator) { return true; }
         public bool OnDoubleValueChanged(object pManipulator, int handleIndex, ref double Value) { return true; }
         public bool OnStringValueChanged(object pManipulator, int handleIndex, ref string Value) { return true; }
-        public void OnDirectionFlipped(object pManipulator) { }
+        public void OnDirectionFlipped(object pManipulator)
+        {
+            directionFlipped?.Invoke();
+        }
         public void OnEndDrag(object pManipulator, int handleIndex) { }
         public void OnEndNoDrag(object pManipulator, int handleIndex) { }
         public void OnHandleRmbSelected(object pManipulator, int handleIndex) { }

@@ -33,14 +33,28 @@ namespace SW2URDF.Utilities
 
             Hierarchy hierarchy = (Hierarchy)LogManager.GetRepository();
 
-            // This ConversionPattern is slow because any location-based parameter in log4net is
-            // slow. If it becomes an issue this might have to be wrapped into a compile time macro
+            // ConversionPattern is intentionally LOCATION-FREE. The previous
+            // pattern "%date %-5level %filename: %line - %message" forced
+            // log4net to call StackTrace.CaptureStackTrace per Info call -
+            // hundreds of ms each under a debugger with PDBs loaded. That
+            // turned hot-path logging (e.g. DrawAxisOverlay) into an
+            // apparent SolidWorks hang because the call stack always
+            // landed inside FileNamePatternConverter.Convert /
+            // LocationInfo. The custom FileNamePatternConverter still
+            // exists in this file for archaeology / reuse but is NOT
+            // wired into the active layout.
+            //
+            // If you need filename / line for a specific debug session,
+            // add them BACK temporarily and DO NOT ship the change. The
+            // structural rule: location-aware log4net layouts walk the
+            // managed stack once per LoggingEvent, which is fine for
+            // error / batch logging but lethal for any per-tick / per-
+            // event UI logging.
             PatternLayout patternLayout = new PatternLayout()
             {
-                ConversionPattern = "%date %-5level %filename: %line - %message%newline"
+                ConversionPattern = "%date %-5level - %message%newline"
             };
 
-            patternLayout.AddConverter("filename", typeof(FileNamePatternConverter));
             patternLayout.ActivateOptions();
 
             string homeDir = Environment.ExpandEnvironmentVariables("%HOMEDRIVE%%HOMEPATH%");

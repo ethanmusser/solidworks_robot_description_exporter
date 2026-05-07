@@ -1,6 +1,5 @@
 using SolidWorks.Interop.sldworks;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -115,8 +114,7 @@ namespace SW2URDF.URDF
         // don't need to be aware of the multi-group split.
         //
         // CA2227 is suppressed because the writable setter has explicit
-        // replace-contents semantics for legacy callers (TreeMerger,
-        // SetElementFromData, etc.); it is not a "settable backing
+        // replace-contents semantics; it is not a "settable backing
         // collection" but a flattened-view assignment that buckets the
         // supplied items into VisualGroups[0].
         [SuppressMessage("Usage", "CA2227:Collection properties should be read-only",
@@ -440,122 +438,6 @@ namespace SW2URDF.URDF
             {
                 child.WriteURDF(writer);
             }
-        }
-
-        public override void SetElementFromData(List<string> context, StringDictionary dictionary)
-        {
-            base.SetElementFromData(context, dictionary);
-
-            if (dictionary.ContainsKey("Link.InertialSource"))
-            {
-                string raw = dictionary["Link.InertialSource"];
-                if (System.Enum.TryParse(raw, true, out InertialSource parsed))
-                {
-                    InertialSource = parsed;
-                }
-            }
-
-            if (dictionary.ContainsKey("Link.Sites"))
-            {
-                Sites = ParseSites(dictionary["Link.Sites"]);
-            }
-        }
-
-        private static List<SiteSpec> ParseSites(string raw)
-        {
-            List<SiteSpec> sites = new List<SiteSpec>();
-            if (string.IsNullOrWhiteSpace(raw))
-            {
-                return sites;
-            }
-            foreach (string entry in raw.Split(';'))
-            {
-                if (string.IsNullOrWhiteSpace(entry))
-                {
-                    continue;
-                }
-                int sep = entry.IndexOf('|');
-                if (sep < 0)
-                {
-                    sites.Add(new SiteSpec(entry.Trim(), ""));
-                }
-                else
-                {
-                    string name = entry.Substring(0, sep).Trim();
-                    string coord = entry.Substring(sep + 1).Trim();
-                    sites.Add(new SiteSpec(name, coord));
-                }
-            }
-            return sites;
-        }
-
-        public override void AppendToCSVDictionary(List<string> context, OrderedDictionary dictionary)
-        {
-            // CSV exports the flattened component lists to keep parity with old
-            // configs. Multi-group structure is preserved separately via the
-            // group-name columns appended below.
-            string visualComponentsContext = "Link.SWComponents";
-            dictionary.Add(visualComponentsContext, ComponentNamesJoined(VisualComponents));
-
-            string collisionComponentsContext = "Link.CollisionComponents";
-            dictionary.Add(collisionComponentsContext, ComponentNamesJoined(CollisionComponents));
-
-            string inertialComponentsContext = "Link.InertialComponents";
-            dictionary.Add(inertialComponentsContext, ComponentNamesJoined(InertialComponents));
-
-            string inertialSourceContext = "Link.InertialSource";
-            dictionary.Add(inertialSourceContext, InertialSource.ToString());
-
-            string sitesContext = "Link.Sites";
-            dictionary.Add(sitesContext, SitesJoined(Sites));
-
-            string visualGroupsContext = "Link.VisualGroups";
-            dictionary.Add(visualGroupsContext, GroupsJoined(VisualGroups));
-
-            string collisionGroupsContext = "Link.CollisionGroups";
-            dictionary.Add(collisionGroupsContext, GroupsJoined(CollisionGroups));
-
-            base.AppendToCSVDictionary(context, dictionary);
-        }
-
-        private static string ComponentNamesJoined(List<Component2> components)
-        {
-            if (components == null)
-            {
-                return string.Empty;
-            }
-            IEnumerable<string> names = components.Select(c => c.Name2);
-            return string.Join(";", names);
-        }
-
-        private static string SitesJoined(List<SiteSpec> sites)
-        {
-            if (sites == null || sites.Count == 0)
-            {
-                return string.Empty;
-            }
-            // Each site is encoded as "name|coord_system" and sites are joined with ';'.
-            return string.Join(";",
-                sites.Select(s => (s.Name ?? "") + "|" + (s.CoordinateSystemName ?? "")));
-        }
-
-        // Encodes the named-group structure as "GroupName=comp1,comp2;OtherGroup=comp3".
-        // The flat component lists in the SWComponents / CollisionComponents columns
-        // remain authoritative for legacy importers; this column lets the CSV reader
-        // re-bucket components when a group structure is desired.
-        private static string GroupsJoined(List<MeshGroup> groups)
-        {
-            if (groups == null || groups.Count == 0)
-            {
-                return string.Empty;
-            }
-            return string.Join(";", groups.Select(g =>
-            {
-                string compNames = (g.Components == null)
-                    ? string.Empty
-                    : string.Join(",", g.Components.Select(c => c.Name2));
-                return (g.Name ?? "") + "=" + compNames;
-            }));
         }
 
         public override void SetElement(URDFElement externalElement)

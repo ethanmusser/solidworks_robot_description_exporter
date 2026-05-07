@@ -54,35 +54,6 @@ namespace SW2URDF.URDFExport
             }
         }
 
-        // Populates the combo box with feature names. The "Automatically
-        // Generate" entry is meaningful for joint comboboxes (Reference Coord
-        // System / Reference Axis) where the exporter synthesizes a frame
-        // from the SolidWorks mates; see ExportHelperExtension.GetRefCoordSys
-        // / GetRefAxis for the concrete behavior.
-        private void FillComboBox(PropertyManagerPageCombobox box, List<string> featureNames)
-        {
-            box.Clear();
-            box.AddItems("Automatically Generate");
-            foreach (string name in featureNames)
-            {
-                box.AddItems(name);
-            }
-        }
-
-        // Variant of FillComboBox without the "Automatically Generate"
-        // placeholder. Used by combos where that entry has no meaningful
-        // implementation (e.g., the Sites coord-system combo - AddSiteFromForm
-        // rejects "Automatically Generate" with an error message anyway, so
-        // dropping it from the list avoids a self-rejecting selectable entry).
-        private void FillComboBoxNoAuto(PropertyManagerPageCombobox box, List<string> featureNames)
-        {
-            box.Clear();
-            foreach (string name in featureNames)
-            {
-                box.AddItems(name);
-            }
-        }
-
         // Finds the specified item in a combobox and sets the box to it. I'm not sure why I
         // couldn't do this with a foreach loop or even a for loop, but there is no way to get
         // the current number of items in the menu
@@ -210,136 +181,12 @@ namespace SW2URDF.URDFExport
             return null;
         }
 
-        private void CheckNodeInertialComplete(LinkNode node)
-        {
-            if (node.Nodes.Count > 0 && node.Link.SWComponents.Count == 0)
-            {
-                node.IsIncomplete = true;
-                node.WhyIncomplete +=
-                    "        Links with children cannot be empty. Select its associated components\r\n";
-            }
-        }
-
-        private void CheckNodeVisualComplete(LinkNode node)
-        {
-            if (node.Nodes.Count > 0 && node.Link.SWComponents.Count == 0)
-            {
-                node.IsIncomplete = true;
-                node.WhyIncomplete +=
-                    "        Links with children cannot be empty. Select its associated components\r\n";
-            }
-        }
-
-        private void CheckNodeJointComplete(LinkNode node)
-        {
-            if (node.Link.SWComponents.Count == 0 && node.Link.Joint.CoordinateSystemName == "Automatically Generate")
-            {
-                node.IsIncomplete = true;
-                node.WhyIncomplete +=
-                    "        The origin reference coordinate system cannot be automatically generated\r\n" +
-                    "        without components. Either select an origin or at least one component.\r\n";
-            }
-
-            if (node.Link.SWComponents.Count == 0 && node.Link.Joint.AxisName == "Automatically Generate")
-            {
-                node.IsIncomplete = true;
-                node.WhyIncomplete +=
-                    "        The reference axis cannot be automatically generated\r\n" +
-                    "        without components. Either select an axis or at least one component.";
-            }
-
-            if (node.Link.SWComponents.Count == 0 && node.Link.Joint.Type == "Automatically Generate")
-            {
-                node.IsIncomplete = true;
-                node.WhyIncomplete +=
-                    "        The joint type cannot be automatically detected\r\n" +
-                    "        without components. Either select an joint type or at least one component.";
-            }
-        }
-
-        //Sets the node's isIncomplete flag if the node has key items that need to be completed
-        public void CheckNodeComplete(LinkNode node)
-        {
-            node.WhyIncomplete = "";
-            node.IsIncomplete = false;
-            if (String.IsNullOrWhiteSpace(node.Link.Name))
-            {
-                node.IsIncomplete = true;
-                node.WhyIncomplete += "        Link name is empty. Fill in a unique link name\r\n";
-            }
-            if (String.IsNullOrWhiteSpace(node.Link.Joint.Name) && !node.IsBaseNode)
-            {
-                node.IsIncomplete = true;
-                node.WhyIncomplete += "        Joint name is empty. Fill in a unique joint name\r\n";
-            }
-
-            CheckNodeInertialComplete(node);
-            CheckNodeVisualComplete(node);
-            CheckNodeJointComplete(node);
-        }
-
-        private void CheckModelDocsExist(LinkNode node, List<string> problemComponents)
-        {
-            CheckModelDocsExistFor(node.Link.VisualComponents, problemComponents);
-            CheckModelDocsExistFor(node.Link.CollisionComponents, problemComponents);
-            CheckModelDocsExistFor(node.Link.InertialComponents, problemComponents);
-
-            foreach (LinkNode child in node.Nodes)
-            {
-                CheckModelDocsExist(child, problemComponents);
-            }
-        }
-
-        private static void CheckModelDocsExistFor(List<Component2> components, List<string> problemComponents)
-        {
-            if (components == null)
-            {
-                return;
-            }
-            foreach (Component2 component in components)
-            {
-                ModelDoc2 doc = component.GetModelDoc2();
-                if (doc == null)
-                {
-                    problemComponents.Add(component.Name2);
-                }
-            }
-        }
-
-        //Recursive function to iterate though nodes and build a message containing those that are incomplete
-        public string CheckNodesComplete(LinkNode node, string incompleteNodes)
-        {
-            // Determine if the node is incomplete
-            CheckNodeComplete(node);
-            if (node.IsIncomplete)
-            {
-                //Building the message
-                incompleteNodes += "    '" + node.Text + "':\r\n" + node.WhyIncomplete + "\r\n\r\n";
-            }
-            // Cycle through the rest of the nodes
-            foreach (LinkNode child in node.Nodes)
-            {
-                incompleteNodes = CheckNodesComplete(child, incompleteNodes);
-            }
-            return incompleteNodes;
-        }
-
-        //Finds all the nodes in a TreeView that need to be completed before exporting
-        public bool CheckNodesComplete(TreeView tree)
-        {
-            //Calls the recursive function starting with the base_link node and retrieves a string
-            // identifying the incomplete nodes
-            string incompleteNodes = CheckNodesComplete((LinkNode)tree.Nodes[0], "");
-            if (!String.IsNullOrWhiteSpace(incompleteNodes))
-            {
-                MessageBox.Show(
-                    "The following nodes are incomplete. You need to fix them before continuing.\r\n\r\n" + incompleteNodes);
-                return false;
-            }
-            return true;
-        }
-
-        // When the selected node is changed, the previously active node needs to be saved
+        // When the selected node is changed, the previously active node needs to be saved.
+        // CoordinateSystemName / AxisName / AutoDeriveAxis are committed
+        // incrementally by OnSelectionboxListChanged when the user picks
+        // in the SelectionBoxes; this node-switch save handles the
+        // textbox / combobox / checkbox state that does NOT have a
+        // per-event commit hook.
         public void SaveActiveNode()
         {
             if (previouslySelectedNode != null)
@@ -348,19 +195,29 @@ namespace SW2URDF.URDFExport
                 if (!previouslySelectedNode.IsBaseNode)
                 {
                     previouslySelectedNode.Link.Joint.Name = PMTextBoxJointName.Text;
-                    previouslySelectedNode.Link.Joint.AxisName = PMComboBoxAxes.get_ItemText(-1);
-                    previouslySelectedNode.Link.Joint.CoordinateSystemName = PMComboBoxCoordSys.get_ItemText(-1);
                     previouslySelectedNode.Link.Joint.Type = PMComboBoxJointType.get_ItemText(-1);
                     // currentAxisFlipped is also written through immediately on
                     // every bitmap-button click in OnButtonPress so the overlay
                     // arrow and persisted state stay in lockstep; this
                     // node-switch save is the safety net for any other path.
                     previouslySelectedNode.Link.Joint.AxisFlipped = currentAxisFlipped;
-                }
-                else
-                {
-                    previouslySelectedNode.Link.Joint.CoordinateSystemName =
-                        PMComboBoxGlobalCoordsys.get_ItemText(-1);
+
+                    // PMCheckAutoDeriveAxis is also written through on
+                    // every checkbox toggle via OnCheckboxCheck; this
+                    // node-switch save mirrors AxisFlipped above as the
+                    // safety net.
+                    if (PMCheckAutoDeriveAxis != null)
+                    {
+                        previouslySelectedNode.Link.Joint.AutoDeriveAxis = PMCheckAutoDeriveAxis.Checked;
+                    }
+
+                    // Joint Properties section. Each *OrClear setter
+                    // either parses a populated textbox or clears the
+                    // underlying URDFAttribute so the writer omits the
+                    // attribute entirely. Reference / Armature / the
+                    // auto-compute toggle are plain Joint fields and use
+                    // local helpers.
+                    SaveJointPropertiesToLink(previouslySelectedNode.Link.Joint);
                 }
 
                 EnsureGroupsInitialized(previouslySelectedNode);
@@ -388,10 +245,27 @@ namespace SW2URDF.URDFExport
                 // handler keeps InertialComponents up to date for every user
                 // pick, so skipping the close-time refresh preserves the
                 // committed data instead of clobbering it from an empty mark.
+                //
+                // Plus the SelectionMgr-leak defense: read into a local
+                // list (filtered to Component2 by GetSelectedComponents) and
+                // only replace the saved state if the user actually picked
+                // something. The leak source (ExportHelper.GetRefAxis's
+                // assembly-level Append=false SelectByID2 on the joint
+                // axis feature) means the inertial mark can carry a stale
+                // RefAxis under positive-mark queries on some SW versions;
+                // without this defense the mid-PM-session navigation
+                // would silently wipe the user's saved inertial picks.
                 if (!pageIsClosing)
                 {
+                    List<Component2> pickedInertial = new List<Component2>();
                     CommonSwOperations.GetSelectedComponents(
-                        ActiveSWModel, previouslySelectedNode.Link.InertialComponents, PMSelectionInertial.Mark);
+                        ActiveSWModel, pickedInertial, PMSelectionInertial.Mark);
+                    if (pickedInertial.Count > 0 ||
+                        previouslySelectedNode.Link.InertialComponents.Count == 0)
+                    {
+                        previouslySelectedNode.Link.InertialComponents.Clear();
+                        previouslySelectedNode.Link.InertialComponents.AddRange(pickedInertial);
+                    }
                 }
 
                 // Persist the inertial source choice.
@@ -420,7 +294,7 @@ namespace SW2URDF.URDFExport
             {
                 node.Link.Name = "base_link";
                 node.Link.Joint.AxisName = "";
-                node.Link.Joint.CoordinateSystemName = "Automatically Generate";
+                node.Link.Joint.CoordinateSystemName = "";
                 node.Link.InertialComponents = new List<Component2>();
                 node.Link.Sites = new List<SiteSpec>();
                 node.Link.InertialSource = InertialSource.Visual;
@@ -431,8 +305,14 @@ namespace SW2URDF.URDFExport
             {
                 node.IsBaseNode = false;
                 node.Link.Name = "Empty_Link";
-                node.Link.Joint.AxisName = "Automatically Generate";
-                node.Link.Joint.CoordinateSystemName = "Automatically Generate";
+                // SelectionBox-only UI: empty AxisName /
+                // CoordinateSystemName + AutoDeriveAxis = true is the
+                // new "let the exporter figure it out" state. Replaces
+                // the legacy "Automatically Generate" sentinel that
+                // older configs still write.
+                node.Link.Joint.AxisName = "";
+                node.Link.Joint.CoordinateSystemName = "";
+                node.Link.Joint.AutoDeriveAxis = true;
                 node.Link.Joint.Type = "Automatically Detect";
                 node.Link.InertialComponents = new List<Component2>();
                 node.Link.Sites = new List<SiteSpec>();
@@ -485,26 +365,48 @@ namespace SW2URDF.URDFExport
             RefreshVisualGroupsListbox(node);
             RefreshCollisionGroupsListbox(node);
 
+            // Toggle Enabled state on the Link/Joint controls BEFORE
+            // populating the SelectionBoxes. SW occasionally drops
+            // SelectionBox display contents when a control's Enabled
+            // state flips after the box has been populated; doing the
+            // Enable pass first means every load runs against settled
+            // controls.
+            EnableControls(!node.IsBaseNode);
+
             // Pre-populate the SelectionBoxes for the active groups + the
-            // single inertial-components box.
+            // single inertial-components box + the joint coord-sys /
+            // joint axis / global coord-sys feature pickers.
             //
-            // Every ClearSelection2 / SelectComponents call below can fire
-            // OnSelectionboxListChanged for an arbitrary box. Without the
-            // suppress guard around the whole population block the Count=0
-            // event from this top-level clear (and from the inner loaders'
-            // clears) would re-enter CommitActiveVisualGroupSelection and
-            // wipe the freshly-loaded groups with an empty SelectionMgr
-            // read. The inner loaders also set this flag for the same
-            // reason - the redundancy is intentional so that any individual
-            // loader is safe to call in isolation.
+            // Every ClearSelection2 / SelectComponents / SelectByID2 call
+            // below can fire OnSelectionboxListChanged for an arbitrary
+            // box. Without the suppress guard around the whole population
+            // block the Count=0 event from this top-level clear (and from
+            // the inner loaders' clears) would re-enter
+            // CommitActiveVisualGroupSelection and wipe the freshly-loaded
+            // groups with an empty SelectionMgr read. The inner loaders
+            // also set this flag for the same reason - the redundancy is
+            // intentional so that any individual loader is safe to call
+            // in isolation.
             suppressGroupListboxRefresh = true;
             try
             {
-                ActiveSWModel.ClearSelection2(true);
+                // No top-level ClearSelection2(true) - that was the
+                // prior cross-mark wipe that left mark 11 (Visual)
+                // empty after FillPropertyManager because the
+                // collision loader's own ClearSelection2(true) ran
+                // immediately after the visual loader populated mark
+                // 11. Each loader below now scopes its own clear via
+                // CommonSwOperations.DeselectAllAtMark(model, ownMark)
+                // and is safe to compose with siblings.
                 LoadActiveVisualGroupIntoSelectionBox(node);
                 LoadActiveCollisionGroupIntoSelectionBox(node);
+                CommonSwOperations.DeselectAllAtMark(
+                    ActiveSWModel, PMSelectionInertial.Mark);
                 CommonSwOperations.SelectComponents(
                     ActiveSWModel, node.Link.InertialComponents, false, PMSelectionInertial.Mark);
+                LoadActiveGlobalCoordsysIntoSelectionBox(node);
+                LoadActiveJointCoordsysIntoSelectionBox(node);
+                LoadActiveJointAxisIntoSelectionBox(node);
             }
             finally
             {
@@ -526,10 +428,10 @@ namespace SW2URDF.URDFExport
                     break;
             }
 
-            // Sites region. The site combobox doesn't get an
-            // "Automatically Generate" entry because AddSiteFromForm rejects
-            // it - sites need a real coord system.
-            FillComboBoxNoAuto(PMComboBoxSiteCoordSys, Exporter.GetRefCoordinateSystems());
+            // Sites tab: nothing to pre-populate for the SelectionBox
+            // (the pick is consumed at Add Site click time, not
+            // round-tripped). Just clear the name input and refresh the
+            // listbox of already-saved sites.
             PMTextBoxSiteName.Text = "";
             RefreshSitesListbox(node);
 
@@ -539,24 +441,24 @@ namespace SW2URDF.URDFExport
             PMCheckCollisionUsesVisual.Checked = node.Link.CollisionUsesVisual;
             SetCollisionEditorVisible(!node.Link.CollisionUsesVisual);
 
-            //Setting joint properties
+            //Setting joint properties (controls already Enable-toggled above
+            //before the SelectionBox loads).
             if (!node.IsBaseNode && node.Parent != null)
             {
-                //Combobox needs to be blanked before de-activating
-                SelectComboBox(PMComboBoxGlobalCoordsys, "");
-
-                //Labels need to be activated before changing them
-                EnableControls(!node.IsBaseNode);
                 PMTextBoxJointName.Text = node.Link.Joint.Name;
                 PMLabelParentLink.Caption = node.Parent.Name;
 
-                FillComboBox(PMComboBoxCoordSys, Exporter.GetRefCoordinateSystems());
-                FillComboBox(PMComboBoxAxes, Exporter.GetRefAxes());
-
-                PMComboBoxAxes.AddItems("None");
-                SelectComboBox(PMComboBoxCoordSys, node.Link.Joint.CoordinateSystemName);
-                SelectComboBox(PMComboBoxAxes, node.Link.Joint.AxisName);
                 SelectComboBox(PMComboBoxJointType, node.Link.Joint.Type);
+
+                // Auto-derive axis toggle: the SelectionBox is disabled
+                // (and remains empty) when the toggle is on; otherwise
+                // LoadActiveJointAxisIntoSelectionBox above will have
+                // populated it.
+                if (PMCheckAutoDeriveAxis != null)
+                {
+                    PMCheckAutoDeriveAxis.Checked = node.Link.Joint.AutoDeriveAxis;
+                }
+                SetAxisPickerEnabled(!node.Link.Joint.AutoDeriveAxis);
 
                 // Restore the persisted "Reverse Direction" toggle for this
                 // joint and (re)render the overlay arrow in the model view so
@@ -565,65 +467,299 @@ namespace SW2URDF.URDFExport
                 // the overlay arrow IS the feedback.
                 currentAxisFlipped = node.Link.Joint.AxisFlipped;
                 RefreshAxisDirectionPreview();
+
+                // Joint Properties section: limits, dynamics, MJCF-only
+                // reference / armature, and the per-joint auto-compute
+                // toggle. Empty textbox = attribute is unset on the data
+                // model and the writer omits it. Damping / Friction live
+                // on Joint.Dynamics, the rest live directly on Joint.
+                FillJointPropertiesFromLink(node.Link.Joint);
             }
             else
             {
                 //Labels and text box have be blanked before de-activating them
                 PMLabelParentLink.Caption = " ";
-                SelectComboBox(PMComboBoxCoordSys, "");
-                SelectComboBox(PMComboBoxAxes, "");
                 SelectComboBox(PMComboBoxJointType, "");
-
-                //Activate controls before changing them
-                EnableControls(!node.IsBaseNode);
-                FillComboBox(PMComboBoxGlobalCoordsys, Exporter.GetRefCoordinateSystems());
-                SelectComboBox(PMComboBoxGlobalCoordsys, node.Link.Joint.CoordinateSystemName);
 
                 // Base node has no joint axis: clear any previously-rendered
                 // overlay so we don't leave a stale arrow in the viewport.
                 currentAxisFlipped = false;
                 Exporter.ClearAxisOverlay();
+
+                // Base node has no joint properties; clear the textboxes
+                // so the next non-base node load starts from a clean
+                // slate.
+                ClearJointPropertyTextboxes();
             }
         }
 
-        //Takes care of activating/deactivating the drop down menus, lables and text box for
-        // joint configuration. Generally these are deactivated for the base node
+        // SelectionBox-only feature-picker rehydration helpers. Each
+        // attaches the Feature.Name persisted on the active node to the
+        // corresponding SelectionBox via SelectByID2 + Mark, so when
+        // the user reopens the PMPage on a configured assembly the
+        // boxes show what was previously picked. The suppress guard
+        // prevents the resulting "Count went 0->1" OnSelectionboxListChanged
+        // event from re-committing the same value (a silent no-op, but
+        // documented for symmetry with the visual / collision loaders).
+        //
+        // Called from FillPropertyManager (per node switch) and from
+        // OnTabClicked (when the user activates the Link/Joint tab).
+        // Empty / sentinel names are no-ops; the SelectionBox stays
+        // empty, which is the canonical UI state for "auto-generate".
+        private void LoadActiveGlobalCoordsysIntoSelectionBox(LinkNode node)
+        {
+            if (node == null || PMSelectionGlobalCoordsys == null)
+            {
+                return;
+            }
+            // Always clear the mark first so the previous link's pick
+            // doesn't bleed into a non-base node where this loader
+            // returns early. Without the clear, mark 21 would retain
+            // stale content across base->non-base navigation.
+            CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionGlobalCoordsys.Mark);
+            // Only the base node's joint owns the global coord-sys.
+            if (!node.IsBaseNode)
+            {
+                return;
+            }
+            string name = node.Link?.Joint?.CoordinateSystemName;
+            if (!IsRealFeatureName(name))
+            {
+                return;
+            }
+            SelectFeatureIntoMark(name, "COORDSYS", PMSelectionGlobalCoordsys.Mark);
+        }
+
+        private void LoadActiveJointCoordsysIntoSelectionBox(LinkNode node)
+        {
+            if (node == null || PMSelectionJointCoordsys == null)
+            {
+                return;
+            }
+            CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionJointCoordsys.Mark);
+            if (node.IsBaseNode)
+            {
+                return;
+            }
+            string name = node.Link?.Joint?.CoordinateSystemName;
+            if (!IsRealFeatureName(name))
+            {
+                return;
+            }
+            SelectFeatureIntoMark(name, "COORDSYS", PMSelectionJointCoordsys.Mark);
+        }
+
+        private void LoadActiveJointAxisIntoSelectionBox(LinkNode node)
+        {
+            if (node == null || PMSelectionJointAxis == null)
+            {
+                return;
+            }
+            CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionJointAxis.Mark);
+            if (node.IsBaseNode)
+            {
+                return;
+            }
+            Joint joint = node.Link?.Joint;
+            if (joint == null || joint.AutoDeriveAxis)
+            {
+                return;
+            }
+            string name = joint.AxisName;
+            if (!IsRealFeatureName(name))
+            {
+                return;
+            }
+            SelectFeatureIntoMark(name, "AXIS", PMSelectionJointAxis.Mark);
+        }
+
+        private static bool IsRealFeatureName(string name)
+        {
+            return !string.IsNullOrEmpty(name) && name != "Automatically Generate" && name != "None";
+        }
+
+        // Wraps the SelectByID2 -> mark call with the suppress guard +
+        // a try/catch so a missing feature (deleted from the assembly
+        // since the configuration was last saved) just leaves the
+        // SelectionBox empty rather than throwing out of FillPropertyManager.
+        private void SelectFeatureIntoMark(string featureName, string typeName, int mark)
+        {
+            bool prior = suppressGroupListboxRefresh;
+            suppressGroupListboxRefresh = true;
+            try
+            {
+                ActiveSWModel.Extension.SelectByID2(
+                    featureName, typeName, 0, 0, 0, true, mark, null, 0);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("SelectByID2 for " + typeName + " '" + featureName + "' failed: " + ex.Message);
+            }
+            finally
+            {
+                suppressGroupListboxRefresh = prior;
+            }
+        }
+
+        // Joint Properties round-trip: pulls the URDFAttribute values
+        // (or null) out of node.Link.Joint.Limit / Joint.Dynamics /
+        // Joint.{Reference, Armature, AutoComputeLimits} and stamps them
+        // onto the textboxes / checkbox built by
+        // BuildJointPropertiesControls. Empty textbox represents an unset
+        // attribute; the writer omits the attribute in that case.
+        private void FillJointPropertiesFromLink(Joint joint)
+        {
+            if (joint == null)
+            {
+                ClearJointPropertyTextboxes();
+                return;
+            }
+            PMCheckAutoComputeLimits.Checked = joint.AutoComputeLimits;
+            PMTextBoxJointLower.Text = FormatJointDouble(joint.Limit?.LowerOrNull);
+            PMTextBoxJointUpper.Text = FormatJointDouble(joint.Limit?.UpperOrNull);
+            PMTextBoxJointEffort.Text = FormatJointDouble(joint.Limit?.EffortOrNull);
+            PMTextBoxJointVelocity.Text = FormatJointDouble(joint.Limit?.VelocityOrNull);
+            PMTextBoxJointDamping.Text = FormatJointDouble(joint.Dynamics?.DampingOrNull);
+            PMTextBoxJointFriction.Text = FormatJointDouble(joint.Dynamics?.FrictionOrNull);
+            PMTextBoxJointArmature.Text = FormatJointDouble(joint.Armature);
+            PMTextBoxJointReference.Text = FormatJointDouble(joint.Reference);
+        }
+
+        // Reads the eight Joint Properties textboxes back onto the data
+        // model. Empty / whitespace text means the attribute should be
+        // unset (writer omits it); a populated cell is parsed via the
+        // *OrClear setters which delegate to URDFAttribute.SetDoubleValueFromString
+        // for parse failures (the field is left untouched in that case).
+        private void SaveJointPropertiesToLink(Joint joint)
+        {
+            if (joint == null)
+            {
+                return;
+            }
+            joint.AutoComputeLimits = PMCheckAutoComputeLimits.Checked;
+            joint.Limit?.SetLowerOrClear(PMTextBoxJointLower.Text);
+            joint.Limit?.SetUpperOrClear(PMTextBoxJointUpper.Text);
+            joint.Limit?.SetEffortOrClear(PMTextBoxJointEffort.Text);
+            joint.Limit?.SetVelocityOrClear(PMTextBoxJointVelocity.Text);
+            joint.Dynamics?.SetDampingOrClear(PMTextBoxJointDamping.Text);
+            joint.Dynamics?.SetFrictionOrClear(PMTextBoxJointFriction.Text);
+            joint.Armature = ParseJointDouble(PMTextBoxJointArmature.Text);
+            joint.Reference = ParseJointDouble(PMTextBoxJointReference.Text);
+        }
+
+        private void ClearJointPropertyTextboxes()
+        {
+            if (PMCheckAutoComputeLimits != null)
+            {
+                PMCheckAutoComputeLimits.Checked = true;
+            }
+            if (PMTextBoxJointLower != null) PMTextBoxJointLower.Text = "";
+            if (PMTextBoxJointUpper != null) PMTextBoxJointUpper.Text = "";
+            if (PMTextBoxJointEffort != null) PMTextBoxJointEffort.Text = "";
+            if (PMTextBoxJointVelocity != null) PMTextBoxJointVelocity.Text = "";
+            if (PMTextBoxJointDamping != null) PMTextBoxJointDamping.Text = "";
+            if (PMTextBoxJointFriction != null) PMTextBoxJointFriction.Text = "";
+            if (PMTextBoxJointArmature != null) PMTextBoxJointArmature.Text = "";
+            if (PMTextBoxJointReference != null) PMTextBoxJointReference.Text = "";
+        }
+
+        private static string FormatJointDouble(double? value)
+        {
+            return value.HasValue
+                ? value.Value.ToString("G", System.Globalization.CultureInfo.InvariantCulture)
+                : "";
+        }
+
+        private static double? ParseJointDouble(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+            if (double.TryParse(text,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out double result))
+            {
+                return result;
+            }
+            return null;
+        }
+
+        // Toggles Enabled state of joint / global-origin controls on the
+        // Link/Joint tab as the active link changes. Visibility is FIXED
+        // at create-time on every Link/Joint control - we never flip
+        // Visible cross-tab. Reason: on SW 2024 a control.Visible flip
+        // applied while the user is on a different tab leaks the
+        // control onto whichever tab is currently active (the leak
+        // appears as joint-name / coord-sys / axis controls suddenly
+        // showing up under the Setup or Inertial tab footer). The
+        // always-visible-disabled layout matches SW's own coord-sys /
+        // mate creation PMs - the user sees the joint row at all
+        // times; the base node greys out joint-only inputs and the
+        // global-origin SelectionBox stays enabled, and conversely a
+        // non-base node enables joint inputs and greys out the
+        // global-origin box.
         private void EnableControls(bool enableJoints)
         {
+            // Per-joint inputs (joint name, axis, type, joint properties).
+            // Greyed out on the base node which owns no joint; visible at
+            // all times so the layout doesn't reflow under the user.
             PropertyManagerPageControl[] pmJointControls =
-                new PropertyManagerPageControl[] { (PropertyManagerPageControl)PMTextBoxJointName,
-                                                    (PropertyManagerPageControl)PMLabelJointName,
-                                                    (PropertyManagerPageControl)PMComboBoxCoordSys,
-                                                    (PropertyManagerPageControl)PMLabelCoordSys,
-                                                    (PropertyManagerPageControl)PMComboBoxAxes,
-                                                    (PropertyManagerPageControl)PMLabelAxes,
-                                                    (PropertyManagerPageControl)PMBitmapAxisFlip,
-                                                    (PropertyManagerPageControl)PMComboBoxJointType,
-                                                    (PropertyManagerPageControl)PMLabelJointType };
+                new PropertyManagerPageControl[] {
+                    (PropertyManagerPageControl)PMTextBoxJointName,
+                    (PropertyManagerPageControl)PMLabelJointName,
+                    (PropertyManagerPageControl)PMLabelAxes,
+                    (PropertyManagerPageControl)PMCheckAutoDeriveAxis,
+                    (PropertyManagerPageControl)PMSelectionJointAxis,
+                    (PropertyManagerPageControl)PMBitmapAxisFlip,
+                    (PropertyManagerPageControl)PMComboBoxJointType,
+                    (PropertyManagerPageControl)PMLabelJointType,
+                    (PropertyManagerPageControl)PMLabelJointProperties,
+                    (PropertyManagerPageControl)PMCheckAutoComputeLimits,
+                    (PropertyManagerPageControl)PMLabelJointLower,
+                    (PropertyManagerPageControl)PMTextBoxJointLower,
+                    (PropertyManagerPageControl)PMLabelJointUpper,
+                    (PropertyManagerPageControl)PMTextBoxJointUpper,
+                    (PropertyManagerPageControl)PMLabelJointEffort,
+                    (PropertyManagerPageControl)PMTextBoxJointEffort,
+                    (PropertyManagerPageControl)PMLabelJointVelocity,
+                    (PropertyManagerPageControl)PMTextBoxJointVelocity,
+                    (PropertyManagerPageControl)PMLabelJointDamping,
+                    (PropertyManagerPageControl)PMTextBoxJointDamping,
+                    (PropertyManagerPageControl)PMLabelJointFriction,
+                    (PropertyManagerPageControl)PMTextBoxJointFriction,
+                    (PropertyManagerPageControl)PMLabelJointArmature,
+                    (PropertyManagerPageControl)PMTextBoxJointArmature,
+                    (PropertyManagerPageControl)PMLabelJointReference,
+                    (PropertyManagerPageControl)PMTextBoxJointReference };
 
+            // Base-node-only controls. The global origin SelectionBox +
+            // its label are enabled when EnableControls is called with
+            // enableJoints=false (the user is on the base node) and
+            // greyed out otherwise.
             PropertyManagerPageControl[] pmGlobalOriginControls = new PropertyManagerPageControl[] {
-                (PropertyManagerPageControl)PMComboBoxGlobalCoordsys,
+                (PropertyManagerPageControl)PMSelectionGlobalCoordsys,
                 (PropertyManagerPageControl)PMLabelGlobalCoordsys};
 
+            // Per-joint reference-coord-system controls. Greyed out on the
+            // base node, enabled on non-base nodes - inverse of the
+            // global-origin pair above.
             PropertyManagerPageControl[] pmJointOriginControls = new PropertyManagerPageControl[] {
-                (PropertyManagerPageControl)PMComboBoxCoordSys,
+                (PropertyManagerPageControl)PMSelectionJointCoordsys,
                 (PropertyManagerPageControl)PMLabelCoordSys};
 
             foreach (PropertyManagerPageControl control in pmGlobalOriginControls)
             {
-                // Make the global origin controls visible when no joint controls are needed
-                control.Visible = !enableJoints;
                 control.Enabled = !enableJoints;
             }
             foreach (PropertyManagerPageControl control in pmJointOriginControls)
             {
-                control.Visible = enableJoints;
                 control.Enabled = enableJoints;
             }
             foreach (PropertyManagerPageControl control in pmJointControls)
             {
                 control.Enabled = enableJoints;
-                control.Visible = enableJoints;
             }
         }
 
@@ -646,7 +782,10 @@ namespace SW2URDF.URDFExport
             Tree.ExpandAll();
         }
 
-        // Similar to the AssemblyExportForm method. It creates a LinkNode from a Link object
+        // Creates a LinkNode (the WinForms TreeView's per-row payload) from a
+        // deserialized Link by recursively wrapping each child Link in a
+        // LinkNode and clearing the embedded Link.Children list (the LinkNode
+        // hierarchy is the source of truth for tree shape inside the PMPage).
         public LinkNode CreateLinkNodeFromLink(Link Link)
         {
             LinkNode node = new LinkNode();
@@ -681,14 +820,6 @@ namespace SW2URDF.URDFExport
             }
 
             SetConfigTree(baseNode);
-
-            IPropertyManagerPageControl loadConfigurationControl = (IPropertyManagerPageControl)PMButtonLoad;
-
-            if (baseNode == null || !baseNode.RebuildLink().AreRequiredFieldsSatisfied())
-            {
-                loadConfigurationControl.Tip = 
-                    "Your configuration has not been fully exported. This feature may not work correctly";
-            }
 
             return true;
         }
@@ -769,144 +900,5 @@ namespace SW2URDF.URDFExport
             }
         }
 
-        public void CheckIfLinkNamesAreUnique(LinkNode node, string linkName, List<string> conflict)
-        {
-            if (node.Link.Name == linkName)
-            {
-                conflict.Add(node.Link.Name);
-            }
-
-            foreach (LinkNode child in node.Nodes)
-            {
-                CheckIfLinkNamesAreUnique(child, linkName, conflict);
-            }
-        }
-
-        public void CheckIfJointNamesAreUnique(LinkNode node, string jointName, List<string> conflict)
-        {
-            if (node.Link.Joint.Name == jointName)
-            {
-                conflict.Add(node.Link.Joint.Name);
-            }
-            foreach (LinkNode child in node.Nodes)
-            {
-                CheckIfLinkNamesAreUnique(child, jointName, conflict);
-            }
-        }
-
-        public bool CheckIfNamesAreUnique(LinkNode node)
-        {
-            List<List<string>> linkConflicts = new List<List<string>>();
-            List<List<string>> jointConflicts = new List<List<string>>();
-            CheckIfLinkNamesAreUnique(node, node, linkConflicts);
-            CheckIfJointNamesAreUnique(node, node, jointConflicts);
-
-            string message = "\r\nPlease fix these errors before proceeding.";
-            string specificErrors = "";
-            bool displayInitialMessage = true;
-            bool linkNamesInConflict = false;
-            foreach (List<string> conflict in linkConflicts)
-            {
-                if (conflict.Count > 1)
-                {
-                    linkNamesInConflict = true;
-                    if (displayInitialMessage)
-                    {
-                        specificErrors +=
-                            "The following links have LINK names that conflict:\r\n\r\n";
-                        displayInitialMessage = false;
-                    }
-                    bool isFirst = true;
-                    foreach (string linkName in conflict)
-                    {
-                        specificErrors += (isFirst) ? "     " + linkName : ", " + linkName;
-                        isFirst = false;
-                    }
-                    specificErrors += "\r\n";
-                }
-            }
-            displayInitialMessage = true;
-            foreach (List<string> conflict in jointConflicts)
-            {
-                if (conflict.Count > 1)
-                {
-                    linkNamesInConflict = true;
-                    if (displayInitialMessage)
-                    {
-                        specificErrors +=
-                            "The following links have JOINT names that conflict:\r\n\r\n";
-                        displayInitialMessage = false;
-                    }
-                    bool isFirst = true;
-                    foreach (string linkName in conflict)
-                    {
-                        specificErrors += (isFirst) ? "     " + linkName : ", " + linkName;
-                        isFirst = false;
-                    }
-                    specificErrors += "\r\n";
-                }
-            }
-            if (linkNamesInConflict)
-            {
-                MessageBox.Show(specificErrors + message);
-                return false;
-            }
-            return true;
-        }
-
-        public void CheckIfLinkNamesAreUnique(
-            LinkNode basenode, LinkNode currentNode, List<List<string>> conflicts)
-        {
-            List<string> conflict = new List<string>();
-
-            //Finds the conflicts of the currentNode with all the other nodes
-            CheckIfLinkNamesAreUnique(basenode, currentNode.Link.Name, conflict);
-            bool alreadyExists = false;
-            foreach (List<string> existingConflict in conflicts)
-            {
-                if (existingConflict.Contains(conflict[0]))
-                {
-                    alreadyExists = true;
-                }
-            }
-            if (!alreadyExists)
-            {
-                conflicts.Add(conflict);
-            }
-            foreach (LinkNode child in currentNode.Nodes)
-            {
-                //Proceeds recursively through the children nodes and adds to the conflicts
-                // list of lists.
-                CheckIfLinkNamesAreUnique(basenode, child, conflicts);
-            }
-        }
-
-        public void CheckIfJointNamesAreUnique(
-            LinkNode basenode, LinkNode currentNode, List<List<string>> conflicts)
-        {
-            List<string> conflict = new List<string>();
-
-            //Finds the conflicts of the currentNode with all the other nodes
-            CheckIfJointNamesAreUnique(basenode, currentNode.Link.Joint.Name, conflict);
-            bool alreadyExists = false;
-            foreach (List<string> existingConflict in conflicts)
-            {
-                if (conflict.Count > 0 && existingConflict.Contains(conflict[0]))
-                {
-                    alreadyExists = true;
-                }
-            }
-
-            if (!alreadyExists)
-            {
-                conflicts.Add(conflict);
-            }
-            foreach (LinkNode child in currentNode.Nodes)
-            {
-                //Proceeds recursively through the children nodes and adds to the conflicts
-                // list of lists.
-                CheckIfJointNamesAreUnique(basenode, child, conflicts);
-            }
-        }
     }
 }

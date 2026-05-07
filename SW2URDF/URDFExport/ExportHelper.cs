@@ -23,10 +23,10 @@ THE SOFTWARE.
 using MathNet.Numerics.LinearAlgebra;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
+using SW2URDF.Core;
 using SW2URDF.MJCF;
 using SW2URDF.ROS;
 using SW2URDF.URDF;
-using SW2URDF.URDFExport.CSV;
 using SW2URDF.Utilities;
 using System;
 using System.Collections.Generic;
@@ -41,7 +41,7 @@ namespace SW2URDF.URDFExport
     // Methods for building links and joints are contained in here.
     // Many of the methods are overloaded, but seek to reduce repeated code as much as possible
     // (i.e. the overloaded methods call eachother).
-    // These methods are used by the PartExportForm, the AssemblyExportForm and the PropertyManager Page
+    // These methods are used by ExportPropertyManager (the canonical UI surface).
     public partial class ExportHelper
     {
         #region class variables
@@ -77,6 +77,9 @@ namespace SW2URDF.URDFExport
         public Robot URDFRobot
         { get; set; }
 
+        public Action AxisOverlayDirectionFlipped
+        { get; set; }
+
         public string PackageName
         { get; set; }
 
@@ -87,6 +90,11 @@ namespace SW2URDF.URDFExport
 
         private readonly List<string> ReferenceCoordinateSystemNames;
         private readonly List<string> ReferenceAxesNames;
+        private readonly Dictionary<string, MathTransform> coordinateSystemTransformCache =
+            new Dictionary<string, MathTransform>();
+        private readonly Dictionary<string, double[]> referenceAxisCache =
+            new Dictionary<string, double[]>();
+        private int featureLookupCacheDepth;
 
         // Native SW DragArrowManipulator used as the PropertyManager
         // joint axis direction overlay. We use a manipulator (not raw
@@ -101,6 +109,13 @@ namespace SW2URDF.URDFExport
         // and on PM close - dropping the ref without Remove leaks the
         // arrow into the user's viewport across exports.
         private Manipulator axisManipulator;
+
+        // Monotonic sequence id labelled on every diagnostic log line emitted
+        // by DrawAxisOverlay. Same purpose as ExportPropertyManager.
+        // axisPreviewLogSeq - lets us pair entry / exit log lines and spot
+        // duplicate fires when the manipulator path is in a suspected loop.
+        // Diagnostic only.
+        private int axisOverlayLogSeq;
 
         private bool ComputeInertialValues;
         private bool ComputeVisualCollision;
@@ -162,6 +177,16 @@ namespace SW2URDF.URDFExport
             MeshExportFormat meshFormat = MeshExportFormat.STL,
             ExportFormat outputFormat = ExportFormat.URDF)
         {
+            using (BeginFeatureLookupCache())
+            {
+                ExportRobotCore(exportSTL, meshFormat, outputFormat);
+            }
+        }
+
+        private void ExportRobotCore(bool exportSTL,
+            MeshExportFormat meshFormat,
+            ExportFormat outputFormat)
+        {
             //Setting up the progress bar
             logger.Info("Beginning the export process (format: " + outputFormat + ")");
             int progressBarBound = CommonSwOperations.GetCount(URDFRobot.BaseLink);
@@ -175,7 +200,6 @@ namespace SW2URDF.URDFExport
             URDFRobot.Name = PackageName;
 
             string windowsModelFileName = package.WindowsModelsDirectory + URDFRobot.Name + package.ModelExtension;
-            string windowsCSVFileName = package.WindowsModelsDirectory + URDFRobot.Name + ".csv";
 
             // Auxiliary information that the MJCF builder needs but the URDF tree
             // does not store. We populate it as we walk the tree below.
@@ -257,14 +281,21 @@ namespace SW2URDF.URDFExport
                 URDFRobot.WriteURDF(uWriter.writer);
             }
 
-            ImportExport.WriteRobotToCSV(URDFRobot, windowsCSVFileName);
-
             logger.Info("Copying log file");
             CopyLogFile(package);
 
             logger.Info("Resetting STL preferences");
             ResetUserPreferences();
             progressBar.End();
+        }
+
+        public void ExportRobot(KinematicTree tree,
+            bool exportSTL = true,
+            MeshExportFormat meshFormat = MeshExportFormat.STL,
+            ExportFormat outputFormat = ExportFormat.URDF)
+        {
+            URDFRobot = KinematicTreeAdapter.ToLegacyRobot(tree);
+            ExportRobot(exportSTL, meshFormat, outputFormat);
         }
 
         // ROS-specific package files (CMakeLists, package.xml, launch files, joint

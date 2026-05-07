@@ -1,4 +1,6 @@
+using SW2URDF.Core;
 using SW2URDF.URDF;
+using SW2URDF.URDFExport;
 using SW2URDF.Utilities;
 using System;
 using System.Collections.Generic;
@@ -6,33 +8,58 @@ using System.IO;
 
 namespace SW2URDF.MJCF
 {
-    // Bridge between the SW2URDF Link tree (already populated by ExportHelper with
-    // localized joint origins / axes / inertials) and the MJCF data model. The builder
-    // does not interact with SolidWorks directly: all transforms and components must
-    // already be resolved in the Link tree.
+    // Phase 2: the MJCF builder consumes the format-neutral KinematicTree
+    // (SW2URDF.Core) directly. Callers that still hold a legacy Robot
+    // tree go through KinematicTreeAdapter.ToCore at the boundary; the
+    // builder itself knows nothing about URDFElement / SolidWorks types.
     //
-    // The mapping rules are:
-    //   - URDF <joint><origin xyz=... rpy=.../></joint> for the joint connecting the
-    //     parent link to a child link is encoded as `pos`/`quat` on the child <body>.
-    //   - The MJCF <joint> child sits at pos=0 0 0 in the body frame and its `axis`
-    //     is the URDF Joint.Axis (already localized to the body frame by the
-    //     ExportHelper).
-    //   - <geom>s are mesh references with no explicit pos/quat — STLs are exported
-    //     in body-local coordinates, so the geom origin coincides with the body
-    //     origin.
-    //   - <site>s have pos/quat computed from a separate body-local transform and
-    //     are populated by the caller (which has access to the live SolidWorks
-    //     coordinate systems).
+    // Mapping rules:
+    //   - URDF <joint><origin xyz=... rpy=.../></joint> for the joint
+    //     connecting the parent link to a child link is encoded as
+    //     pos/quat on the child <body>.
+    //   - The MJCF <joint> child sits at pos=0 0 0 in the body frame and
+    //     its `axis` is the joint axis (already localized to the body
+    //     frame upstream by ExportHelper).
+    //   - <geom>s are mesh references with no explicit pos/quat; STLs are
+    //     exported in body-local coordinates so the geom origin coincides
+    //     with the body origin.
+    //   - <site>s have pos/quat computed from a separate body-local
+    //     transform and are populated by the caller (which has access to
+    //     the live SolidWorks coordinate systems) via LinkAuxiliary.
     internal static class MJCFBuilder
     {
         private static readonly log4net.ILog logger = Logger.GetLogger();
 
-        // Path written into <compiler texturedir="..."> for MJCF packages. Mirrors
-        // the meshdir convention: relative to the model XML which lives in mjcf/.
+        // Path written into <compiler texturedir="..."> for MJCF packages.
+        // Mirrors the meshdir convention: relative to the model XML which
+        // lives in mjcf/.
         public const string DefaultTextureDir = "../textures/";
 
-        // Builds an MJCFModel from a populated SW2URDF Robot. `auxByLinkName` carries
-        // per-link mesh/site information that depends on the SolidWorks export step.
+        // Canonical entry point. Walks the KinematicTree and assembles the
+        // MJCFModel. `auxByLinkName` carries per-link mesh/site information
+        // that depends on the SolidWorks export step (mesh filenames, site
+        // poses) and is keyed by the LinkModel.Name.
+        public static MJCFModel Build(
+            KinematicTree tree,
+            string meshDir,
+            Dictionary<string, LinkAuxiliary> auxByLinkName)
+        {
+            if (tree == null)
+            {
+                throw new ArgumentNullException(nameof(tree));
+            }
+
+            MJCFModel model = new MJCFModel(tree.Name ?? "");
+            model.Compiler.MeshDir = string.IsNullOrEmpty(meshDir) ? "meshes/" : meshDir;
+            model.Compiler.TextureDir = DefaultTextureDir;
+            model.RootBody = BuildBody(tree.BaseLink, model.Asset, auxByLinkName, isRoot: true);
+            return model;
+        }
+
+        // Convenience overload retained for the export pipeline, which still
+        // builds the legacy Robot at the SolidWorks boundary. Forwards
+        // through the adapter and into the KinematicTree-native path so
+        // there's exactly one BuildBody implementation.
         public static MJCFModel Build(
             Robot robot,
             string meshDir,
@@ -42,246 +69,308 @@ namespace SW2URDF.MJCF
             {
                 throw new ArgumentNullException(nameof(robot));
             }
-            MJCFModel model = new MJCFModel(robot.Name);
-            model.Compiler.MeshDir = string.IsNullOrEmpty(meshDir) ? "meshes/" : meshDir;
-            model.Compiler.TextureDir = DefaultTextureDir;
-            model.RootBody = BuildBody(robot.BaseLink, model.Asset, auxByLinkName, isRoot: true);
-            return model;
+            return Build(KinematicTreeAdapter.ToCore(robot), meshDir, auxByLinkName);
         }
 
         private static Body BuildBody(
-            Link link, Asset asset, Dictionary<string, LinkAuxiliary> auxByLinkName, bool isRoot)
+            LinkModel link, Asset asset, Dictionary<string, LinkAuxiliary> auxByLinkName, bool isRoot)
         {
             Body body = new Body
             {
-                Name = link.Name,
+                Name = link.Name ?? "",
                 SuppressTransform = isRoot,
             };
 
-            if (!isRoot)
+            if (!isRoot && link.Joint != null && link.Joint.Origin != null)
             {
-                // For non-root links, the URDF joint origin (xyz/rpy) is the transform
-                // from the parent's body frame to the child's body frame; that's the
-                // pos/quat we stamp on the child <body>.
-                body.Position = link.Joint.Origin.GetXYZ();
-                body.Quaternion = MathOps.RPYToQuaternion(link.Joint.Origin.GetRPY());
+                // For non-root links, the URDF joint origin (xyz/rpy) is the
+                // transform from the parent's body frame to the child's
+                // body frame; that's the pos/quat we stamp on the child
+                // <body>.
+                Vector3Model pos = link.Joint.Origin.Position ?? new Vector3Model(0, 0, 0);
+                RpyModel rpy = link.Joint.Origin.Rotation ?? new RpyModel(0, 0, 0);
+                body.Position = new[] { pos.X, pos.Y, pos.Z };
+                body.Quaternion = MathOps.RPYToQuaternion(new[] { rpy.Roll, rpy.Pitch, rpy.Yaw });
             }
 
             body.Inertial = BuildInertial(link);
 
-            // The root link has no incoming joint by convention; for a fixed joint,
-            // we omit the joint element so the body is rigidly attached to its parent.
-            if (!isRoot && link.Joint != null && link.Joint.Type != "fixed")
+            // The root link has no incoming joint by convention; for a
+            // fixed joint we omit the joint element so the body is rigidly
+            // attached to its parent.
+            if (!isRoot && link.Joint != null && !string.Equals(link.Joint.Type, "fixed", StringComparison.Ordinal))
             {
                 body.Joint = BuildJoint(link.Joint);
             }
 
             LinkAuxiliary aux = null;
-            if (auxByLinkName != null)
+            if (auxByLinkName != null && !string.IsNullOrEmpty(link.Name))
             {
                 auxByLinkName.TryGetValue(link.Name, out aux);
             }
 
-            // Visual/collision geoms — one mesh asset and one geom per group.
-            // A link with two visual groups gets two <mesh> entries in <asset>
-            // and two <geom class="visual"> children of the body. The same
-            // applies to collision; this is what lets MuJoCo represent a
-            // concave shape as a union of convex hulls (one hull per group).
+            // Visual / collision geoms - one mesh asset and one geom per
+            // group. A link with two visual groups gets two <mesh> entries
+            // in <asset> and two <geom class="visual"> children of the
+            // body. The same applies to collision; this is what lets
+            // MuJoCo represent a concave shape as a union of convex hulls
+            // (one hull per group).
             //
             // Geom names disambiguate role and group index so a body with
-            //   * one visual + one collision      -> "<link>_visual" / "<link>_collision"
-            //   * N visuals (N > 1)               -> "<link>_visual_1..N"
+            //   * one visual + one collision -> "<link>_visual" / "<link>_collision"
+            //   * N visuals (N > 1)          -> "<link>_visual_1..N"
             // remain unique even when collision reuses a visual mesh asset.
             if (aux != null)
             {
-                int visualCount = (aux.VisualMeshes != null) ? aux.VisualMeshes.Count : 0;
-                int visualIndex = 0;
-                string materialName = null;
-                if (aux.VisualMeshes != null && visualCount > 0)
-                {
-                    // One <material> per link with at least one visual mesh. Multi-group
-                    // visual links share this material on every visual <geom>.
-                    materialName = EnsureLinkMaterial(asset, link);
-                }
-                if (aux.VisualMeshes != null)
-                {
-                    foreach (MeshAssetRef meshRef in aux.VisualMeshes)
-                    {
-                        if (meshRef == null || string.IsNullOrEmpty(meshRef.Name))
-                        {
-                            continue;
-                        }
-                        asset.Add(new MeshAsset(meshRef.Name, meshRef.File));
-                        string geomName = (visualCount == 1)
-                            ? link.Name + "_visual"
-                            : link.Name + "_visual_" + (visualIndex + 1);
-                        body.Geoms.Add(new Geom(geomName, meshRef.Name, GeomRole.Visual)
-                        {
-                            Material = materialName,
-                        });
-                        visualIndex++;
-                    }
-                }
-
-                int collisionCount = (aux.CollisionMeshes != null) ? aux.CollisionMeshes.Count : 0;
-                int collisionIndex = 0;
-                if (aux.CollisionMeshes != null)
-                {
-                    foreach (MeshAssetRef meshRef in aux.CollisionMeshes)
-                    {
-                        if (meshRef == null || string.IsNullOrEmpty(meshRef.Name))
-                        {
-                            continue;
-                        }
-                        asset.Add(new MeshAsset(meshRef.Name, meshRef.File));
-                        string geomName = (collisionCount == 1)
-                            ? link.Name + "_collision"
-                            : link.Name + "_collision_" + (collisionIndex + 1);
-                        // Collision geoms intentionally carry neither rgba nor material;
-                        // they inherit the rgba from <default class="collision"> so all
-                        // collision hulls render at a uniform tint regardless of link.
-                        body.Geoms.Add(new Geom(geomName, meshRef.Name, GeomRole.Collision));
-                        collisionIndex++;
-                    }
-                }
-
-                if (aux.Sites != null)
-                {
-                    foreach (SiteTransform st in aux.Sites)
-                    {
-                        body.Sites.Add(new Site
-                        {
-                            Name = st.Name,
-                            Position = st.Position ?? new double[] { 0, 0, 0 },
-                            Quaternion = st.Quaternion ?? new double[] { 1, 0, 0, 0 },
-                        });
-                    }
-                }
+                EmitVisualGeoms(body, asset, link, aux);
+                EmitCollisionGeoms(body, asset, link, aux);
+                EmitSites(body, aux);
             }
 
-            foreach (Link childLink in link.Children)
+            if (link.Children != null)
             {
-                body.Children.Add(BuildBody(childLink, asset, auxByLinkName, isRoot: false));
+                foreach (LinkModel childLink in link.Children)
+                {
+                    body.Children.Add(BuildBody(childLink, asset, auxByLinkName, isRoot: false));
+                }
             }
 
             return body;
         }
 
-        private static MJCFInertial BuildInertial(Link link)
+        private static MJCFInertial BuildInertial(LinkModel link)
         {
-            // Skip inertial for fixed-frame "links" (they're not real bodies; they
-            // mark a coordinate frame on the parent).
-            if (link.isFixedFrame)
+            // Skip inertial for fixed-frame "links" (they're not real
+            // bodies; they mark a coordinate frame on the parent).
+            if (link.IsFixedFrame)
             {
                 return null;
             }
-            // If mass is essentially zero, there's no useful inertial to emit and
-            // MuJoCo will fall back to the geom-derived inertia (if any).
-            if (link.Inertial == null || link.Inertial.Mass.Value <= 0.0)
+            // If mass is essentially zero, there's no useful inertial to
+            // emit and MuJoCo will fall back to the geom-derived inertia
+            // (if any).
+            if (link.Inertial == null || link.Inertial.Mass <= 0.0)
             {
                 return null;
             }
 
-            MJCFInertial inertial = new MJCFInertial
+            Vector3Model pos = link.Inertial.Origin?.Position ?? new Vector3Model(0, 0, 0);
+            InertiaTensorModel inertia = link.Inertial.Inertia ?? new InertiaTensorModel(0, 0, 0, 0, 0, 0);
+            return new MJCFInertial
             {
-                Position = link.Inertial.Origin.GetXYZ(),
-                Mass = link.Inertial.Mass.Value,
-                FullInertia = new double[]
+                Position = new[] { pos.X, pos.Y, pos.Z },
+                Mass = link.Inertial.Mass,
+                FullInertia = new[]
                 {
-                    link.Inertial.Inertia.Ixx,
-                    link.Inertial.Inertia.Iyy,
-                    link.Inertial.Inertia.Izz,
-                    link.Inertial.Inertia.Ixy,
-                    link.Inertial.Inertia.Ixz,
-                    link.Inertial.Inertia.Iyz,
+                    inertia.Ixx,
+                    inertia.Iyy,
+                    inertia.Izz,
+                    inertia.Ixy,
+                    inertia.Ixz,
+                    inertia.Iyz,
                 },
                 HasInertia = true,
             };
-            return inertial;
         }
 
-        private static MJCFJoint BuildJoint(Joint urdfJoint)
+        private static MJCFJoint BuildJoint(JointModel urdfJoint)
         {
+            Vector3Model axisVec = urdfJoint.Axis ?? new Vector3Model(0, 0, 1);
             MJCFJoint mjJoint = new MJCFJoint
             {
-                Name = urdfJoint.Name,
-                Axis = urdfJoint.Axis.GetXYZ(),
+                Name = urdfJoint.Name ?? "",
+                Axis = new[] { axisVec.X, axisVec.Y, axisVec.Z },
                 Position = new double[] { 0, 0, 0 },
             };
-            if (MJCFJointTypeExtensions.TryFromURDFType(urdfJoint.Type, out MJCFJointType mjType))
+            if (MJCFJointTypeExtensions.TryFromURDFType(urdfJoint.Type ?? "", out MJCFJointType mjType))
             {
                 mjJoint.Type = mjType;
             }
             else
             {
-                // "fixed" should have been filtered out earlier, but if we get here
-                // (e.g. unknown URDF type), default to a hinge so the file is still
-                // syntactically valid.
+                // "fixed" should have been filtered out earlier, but if we
+                // get here (e.g. unknown URDF type), default to a hinge so
+                // the file is still syntactically valid.
                 mjJoint.Type = MJCFJointType.Hinge;
             }
 
             if (urdfJoint.Type == "revolute" || urdfJoint.Type == "prismatic")
             {
-                if (urdfJoint.Limit != null)
+                if (urdfJoint.Limit != null && urdfJoint.Limit.Lower.HasValue && urdfJoint.Limit.Upper.HasValue)
                 {
                     mjJoint.HasLimits = true;
-                    mjJoint.LowerLimit = urdfJoint.Limit.Lower;
-                    mjJoint.UpperLimit = urdfJoint.Limit.Upper;
+                    mjJoint.LowerLimit = urdfJoint.Limit.Lower.Value;
+                    mjJoint.UpperLimit = urdfJoint.Limit.Upper.Value;
                 }
             }
-            if (urdfJoint.Dynamics != null)
+
+            // Effort -> MJCF actuatorfrcrange = [-effort, +effort]. Mirrors
+            // URDF's single-magnitude effort convention. Free / ball
+            // joints don't accept actuatorfrcrange and skip the attribute
+            // in the writer.
+            if (urdfJoint.Limit != null && urdfJoint.Limit.Effort.HasValue
+                && urdfJoint.Limit.Effort.Value > 0.0)
             {
-                // Dynamics fields are always present in the URDF model but may be
-                // zero/blank; MuJoCo defaults handle a zero damping just fine.
+                mjJoint.HasEffort = true;
+                mjJoint.Effort = urdfJoint.Limit.Effort.Value;
+            }
+
+            // URDF velocity has no MJCF analog. Note once per build for
+            // visibility, then proceed without emitting an attribute.
+            if (urdfJoint.Limit != null && urdfJoint.Limit.Velocity.HasValue
+                && urdfJoint.Limit.Velocity.Value > 0.0)
+            {
+                logger.Info("MJCF: <joint velocity> has no MJCF equivalent; " +
+                    "dropping velocity=" + urdfJoint.Limit.Velocity.Value +
+                    " on joint '" + (urdfJoint.Name ?? "") + "'.");
+            }
+
+            if (urdfJoint.Damping.HasValue)
+            {
+                mjJoint.HasDamping = true;
+                mjJoint.Damping = urdfJoint.Damping.Value;
+            }
+            if (urdfJoint.Friction.HasValue)
+            {
+                mjJoint.HasFriction = true;
+                mjJoint.Friction = urdfJoint.Friction.Value;
+            }
+            if (urdfJoint.Armature.HasValue)
+            {
+                mjJoint.HasArmature = true;
+                mjJoint.Armature = urdfJoint.Armature.Value;
+            }
+            if (urdfJoint.Reference.HasValue)
+            {
+                mjJoint.HasRef = true;
+                mjJoint.Ref = urdfJoint.Reference.Value;
             }
 
             return mjJoint;
         }
 
-        // Adds (idempotently) a <material> for the given link to the asset block,
-        // plus the corresponding <texture> if the link has a non-empty
-        // Texture.wFilename pointing at a file. The Color element is populated
-        // either by the user (Configure Link Properties form) or automatically
-        // from SolidWorks (ComputeVisualCollisionProperties reads the part's
-        // MaterialPropertyValues). Defaults to white-opaque so a link whose
-        // color was never populated still emits syntactically valid rgba; URDF
-        // Color() initializes to {1,1,1,1} for the same reason.
+        private static void EmitVisualGeoms(Body body, Asset asset, LinkModel link, LinkAuxiliary aux)
+        {
+            if (aux.VisualMeshes == null)
+            {
+                return;
+            }
+            int visualCount = aux.VisualMeshes.Count;
+            if (visualCount == 0)
+            {
+                return;
+            }
+
+            // One <material> per link with at least one visual mesh.
+            // Multi-group visual links share this material on every visual
+            // <geom>.
+            string materialName = EnsureLinkMaterial(asset, link);
+
+            int visualIndex = 0;
+            foreach (MeshAssetRef meshRef in aux.VisualMeshes)
+            {
+                if (meshRef == null || string.IsNullOrEmpty(meshRef.Name))
+                {
+                    continue;
+                }
+                asset.Add(new MeshAsset(meshRef.Name, meshRef.File));
+                string geomName = (visualCount == 1)
+                    ? link.Name + "_visual"
+                    : link.Name + "_visual_" + (visualIndex + 1);
+                body.Geoms.Add(new Geom(geomName, meshRef.Name, GeomRole.Visual)
+                {
+                    Material = materialName,
+                });
+                visualIndex++;
+            }
+        }
+
+        private static void EmitCollisionGeoms(Body body, Asset asset, LinkModel link, LinkAuxiliary aux)
+        {
+            if (aux.CollisionMeshes == null)
+            {
+                return;
+            }
+            int collisionCount = aux.CollisionMeshes.Count;
+            int collisionIndex = 0;
+            foreach (MeshAssetRef meshRef in aux.CollisionMeshes)
+            {
+                if (meshRef == null || string.IsNullOrEmpty(meshRef.Name))
+                {
+                    continue;
+                }
+                asset.Add(new MeshAsset(meshRef.Name, meshRef.File));
+                string geomName = (collisionCount == 1)
+                    ? link.Name + "_collision"
+                    : link.Name + "_collision_" + (collisionIndex + 1);
+                // Collision geoms intentionally carry neither rgba nor
+                // material; they inherit the rgba from
+                // <default class="collision"> so all collision hulls
+                // render at a uniform tint regardless of link.
+                body.Geoms.Add(new Geom(geomName, meshRef.Name, GeomRole.Collision));
+                collisionIndex++;
+            }
+        }
+
+        private static void EmitSites(Body body, LinkAuxiliary aux)
+        {
+            if (aux.Sites == null)
+            {
+                return;
+            }
+            foreach (SiteTransform st in aux.Sites)
+            {
+                body.Sites.Add(new Site
+                {
+                    Name = st.Name,
+                    Position = st.Position ?? new double[] { 0, 0, 0 },
+                    Quaternion = st.Quaternion ?? new double[] { 1, 0, 0, 0 },
+                });
+            }
+        }
+
+        // Adds (idempotently) a <material> for the given link to the asset
+        // block, plus the corresponding <texture> if the link has a
+        // non-empty Texture filename pointing at a file. The Color element
+        // is populated either by the user (Configure Link Properties form)
+        // or automatically from SolidWorks
+        // (ComputeVisualCollisionProperties reads the part's
+        // MaterialPropertyValues). Defaults to white-opaque so a link
+        // whose color was never populated still emits syntactically valid
+        // rgba.
         //
-        // Returns the material's <name> so the caller can stamp it on the geom.
-        // Material names must be unique within <asset> in MJCF: if the chosen
-        // name is already taken (because two links share a custom material name
-        // set in the form), Asset.Add returns false and we log a warning. The
-        // second link's geoms still reference the existing material, which
-        // means they render with the first link's color/texture. Acceptable
-        // degradation; the user can fix it by giving the second link a distinct
-        // name.
-        private static string EnsureLinkMaterial(Asset asset, Link link)
+        // Returns the material's <name> so the caller can stamp it on the
+        // geom. Material names must be unique within <asset> in MJCF: if
+        // the chosen name is already taken (because two links share a
+        // custom material name set in the form), Asset.Add returns false
+        // and we log a warning. The second link's geoms still reference
+        // the existing material, which means they render with the first
+        // link's color/texture. Acceptable degradation; the user can fix
+        // it by giving the second link a distinct name.
+        private static string EnsureLinkMaterial(Asset asset, LinkModel link)
         {
             string materialName = ChooseMaterialName(link);
 
             string textureName = null;
-            string textureWFilename = link?.Visual?.Material?.Texture?.wFilename;
-            if (!string.IsNullOrWhiteSpace(textureWFilename))
+            string textureFilename = link?.Material?.TextureFilename;
+            if (!string.IsNullOrWhiteSpace(textureFilename))
             {
                 textureName = "texture_" + ((link != null && !string.IsNullOrWhiteSpace(link.Name))
                     ? link.Name
                     : "link");
-                string textureFile = Path.GetFileName(textureWFilename);
+                string textureFile = Path.GetFileName(textureFilename);
                 if (!asset.Add(new TextureAsset(textureName, textureFile)))
                 {
-                    // Same name already present -- not an error per se, but worth a
-                    // breadcrumb if the underlying file path differs.
+                    // Same name already present - not an error per se, but
+                    // worth a breadcrumb if the underlying file path
+                    // differs.
                     logger.Info("MJCF texture '" + textureName +
                         "' already declared in <asset>; reusing existing entry.");
                 }
             }
 
-            double[] rgba = (link != null
-                && link.Visual != null
-                && link.Visual.Material != null
-                && link.Visual.Material.Color != null)
-                ? link.Visual.Material.Color.GetColor()
-                : new double[] { 1, 1, 1, 1 };
+            RgbaModel color = link?.Material?.Color ?? new RgbaModel(1, 1, 1, 1);
+            double[] rgba = new[] { color.Red, color.Green, color.Blue, color.Alpha };
 
             MaterialAsset newMaterial = new MaterialAsset(materialName, rgba)
             {
@@ -304,13 +393,13 @@ namespace SW2URDF.MJCF
         }
 
         // Picks the material name for a link. Honours a user-supplied
-        // Link.Visual.Material.Name when set (typically by the form's
-        // comboBoxMaterials or by ComputeVisualCollisionProperties which writes
-        // "material_<linkname>"); falls back to "material_<linkname>" otherwise.
-        // Always returns a non-empty string.
-        private static string ChooseMaterialName(Link link)
+        // Material.Name when set (typically by the form's
+        // comboBoxMaterials or by ComputeVisualCollisionProperties which
+        // writes "material_<linkname>"); falls back to "material_<linkname>"
+        // otherwise. Always returns a non-empty string.
+        private static string ChooseMaterialName(LinkModel link)
         {
-            string explicitName = link?.Visual?.Material?.Name;
+            string explicitName = link?.Material?.Name;
             if (!string.IsNullOrWhiteSpace(explicitName))
             {
                 return explicitName;
@@ -346,8 +435,9 @@ namespace SW2URDF.MJCF
             return true;
         }
 
-        // Joins a directory and a filename using the MuJoCo convention of forward
-        // slashes (the meshdir is used verbatim and prepended to each <mesh file=...>).
+        // Joins a directory and a filename using the MuJoCo convention of
+        // forward slashes (the meshdir is used verbatim and prepended to
+        // each <mesh file=...>).
         public static string CombineMeshPath(string dir, string filename)
         {
             if (string.IsNullOrEmpty(dir))

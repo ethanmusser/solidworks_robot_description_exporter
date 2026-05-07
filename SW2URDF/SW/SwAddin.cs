@@ -261,15 +261,10 @@ namespace SW2URDF.SW
                 return;
             }
             logger.Info("Adding Assembly export to file menu");
-            ret = SwApp.AddMenuItem5((int)swDocumentTypes_e.swDocPART, add_in_id_, "Export as URDF/MJCF@&Tools",
-                -1, "PartURDFExporter", "", "Export part as URDF/MJCF file", images);
-            if (ret < 0)
-            {
-                logger.Error("Failure to add menu item 'Export as URDF/MJCF' to menu 'Tools'");
-                return;
-            }
 
-            logger.Info("Adding Part export to file menu");
+            // Single-part export was retired during the modernization rollup;
+            // the canonical workflow exports an assembly. Open the part as an
+            // assembly to export it as a URDF/MJCF link.
         }
 
         public int ToolbarEnableMethod()
@@ -280,8 +275,6 @@ namespace SW2URDF.SW
         {
             SwApp.RemoveMenu((int)swDocumentTypes_e.swDocASSEMBLY, "Export as URDF/MJCF@&File", "");
             logger.Info("Removing assembly export from file menu");
-            SwApp.RemoveMenu((int)swDocumentTypes_e.swDocPART, "Export as URDF/MJCF@&File", "");
-            logger.Info("Removing part export from file menu");
         }
 
         #endregion UI Methods
@@ -343,43 +336,6 @@ namespace SW2URDF.SW
             {
                 logger.Info("Showing property manager");
                 pm.Show();
-            }
-        }
-
-        public void SetupPartExporter()
-        {
-            logger.Info("Part export called");
-            ModelDoc2 modeldoc = SwApp.ActiveDoc;
-            if ((modeldoc.Extension.NeedsRebuild2 == 0) ||
-                MessageBox.Show("Save and rebuild document?",
-                "The SW to URDF/MJCF exporter requires saving before continuing",
-                MessageBoxButtons.YesNo) == DialogResult.Yes)
-            {
-                if (modeldoc.Extension.NeedsRebuild2 != 0)
-                {
-                    int options = (int)swSaveAsOptions_e.swSaveAsOptions_SaveReferenced |
-                        (int)swSaveAsOptions_e.swSaveAsOptions_Silent;
-                    logger.Info("Saving part");
-                    modeldoc.Save3(options, 0, 0);
-                }
-
-                PartExportForm exportForm = new PartExportForm((SldWorks)SwApp);
-                logger.Info("Showing part");
-                exportForm.Show();
-            }
-        }
-
-        public void PartURDFExporter()
-        {
-            try
-            {
-                SetupPartExporter();
-            }
-            catch (Exception e)
-            {
-                logger.Error("Excoption caught setting up export form", e);
-                MessageBox.Show("An exception occured setting up the export form, please email " +
-                    " your maintainer with the log file found at " + Logger.GetFileName());
             }
         }
 

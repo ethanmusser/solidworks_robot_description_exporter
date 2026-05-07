@@ -1,7 +1,8 @@
-﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using SolidWorks.Interop.sldworks;
 using SW2URDF.URDF;
 using SW2URDF.URDFExport;
+using System;
+using System.Reflection;
 using Xunit;
 
 namespace SW2URDF.Test
@@ -13,17 +14,37 @@ namespace SW2URDF.Test
         {
         }
 
+        // The legacy MSTest PrivateType wrapper was used here only to invoke
+        // private static methods on ConfigurationSerialization. We've dropped
+        // the Microsoft.VisualStudio.TestPlatform package as part of the
+        // toolchain modernization; this helper does the same job with plain
+        // reflection so we don't carry an MSTest dependency just for two
+        // private-method calls.
+        private static object InvokePrivateStatic(Type type, string methodName, params object[] args)
+        {
+            MethodInfo method = type.GetMethod(
+                methodName,
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Xunit.Assert.NotNull(method);
+            return method.Invoke(null, args);
+        }
+
         [Theory]
         [InlineData("3_DOF_ARM", 4)]
         public void TestLoadConfigFromStringXML(string modelName, int expNumLinks)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
-            PrivateType serialization = new PrivateType(typeof(ConfigurationSerialization));
-            object swAttObj = serialization.InvokeStatic(
-                "FindSWSaveAttribute", new object[] { doc, "URDF Export Configuration" });
+            object swAttObj = InvokePrivateStatic(
+                typeof(ConfigurationSerialization),
+                "FindSWSaveAttribute",
+                doc, "URDF Export Configuration");
             Xunit.Assert.NotNull(swAttObj);
 
-            Attribute swAtt = (Attribute)swAttObj;
+            // Disambiguate against System.Attribute (via using System;)
+            // and SolidWorks.Interop.sldworks.Attribute (via using
+            // SolidWorks.Interop.sldworks;).
+            SolidWorks.Interop.sldworks.Attribute swAtt =
+                (SolidWorks.Interop.sldworks.Attribute)swAttObj;
             Parameter param = swAtt.GetParameter("data");
 
             Xunit.Assert.NotNull(param);
@@ -32,8 +53,10 @@ namespace SW2URDF.Test
             Xunit.Assert.NotNull(data);
             Xunit.Assert.NotEmpty(data);
 
-            LinkNode baseNode = (LinkNode)serialization.InvokeStatic(
-                "LoadConfigFromStringXML", new object[] { data });
+            LinkNode baseNode = (LinkNode)InvokePrivateStatic(
+                typeof(ConfigurationSerialization),
+                "LoadConfigFromStringXML",
+                data);
             Link link = baseNode.RebuildLink();
             Xunit.Assert.Equal(expNumLinks, CommonSwOperations.GetCount(link));
         }
@@ -59,12 +82,12 @@ namespace SW2URDF.Test
             LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
             Xunit.Assert.False(error);
 
-            PrivateType serialization = new PrivateType(typeof(ConfigurationSerialization));
-            string newData = (string)serialization.InvokeStatic(
-                "SerializeToString", new object[] { baseNode });
+            string newData = (string)InvokePrivateStatic(
+                typeof(ConfigurationSerialization),
+                "SerializeToString",
+                baseNode);
             Xunit.Assert.NotNull(newData);
             Xunit.Assert.NotEmpty(newData);
-
         }
     }
 }

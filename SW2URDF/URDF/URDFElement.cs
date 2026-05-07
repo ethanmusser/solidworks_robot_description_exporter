@@ -2,7 +2,6 @@ using log4net;
 using SW2URDF.Utilities;
 using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Serialization;
@@ -85,41 +84,6 @@ namespace SW2URDF.URDF
             }
 
             writer.WriteEndElement();
-        }
-
-        public virtual void AppendToCSVDictionary(List<string> context, OrderedDictionary dictionary)
-        {
-            string typeName = GetType().Name;
-            List<string> updatedContext = new List<string>(context) { typeName };
-
-            foreach (URDFAttribute att in Attributes)
-            {
-                if (att.Value != null)
-                {
-                    att.AppendToCSVDictionary(updatedContext, dictionary);
-                }
-            }
-
-            foreach (URDFElement child in ChildElements)
-            {
-                child.AppendToCSVDictionary(updatedContext, dictionary);
-            }
-        }
-
-        public virtual void SetElementFromData(List<string> context, StringDictionary dictionary)
-        {
-            string typeName = GetType().Name;
-            List<string> updatedContext = new List<string>(context) { typeName };
-
-            foreach (URDFAttribute att in Attributes)
-            {
-                att.SetValueFromData(updatedContext, dictionary);
-            }
-
-            foreach (URDFElement child in ChildElements)
-            {
-                child.SetElementFromData(updatedContext, dictionary);
-            }
         }
 
         public void Unset()

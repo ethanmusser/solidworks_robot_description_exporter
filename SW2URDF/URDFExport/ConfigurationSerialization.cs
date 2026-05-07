@@ -1,5 +1,6 @@
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
+using SW2URDF.Configuration;
 using SW2URDF.Legacy;
 using SW2URDF.URDF;
 using SW2URDF.Utilities;
@@ -15,100 +16,145 @@ using System.Xml.Serialization;
 namespace SW2URDF.URDFExport
 {
     /// <summary>
-    /// Class to serialize URDF trees to string so they can be saved to an SW Attribute in the
-    /// top-level assembly document.
-    ///
-    /// Any changes to the serialization scheme need to support backwards compatibility in some way.
-    /// At least in regards to reading the old configuration. I'm also choosing to save any old xml
-    /// formats to a second attribute in case they need to be reloaded.
+    /// Persistence boundary between the in-memory PMPage tree and SolidWorks
+    /// document attributes. Phase 2 promoted ConfigV2 JSON to the canonical
+    /// save format; the legacy v1.3-v1.5 DataContract XML and the very-old
+    /// XmlSerializer SerialNode formats remain read-only fallbacks so an
+    /// existing assembly's saved configuration still loads after upgrade.
+    /// First save after a load migrates onto v2 by writing the new attribute
+    /// alongside (not replacing) the old one.
     /// </summary>
     public static class ConfigurationSerialization
     {
         private static readonly log4net.ILog logger = Logger.GetLogger();
 
-        /// <summary>
-        /// Current Serialization version
-        /// </summary>
+        // Format version of the legacy DataContract attribute. Kept as a
+        // double for backward compatibility with the old `exporterVersion`
+        // attribute parameter on existing documents.
         private const double SerializationVersion = 1.5;
 
-        /// <summary>
-        /// Previous versions of serialization were set at 1 in the SW Document. This is
-        /// used to denote the version at which the serialization scheme was modified.
-        /// </summary>
+        // The very-old XmlSerializer (SerialNode) shape was stored under
+        // exporterVersion < 1.3. v1.3 marks the cutover to DataContract XML.
         private const double MinDataContractVersion = 1.3;
 
         /// <summary>
-        /// The name given to the URDF configuration in the ModelDoc Feature tree. This is displayed to the
-        /// user
+        /// SolidWorks attribute name for ConfigV2 JSON. Parallel storage:
+        /// new saves ALWAYS write here; existing v1.5 attributes are
+        /// retained for downgrade safety. <see cref="LoadBaseNodeFromModel"/>
+        /// prefers v2 over the legacy attribute.
         /// </summary>
-        public const string UrdfConfigurationSwAttributeName= "URDF Export Configuration (v1.5)";
+        public const string UrdfConfigurationV2SwAttributeName = "URDF Export Configuration (v2)";
+
+        /// <summary>
+        /// SolidWorks attribute name for the legacy v1.3-v1.5 DataContract
+        /// XML schema. Read-only after Phase 2; new saves go to the v2
+        /// JSON attribute instead.
+        /// </summary>
+        public const string UrdfConfigurationSwAttributeName = "URDF Export Configuration (v1.5)";
 
         public static List<string> PREVIOUS_URDF_CONFIGURATION_NAMES = new List<string>() {
             "URDF Export Configuration (v1.4)",
             "URDF Export Configuration (v1.3)",
             "URDF Export Configuration"
-            };
+        };
 
         #region Public Methods
 
         /// <summary>
-        /// Loads the URDF tree from the SW Model Document
+        /// Loads the URDF tree from the SW Model Document. Tries v2 JSON
+        /// first; falls back to v1.3-v1.5 DataContract XML; falls back to
+        /// the very-old XmlSerializer format.
         /// </summary>
-        /// <param name="model">ModelDoc containing the URDF configuration</param>
-        /// <returns>TreeView LinkNode loaded from configuration</returns>
         public static LinkNode LoadBaseNodeFromModel(ModelDoc2 model, out bool error)
         {
-            string data = GetConfigTreeData(model, out double configVersion);
+            error = false;
 
-            LinkNode basenode;
-            if (configVersion > SerializationVersion)
+            // Phase 2: prefer the JSON v2 attribute when present.
+            string jsonData = ReadAttributeData(model, UrdfConfigurationV2SwAttributeName);
+            if (!string.IsNullOrWhiteSpace(jsonData))
+            {
+                try
+                {
+                    ConfigV2 config = ConfigV2JsonSerializer.Deserialize(jsonData);
+                    return ConfigV2Bridge.CreateLinkNode(config);
+                }
+                catch (Exception ex)
+                {
+                    logger.Error("Failed to read ConfigV2 JSON; falling back to legacy XML.", ex);
+                    logger.Error(jsonData);
+                    // Fall through to the legacy attribute lookup.
+                }
+            }
+
+            // Legacy DataContract XML / SerialNode XML branches.
+            string legacyData = GetLegacyConfigTreeData(model, out double legacyVersion);
+            if (legacyVersion > SerializationVersion)
             {
                 MessageBox.Show("The configuration saved in this model is newer than what this " +
-                    "exporter supports " + string.Format("({0} > {1})", configVersion, SerializationVersion) +
+                    "exporter supports " + string.Format("({0} > {1})", legacyVersion, SerializationVersion) +
                     ". Please update your exporter version");
                 error = true;
                 return null;
             }
 
-            if (configVersion >= MinDataContractVersion)
+            if (legacyVersion >= MinDataContractVersion)
             {
-                basenode = DeserializeFromString(data);
+                return DeserializeFromString(legacyData);
             }
-            else
-            {
-                basenode = LoadConfigFromStringXML(data);
-            }
-
-            error = false;
-            return basenode;
+            return LoadConfigFromStringXML(legacyData);
         }
 
         /// <summary>
-        /// Public method to serialize a Treeview LinkNode URDF data to a string and saves it to a SW ModelDoc
+        /// Saves the LinkNode tree to the active model. Phase 2 always
+        /// writes ConfigV2 JSON to the v2 attribute; the v1.5 attribute is
+        /// not touched (read-only fallback). The first save after a legacy
+        /// load is therefore the migration step.
         /// </summary>
-        /// <param name="swApp">SldWorks application</param>
-        /// <param name="model">ModelDoc to which you are saving this data</param>
-        /// <param name="BaseNode">TreeView LinkNode which contains the data you are saving</param>
-        /// <param name="warnUser">Warn the user with a YesNo MessageBox, otherwise this will be done silently
-        ///  and overwrite any existing data</param>
         public static void SaveConfigTreeXML(SldWorks swApp, ModelDoc2 model, LinkNode BaseNode, bool warnUser)
         {
-            string oldData = GetConfigTreeData(model, out double version);
-            if (oldData.Length > 0 && version < SerializationVersion)
+            if (BaseNode == null)
             {
-                MessageBox.Show("You have a URDF configuration with an outdated save format. It will automatically be " +
-                    "upgraded to the latest version and saved to the configuration named \"" +
-                    UrdfConfigurationSwAttributeName + "\". " +
-                    "Old configurations can be deleted at your convenience.");
+                return;
+            }
+
+            string oldData = ReadAttributeData(model, UrdfConfigurationV2SwAttributeName);
+            string oldLegacy = ReadAttributeData(model, UrdfConfigurationSwAttributeName);
+
+            // Heuristic for the "you have an old config that will be
+            // upgraded" warning: only fire when there's no v2 attribute yet
+            // AND a legacy XML attribute is present. This matches the
+            // existing UX: users who never saved before see no popup;
+            // users mid-migration see one informational popup on first save.
+            if (string.IsNullOrWhiteSpace(oldData) && !string.IsNullOrWhiteSpace(oldLegacy))
+            {
+                MessageBox.Show("Your URDF/MJCF Export configuration was saved in an older XML " +
+                    "format. It will be migrated to the new JSON format under \"" +
+                    UrdfConfigurationV2SwAttributeName + "\". The old attribute is preserved " +
+                    "so an older exporter version can still read it; you can delete it later " +
+                    "from the FeatureManager.");
                 warnUser = false;
             }
 
-            string newData = SerializeToString(BaseNode);
-            if (BaseNode != null && string.IsNullOrEmpty(newData))
+            string newData;
+            try
+            {
+                ConfigV2 config = ConfigV2Bridge.CreateFromLinkNode(BaseNode, model?.GetTitle());
+                newData = ConfigV2JsonSerializer.Serialize(config);
+            }
+            catch (Exception ex)
+            {
+                logger.Error("Serializing ConfigV2 JSON failed", ex);
+                MessageBox.Show("Serializing this configuration failed. Please email your " +
+                    "maintainer with your SW assembly.\n\n" + ex.Message);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(newData))
             {
                 MessageBox.Show("Serializing this link failed. Please email your maintainer with your SW assembly.");
                 return;
             }
+
             if (oldData != newData)
             {
                 if (!warnUser ||
@@ -116,7 +162,7 @@ namespace SW2URDF.URDFExport
                     MessageBox.Show("The configuration has changed, would you like to save?",
                     "Save Export Configuration", MessageBoxButtons.YesNo) == DialogResult.Yes))
                 {
-                    SaveDataToModelDoc(swApp, model, newData);
+                    SaveDataToModelDoc(swApp, model, UrdfConfigurationV2SwAttributeName, newData);
                 }
             }
         }
@@ -125,146 +171,32 @@ namespace SW2URDF.URDFExport
 
         #region Private Methods
 
-        /// <summary>
-        /// If someone updates the name of a LinkNode in the Treeview, it needs to be pushed down
-        /// to the URDF Link itself.
-        /// </summary>
-        /// <param name="node">TreeView LinkNode to save properties of to its URDF Link</param>
-        private static void SavePropertiesLinkNodeToLink(LinkNode node)
+        // Pulls the `data` parameter (string) of the named SW attribute or
+        // returns an empty string if the attribute does not exist.
+        private static string ReadAttributeData(ModelDoc2 model, string attributeName)
         {
-            if (node.Link == null)
+            SolidWorks.Interop.sldworks.Attribute swAtt = FindSWSaveAttribute(model, attributeName);
+            if (swAtt == null)
             {
-                node.Link = new Link();
-                return;
+                return string.Empty;
             }
-
-            node.Link.Name = node.Name;
-
-            foreach (LinkNode child in node.Nodes)
-            {
-                SavePropertiesLinkNodeToLink(child);
-            }
+            Parameter param = swAtt.GetParameter("data");
+            return param?.GetStringValue() ?? string.Empty;
         }
 
         /// <summary>
-        /// Data Contract serialization. All members of an object need to be annotated with a
-        /// [DataMember] attribute.
+        /// Reads the legacy v1.3-v1.5 DataContract attribute (or older
+        /// SerialNode XML attribute) and returns its raw payload + the
+        /// `exporterVersion` parameter for cutover routing.
         /// </summary>
-        /// <param name="node">TreeView LinkNode to serialize</param>
-        /// <returns>A string serialized utilizing DataContract serialization XML scheme</returns>
-        private static string SerializeToString(LinkNode node)
-        {
-            SavePropertiesLinkNodeToLink(node);
-            Link link = node.UpdateLinkTree(null);
-            string data = "";
-            using (MemoryStream stream = new MemoryStream())
-            {
-                DataContractSerializer ser =
-                    new DataContractSerializer(typeof(Link));
-
-                try
-                {
-                    ser.WriteObject(stream, link);
-                    stream.Flush();
-                    data = Encoding.ASCII.GetString(stream.GetBuffer(), 0, (int)stream.Position);
-                }
-                catch (SerializationException e)
-                {
-                    logger.Error("Serialization failed with exception, returning empty string", e);
-                }
-            }
-            return data;
-        }
-
-        /// <summary>
-        /// Read a URDF Link from a serialized string
-        /// </summary>
-        /// <param name="data">Data string to read into a TreeView LinkNode</param>
-        /// <returns>Deserialized LinkNode</returns>
-        private static LinkNode DeserializeFromString(string data)
-        {
-            LinkNode baseNode = null;
-            if (!string.IsNullOrWhiteSpace(data))
-            {
-                using (MemoryStream stream = new MemoryStream(Encoding.ASCII.GetBytes(data)))
-                {
-                    DataContractSerializer ser =
-                        new DataContractSerializer(typeof(Link));
-
-                    try
-                    {
-                        Link link = (Link)ser.ReadObject(stream);
-
-                        // By copying this link, we can ensure that all non-serialized properties are setup correctly
-                        Link copy = link.Clone();
-                        baseNode = new LinkNode(copy);
-                    }
-                    catch (SerializationException e)
-                    {
-                        logger.Error("Deserialization failed with exception, returning empty LinkNode", e);
-                        logger.Error(data);
-                    }
-                }
-            }
-            return baseNode;
-        }
-
-        /// <summary>
-        /// Load from the deprecated XML serialized scheme
-        /// </summary>
-        /// <param name="data">Data string to deserialize using XMLSerializer</param>
-        /// <returns>TreeView LinkNode</returns>
-        private static LinkNode LoadConfigFromStringXML(string data)
-        {
-            LinkNode baseNode = null;
-            if (!string.IsNullOrWhiteSpace(data))
-            {
-                XmlSerializer serializer = new XmlSerializer(typeof(SerialNode));
-                XmlTextReader textReader = new XmlTextReader(new StringReader(data));
-                // Not reading external files, so this can set to prohibit. Resolves CA3075
-                textReader.DtdProcessing = DtdProcessing.Prohibit;
-                SerialNode sNode = (SerialNode)serializer.Deserialize(textReader);
-                textReader.Close();
-
-                baseNode = sNode.BuildLinkNodeFromSerialNode();
-            }
-            return baseNode;
-        }
-
-        /// <summary>
-        /// For the future, if serialization is upgraded again, this might look for several versions
-        /// </summary>
-        /// <param name="model">ModelDoc to look through</param>
-        /// <returns>SolidWorks Attribute with older serialization schemes if found, otherwise null.</returns>
-        private static SolidWorks.Interop.sldworks.Attribute CheckForOldAttributes(ModelDoc2 model)
-        {
-            foreach (string configurationName in PREVIOUS_URDF_CONFIGURATION_NAMES)
-            {
-                SolidWorks.Interop.sldworks.Attribute swAtt = FindSWSaveAttribute(model, configurationName);
-                if (swAtt != null)
-                {
-                    return swAtt;
-                }
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// Find the SW attribute that contains the URDF configuration serialized string
-        /// </summary>
-        /// <param name="model">ModelDoc model to load URDF configuration from</param>
-        /// <param name="version">Output parameter of the serialization version</param>
-        /// <returns>Serialized data string</returns>
-        private static string GetConfigTreeData(ModelDoc2 model, out double version)
+        private static string GetLegacyConfigTreeData(ModelDoc2 model, out double version)
         {
             string data = "";
             version = 0.0;
 
-            // Check for most recent serialization version
             SolidWorks.Interop.sldworks.Attribute swAtt =
                 FindSWSaveAttribute(model, UrdfConfigurationSwAttributeName);
 
-            // If not found, check for an older version
             if (swAtt == null)
             {
                 swAtt = CheckForOldAttributes(model);
@@ -283,12 +215,59 @@ namespace SW2URDF.URDFExport
             return data;
         }
 
-        /// <summary>
-        ///  Iterates through features in ModelDoc to find a feature of the correct name
-        /// </summary>
-        /// <param name="model">ModelDoc of features to iterate through</param>
-        /// <param name="featName">The name of the feature to get</param>
-        /// <returns>The SolidWorks Feature if found, null otherwise</returns>
+        // DataContract XML deserialization. Routes through
+        // LegacyConfigV15DataContractReader so the legacy XML codec lives
+        // in one place.
+        private static LinkNode DeserializeFromString(string data)
+        {
+            LinkNode baseNode = null;
+            if (!string.IsNullOrWhiteSpace(data))
+            {
+                try
+                {
+                    baseNode = LegacyConfigV15DataContractReader.ReadBaseNode(data);
+                }
+                catch (SerializationException e)
+                {
+                    logger.Error("Deserialization failed with exception, returning empty LinkNode", e);
+                    logger.Error(data);
+                }
+            }
+            return baseNode;
+        }
+
+        // Very-legacy XmlSerializer (SerialNode) deserialization for
+        // configurations saved before MinDataContractVersion.
+        private static LinkNode LoadConfigFromStringXML(string data)
+        {
+            LinkNode baseNode = null;
+            if (!string.IsNullOrWhiteSpace(data))
+            {
+                XmlSerializer serializer = new XmlSerializer(typeof(SerialNode));
+                XmlTextReader textReader = new XmlTextReader(new StringReader(data));
+                // Not reading external files, so this can be set to prohibit. Resolves CA3075
+                textReader.DtdProcessing = DtdProcessing.Prohibit;
+                SerialNode sNode = (SerialNode)serializer.Deserialize(textReader);
+                textReader.Close();
+
+                baseNode = sNode.BuildLinkNodeFromSerialNode();
+            }
+            return baseNode;
+        }
+
+        private static SolidWorks.Interop.sldworks.Attribute CheckForOldAttributes(ModelDoc2 model)
+        {
+            foreach (string configurationName in PREVIOUS_URDF_CONFIGURATION_NAMES)
+            {
+                SolidWorks.Interop.sldworks.Attribute swAtt = FindSWSaveAttribute(model, configurationName);
+                if (swAtt != null)
+                {
+                    return swAtt;
+                }
+            }
+            return null;
+        }
+
         private static Feature GetFeatureAttributeByName(ModelDoc2 model, string featName)
         {
             Object[] objects = model.FeatureManager.GetFeatures(true);
@@ -308,12 +287,6 @@ namespace SW2URDF.URDFExport
             return null;
         }
 
-        /// <summary>
-        /// Finds existing SWSave Attribute in a ModelDoc
-        /// </summary>
-        /// <param name="model">ModelDoc model to search through</param>
-        /// <param name="name">Name of attribute to find</param>
-        /// <returns>SolidWorks Attribute if found, otherwise null</returns>
         private static SolidWorks.Interop.sldworks.Attribute
             FindSWSaveAttribute(ModelDoc2 model, string name)
         {
@@ -326,58 +299,48 @@ namespace SW2URDF.URDFExport
             return (SolidWorks.Interop.sldworks.Attribute)feature.GetSpecificFeature2();
         }
 
-        /// <summary>
-        /// Builds a SW Attribute for saving our serialized data
-        /// </summary>
-        /// <param name="swApp">SolidWorks Application to build Feature Definition</param>
-        /// <param name="model">ModelDoc in which this attribute will be saved</param>
-        /// <param name="name">Name of the attribute to create</param>
-        /// <returns>Constructed SolidWorks Attribute</returns>
+        // Builds a SW Attribute for saving our serialized data. Used only
+        // for the v2 JSON attribute now; legacy attributes are read-only.
         private static SolidWorks.Interop.sldworks.Attribute
-            CreateSWSaveAttribute(SldWorks swApp, ModelDoc2 model, string name)
+            CreateSWSaveAttribute(SldWorks swApp, ModelDoc2 model, string attributeName)
         {
             SolidWorks.Interop.sldworks.Attribute existingAttribute =
-                FindSWSaveAttribute(model, name);
+                FindSWSaveAttribute(model, attributeName);
             if (existingAttribute != null)
             {
                 return existingAttribute;
             }
 
             int ConfigurationOptions = (int)swInConfigurationOpts_e.swAllConfiguration;
-
             int Options = 0;
-            AttributeDef saveConfigurationAttributeDef;
-            saveConfigurationAttributeDef = swApp.DefineAttribute(UrdfConfigurationSwAttributeName);
 
+            AttributeDef saveConfigurationAttributeDef = swApp.DefineAttribute(attributeName);
             saveConfigurationAttributeDef.AddParameter(
                 "data", (int)swParamType_e.swParamTypeString, 0, Options);
             saveConfigurationAttributeDef.AddParameter(
                 "name", (int)swParamType_e.swParamTypeString, 0, Options);
             saveConfigurationAttributeDef.AddParameter(
                 "date", (int)swParamType_e.swParamTypeString, 0, Options);
+            // Schema-version stamp on the attribute itself so a reader can
+            // cheaply tell v2 JSON from v1.5 XML without having to parse the
+            // payload first.
             saveConfigurationAttributeDef.AddParameter(
-                "exporterVersion", (int)swParamType_e.swParamTypeDouble, SerializationVersion, Options);
+                "exporterVersion", (int)swParamType_e.swParamTypeDouble,
+                ConfigV2.CurrentSchemaVersion, Options);
             saveConfigurationAttributeDef.Register();
 
-            SolidWorks.Interop.sldworks.Attribute saveExporterAttribute =
-                saveConfigurationAttributeDef.CreateInstance5(
-                    model, null, UrdfConfigurationSwAttributeName, Options, ConfigurationOptions);
-            return saveExporterAttribute;
+            return saveConfigurationAttributeDef.CreateInstance5(
+                model, null, attributeName, Options, ConfigurationOptions);
         }
 
-        /// <summary>
-        /// Saves a string of data to the SWModelDoc
-        /// </summary>
-        /// <param name="swApp">SolidWorks Application</param>
-        /// <param name="model">ModelDoc model to save data string to</param>
-        /// <param name="data">string to save</param>
-        /// <param name="attributeName">Name of attribute to save to</param>
+        // Saves a string of data to the named attribute on the active doc.
+        // Always writes the v2 attribute; legacy attributes are read-only.
         private static void SaveDataToModelDoc(SldWorks swApp, ModelDoc2 model,
-            string data)
+            string attributeName, string data)
         {
             int ConfigurationOptions = (int)swInConfigurationOpts_e.swAllConfiguration;
             SolidWorks.Interop.sldworks.Attribute saveExporterAttribute =
-                CreateSWSaveAttribute(swApp, model, UrdfConfigurationSwAttributeName);
+                CreateSWSaveAttribute(swApp, model, attributeName);
 
             Parameter param = saveExporterAttribute.GetParameter("data");
             param.SetStringValue2(data, ConfigurationOptions, "");
@@ -386,7 +349,7 @@ namespace SW2URDF.URDFExport
             param = saveExporterAttribute.GetParameter("date");
             param.SetStringValue2(DateTime.Now.ToString(), ConfigurationOptions, "");
             param = saveExporterAttribute.GetParameter("exporterVersion");
-            param.SetDoubleValue2(SerializationVersion, ConfigurationOptions, "");
+            param.SetDoubleValue2(ConfigV2.CurrentSchemaVersion, ConfigurationOptions, "");
         }
 
         #endregion Private Methods

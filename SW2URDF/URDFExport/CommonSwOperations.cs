@@ -70,9 +70,63 @@ namespace SW2URDF.URDFExport
             }
         }
 
-        //Finds the selected components and returns them, used when pulling the items from
-        // the selection box because it would be too hard for SolidWorks to allow you to
-        // access the selectionbox components directly.
+        // Deselects every entity at a single mark, leaving every other
+        // mark untouched. The natural-feeling alternative,
+        // model.ClearSelection2(true), is GLOBAL across every mark - so
+        // a SelectionBox loader (e.g. LoadActiveCollisionGroupInto
+        // SelectionBox at mark 12) that opens with ClearSelection2(true)
+        // wipes the contents of every OTHER SelectionBox in the same
+        // PMP (visual mark 11, inertial mark 13, the four feature
+        // pickers at marks 21-24). That cross-mark wipe was the root
+        // cause of the "Visual tab opens empty under (1 comp.) listbox
+        // entry" symptom - the visual loader populated mark 11, then
+        // the collision loader (called next from FillPropertyManager)
+        // immediately wiped it before returning early on a base link
+        // with no collision groups configured.
+        //
+        // Permanent rule: a SelectionBox loader owns exactly one mark
+        // and must call DeselectAllAtMark(model, ownMark) for its
+        // pre-populate clear, never ClearSelection2(true).
+        public static void DeselectAllAtMark(ModelDoc2 model, int mark)
+        {
+            if (model == null) return;
+            SelectionMgr selMgr = model.SelectionManager;
+            if (selMgr == null) return;
+            int count = selMgr.GetSelectedObjectCount2(mark);
+            // DeSelect2 is 1-indexed and shifts the remaining entries
+            // down on each removal; iterate descending so the indices
+            // stay valid.
+            for (int i = count; i >= 1; i--)
+            {
+                selMgr.DeSelect2(i, mark);
+            }
+        }
+
+        // Pulls Component2 instances out of the SelectionMgr at the given
+        // mark. Used to read the live contents of the visual / collision /
+        // inertial SelectionBoxes back onto the data model.
+        //
+        // MUST use `as Component2` (not an explicit cast) because SW's
+        // SelectionMgr can return non-Component2 entities at any mark in
+        // certain scenarios. Concretely: ExportHelper.GetRefAxis runs
+        // `Extension.SelectByID2(<axis>, "AXIS", 0,0,0, false, 0, null, 0)`
+        // on the axis-feature owning doc to read the axis vector via
+        // Feature.GetSpecificFeature2 -> RefAxis.GetRefAxisParams. When the
+        // joint axis lives at the ASSEMBLY level (the common case for the
+        // 3_DOF_ARM example assemblies), `r.OwningDoc` is the same
+        // ActiveSWModel that backs the PMP SelectionBoxes, and the
+        // `Append=false / mark=0` SelectByID2 leaves a RefAxis feature in
+        // the assembly's SelectionMgr. SolidWorks then sometimes surfaces
+        // that mark-0 / unmarked feature in `GetSelectedObjectCount2(N)` /
+        // `GetSelectedObject6(i, N)` queries for positive marks N - the
+        // exact behavior varies by SW version. An explicit `(Component2)obj`
+        // cast on a RefAxis throws InvalidCastException, which propagates
+        // up through TreeAfterSelect's catch to the user as a
+        // "There was a problem with the property manager" popup.
+        // Skipping non-Component2 entries here makes this defensive
+        // against the leak; the teardown defense in CommitActive*
+        // GroupSelection is what protects the saved state from being
+        // wiped by the leak.
         public static void GetSelectedComponents(
             ModelDoc2 model, List<Component2> Components, int Mark = -1)
         {
@@ -81,7 +135,7 @@ namespace SW2URDF.URDFExport
             for (int i = 0; i < selectionManager.GetSelectedObjectCount2(Mark); i++)
             {
                 object obj = selectionManager.GetSelectedObject6(i + 1, Mark);
-                Component2 comp = (Component2)obj;
+                Component2 comp = obj as Component2;
                 if (comp != null)
                 {
                     Components.Add(comp);
@@ -96,8 +150,12 @@ namespace SW2URDF.URDFExport
             List<string> hiddenComp = new List<string>();
             foreach (object obj in varComp)
             {
-                Component2 comp = (Component2)obj;
-                if (comp.IsHidden(false))
+                // Defensive `as` cast for the same reason as
+                // GetSelectedComponents above: SW can return non-Component2
+                // entities here in some configurations and the legacy
+                // explicit cast crashed the export.
+                Component2 comp = obj as Component2;
+                if (comp != null && comp.IsHidden(false))
                 {
                     hiddenComp.Add(comp.Name2);
                 }

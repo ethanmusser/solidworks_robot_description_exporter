@@ -1,6 +1,6 @@
-﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using SW2URDF.SW;
 using SW2URDF.URDFExport;
+using System.Reflection;
 using Xunit;
 
 namespace SW2URDF.Test
@@ -57,7 +57,7 @@ namespace SW2URDF.Test
             Xunit.Assert.True(true, "Property manager failed to open/close with cancel");
         }
 
-        // TODO(SIMINT-164) pm.Show() crashes with drag drop 
+        // TODO(SIMINT-164) pm.Show() crashes with drag drop
         //[Theory]
         //[InlineData("3_DOF_ARM")]
         public void TestPreviewExport(string modelName)
@@ -66,9 +66,23 @@ namespace SW2URDF.Test
             ExportPropertyManager pm = new ExportPropertyManager(SwApp);
             pm.Show();
 
-            PrivateObject obj = new PrivateObject(pm);
-            obj.Invoke("ExportButtonPress");
-            Xunit.Assert.NotNull(obj.GetProperty("Exporter.URDFRobot"));
+            // PrivateObject came from Microsoft.VisualStudio.TestTools.UnitTesting,
+            // which we dropped during the toolchain modernization. Plain reflection
+            // does the same job: invoke the private ExportButtonPress() and walk
+            // the public Exporter.URDFRobot property chain.
+            MethodInfo exportButtonPress = typeof(ExportPropertyManager).GetMethod(
+                "ExportButtonPress",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            Xunit.Assert.NotNull(exportButtonPress);
+            exportButtonPress.Invoke(pm, null);
+
+            object exporter = typeof(ExportPropertyManager)
+                .GetField("Exporter", BindingFlags.Instance | BindingFlags.Public)
+                ?.GetValue(pm);
+            object urdfRobot = exporter?.GetType()
+                .GetProperty("URDFRobot")
+                ?.GetValue(exporter);
+            Xunit.Assert.NotNull(urdfRobot);
         }
     }
 }

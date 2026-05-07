@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Runtime.Serialization;
 using System.Windows.Forms;
 
@@ -73,8 +72,74 @@ namespace SW2URDF.URDF
         [DataMember(IsRequired = false)]
         public bool AxisFlipped;
 
+        // Per-joint gate for "auto-derive Lower/Upper from a SolidWorks
+        // limit mate at export time". Default true so existing configs
+        // and new joints keep today's behavior. The field is normalized
+        // to true during deserialization (see OnDeserializing) so an
+        // older config that pre-dates this field comes back as
+        // auto-compute=true rather than the zero-init false.
+        [DataMember(IsRequired = false)]
+        public bool AutoComputeLimits;
+
+        // MJCF <joint ref> (joint position assumed by the model when
+        // MuJoCo loads it). URDF has no analog; ignored on URDF export.
+        // null = attribute omitted on export (MJCF default 0).
+        [DataMember(IsRequired = false)]
+        public double? Reference;
+
+        // MJCF <joint armature> (equivalent rotor inertia of the
+        // actuator). URDF has no analog; ignored on URDF export.
+        // null = attribute omitted on export.
+        [DataMember(IsRequired = false)]
+        public double? Armature;
+
+        // When true, the joint axis is derived from the SolidWorks
+        // kinematic chain at export time and AxisName is ignored. When
+        // false, AxisName is the user-picked SW reference axis and
+        // EstimateAxis reads it directly. Maps the modernized
+        // SelectionBox-only UI ("Auto-derive axis from kinematic chain"
+        // checkbox) onto the existing CreateJoint /
+        // EstimateGlobalJointFromComponents pipeline.
+        //
+        // Legacy configs stored the sentinel literal
+        // "Automatically Generate" in AxisName instead. The
+        // [OnDeserialized] callback below migrates those onto
+        // AutoDeriveAxis=true + AxisName="" so the new UI sees a clean
+        // boolean and an empty SelectionBox on first load.
+        [DataMember(IsRequired = false)]
+        public bool AutoDeriveAxis;
+
+        // Re-default fields that pre-date them so old configs still
+        // come back with sensible values. Required because
+        // DataContractSerializer constructs the object via
+        // FormatterServices.GetUninitializedObject and does NOT call
+        // the parameterless constructor (see AGENTS.md "DataContract /
+        // Link persistence gotchas").
+        [OnDeserializing]
+        private void OnDeserializing(StreamingContext context)
+        {
+            AutoComputeLimits = true;
+        }
+
+        // Legacy "Automatically Generate" sentinel migration. Runs
+        // AFTER field hydration so we can read the deserialized
+        // AxisName / CoordinateSystemName values. Pre-AutoDeriveAxis
+        // configs encode "auto" by writing the literal string into
+        // AxisName; we map that onto the new boolean and clear the
+        // string so the SelectionBox is empty on first reopen.
+        [OnDeserialized]
+        private void OnDeserializedNormalizeAutoAxis(StreamingContext context)
+        {
+            if (AxisName == "Automatically Generate")
+            {
+                AutoDeriveAxis = true;
+                AxisName = "";
+            }
+        }
+
         public Joint() : base("joint", false)
         {
+            AutoComputeLimits = true;
             Origin = new Origin(false);
             Parent = new ParentLink();
             Child = new ChildLink();
@@ -127,22 +192,6 @@ namespace SW2URDF.URDF
             return base.AreRequiredFieldsSatisfied();
         }
 
-        public override void AppendToCSVDictionary(List<string> context, OrderedDictionary dictionary)
-        {
-            string contextString = string.Join(".", context);
-
-            string coordSysContext = contextString + ".CoordSysName";
-            dictionary.Add(coordSysContext, CoordinateSystemName);
-
-            string axisContext = contextString + ".AxisName";
-            dictionary.Add(axisContext, AxisName);
-
-            string axisFlippedContext = contextString + ".Joint.AxisFlipped";
-            dictionary.Add(axisFlippedContext, AxisFlipped.ToString());
-
-            base.AppendToCSVDictionary(context, dictionary);
-        }
-
         public override void SetElement(URDFElement externalElement)
         {
             base.SetElement(externalElement);
@@ -158,23 +207,10 @@ namespace SW2URDF.URDF
             CoordinateSystemName = joint.CoordinateSystemName;
             AxisName = joint.AxisName;
             AxisFlipped = joint.AxisFlipped;
-        }
-
-        public override void SetElementFromData(List<string> context, StringDictionary dictionary)
-        {
-            string contextString = string.Join(".", context);
-
-            string coordSysContext = contextString + ".CoordSysName";
-            CoordinateSystemName = dictionary[coordSysContext];
-
-            string axisContext = contextString + ".AxisName";
-            AxisName = dictionary[axisContext];
-
-            string axisFlippedContext = contextString + ".Joint.AxisFlipped";
-            string axisFlippedRaw = dictionary[axisFlippedContext];
-            AxisFlipped = bool.TryParse(axisFlippedRaw, out bool parsed) && parsed;
-
-            base.SetElementFromData(context, dictionary);
+            AutoComputeLimits = joint.AutoComputeLimits;
+            AutoDeriveAxis = joint.AutoDeriveAxis;
+            Reference = joint.Reference;
+            Armature = joint.Armature;
         }
 
         public void SetJointKinematics(Joint joint)
@@ -182,6 +218,10 @@ namespace SW2URDF.URDF
             CoordinateSystemName = joint.CoordinateSystemName;
             AxisName = joint.AxisName;
             AxisFlipped = joint.AxisFlipped;
+            AutoComputeLimits = joint.AutoComputeLimits;
+            AutoDeriveAxis = joint.AutoDeriveAxis;
+            Reference = joint.Reference;
+            Armature = joint.Armature;
             Type = joint.Type;
             Axis.SetElement(joint.Axis);
             Origin.SetElement(joint.Origin);

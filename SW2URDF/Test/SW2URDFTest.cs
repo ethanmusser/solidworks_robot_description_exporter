@@ -1,4 +1,4 @@
-﻿using SolidWorks.Interop.sldworks;
+using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using System.IO;
 using Xunit;
@@ -78,13 +78,6 @@ namespace SW2URDF.Test
         public static string GetMeshesDirectory(string modelName)
         {
             return Path.Combine(GetPackageDirectory(modelName), "meshes");
-        }
-
-        public static string GetCSVPath(string modelName)
-        {
-            string urdfDirectory = GetURDFDirectory(modelName);
-            string fileName = modelName + "_description.csv";
-            return Path.Combine(urdfDirectory, fileName);
         }
 
         public ModelDoc2 OpenSWDocument(string modelName)

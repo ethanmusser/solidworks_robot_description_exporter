@@ -1,22 +1,18 @@
 using SolidWorks.Interop.sldworks;
 using SW2URDF.URDF;
 using SW2URDF.URDFExport;
-using SW2URDF.URDFExport.CSV;
-using System.Collections;
-using System.Collections.Generic;
-using System.Collections.Specialized;
-using System.Linq;
 using Xunit;
 
 namespace SW2URDF.Test
 {
     /// <summary>
     /// Unit tests for the persisted Joint.AxisFlipped field added with the
-    /// PropertyManager "Reverse Direction" toggle. Covers the four-paths
-    /// landmine for new Joint-scope fields described in AGENTS.md
-    /// (SetElement + SetJointKinematics + CSV round-trip + ContextToColumns)
-    /// plus the actual sign-negation behavior at SW resolution time via the
-    /// public PreviewAxisDirection helper.
+    /// PropertyManager "Reverse Direction" toggle. Covers the in-memory
+    /// SetElement and SetJointKinematics paths from the four-paths landmine
+    /// for new Joint-scope fields described in AGENTS.md, plus the actual
+    /// sign-negation behavior at SW resolution time via the public
+    /// PreviewAxisDirection helper. The CSV round-trip and ContextToColumns
+    /// cases were retired with the CSV import / merge subsystem.
     /// </summary>
     public class TestJointAxisFlipped : SW2URDFTest
     {
@@ -87,60 +83,6 @@ namespace SW2URDF.Test
             Assert.Equal("Origin_a", dest.CoordinateSystemName);
             Assert.Equal("Axis_a", dest.AxisName);
             Assert.Equal("revolute", dest.Type);
-        }
-
-        // Round-trips AxisFlipped through the CSV dictionary path used by
-        // ImportExport.WriteRobotToCSV / LoadURDFRobotFromCSV. This is the
-        // CSV side of the four-paths landmine - if AppendToCSVDictionary
-        // and SetElementFromData use mismatched context strings, the value
-        // silently doesn't round-trip.
-        [Theory]
-        [InlineData(true)]
-        [InlineData(false)]
-        public void TestCSVRoundTripsAxisFlipped(bool flipped)
-        {
-            Joint source = new Joint
-            {
-                AxisFlipped = flipped,
-                CoordinateSystemName = "Origin_x",
-                AxisName = "Axis_x",
-                Type = "revolute",
-                Name = "joint_x",
-            };
-
-            // AppendToCSVDictionary expects the same context shape that
-            // Link.AppendToCSVDictionary sets up - "Link" as the type-name
-            // prefix - because Link is what owns Joint as a child element.
-            List<string> context = new List<string> { "Link" };
-            OrderedDictionary csvDict = new OrderedDictionary();
-            source.AppendToCSVDictionary(context, csvDict);
-
-            Assert.Contains("Link.Joint.AxisFlipped", csvDict.Keys.Cast<string>());
-            Assert.Equal(flipped.ToString(), (string)csvDict["Link.Joint.AxisFlipped"]);
-
-            // Build a StringDictionary the way CSVImportExport.BuildLinkFromData
-            // does (string-keyed lookup) and round-trip back into a fresh Joint.
-            StringDictionary readbackDict = new StringDictionary();
-            foreach (DictionaryEntry entry in csvDict)
-            {
-                readbackDict[(string)entry.Key] = entry.Value as string;
-            }
-
-            Joint dest = new Joint();
-            dest.SetElementFromData(context, readbackDict);
-
-            Assert.Equal(flipped, dest.AxisFlipped);
-        }
-
-        // Verifies that the column is present in the canonical CSV column
-        // mapping so it both gets emitted in WriteRobotToCSV's header row
-        // AND gets recognized in LoadURDFRobotFromCSV's column lookup.
-        [Fact]
-        public void TestContextToColumnsIncludesAxisFlipped()
-        {
-            Assert.True(ContextToColumns.Dictionary.Contains("Link.Joint.AxisFlipped"));
-            Assert.Equal("Joint Axis Flipped",
-                (string)ContextToColumns.Dictionary["Link.Joint.AxisFlipped"]);
         }
 
         // SW-backed sanity check that the actual sign-negation logic runs

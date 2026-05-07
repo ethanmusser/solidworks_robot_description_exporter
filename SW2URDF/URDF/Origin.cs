@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Runtime.Serialization;
 using System.Windows.Forms;
 
@@ -124,55 +123,5 @@ namespace SW2URDF.URDF
             RPYAttribute.SetDoubleArrayFromStringArray(new string[] { boxRoll.Text, boxPitch.Text, boxYaw.Text });
         }
 
-        /// <summary>
-        /// Origin is a unique case in that its attributes are stored as double arrays.
-        /// </summary>
-        /// <param name="context"></param>
-        /// <param name="dictionary"></param>
-        public override void SetElementFromData(List<string> context, StringDictionary dictionary)
-        {
-            string typeName = GetType().Name;
-            List<string> updatedContext = new List<string>(context) { typeName };
-
-            double[] xyz = new double[3];
-            double[] rpy = new double[3];
-
-            string contextString = string.Join(".", updatedContext) + ".xyz";
-            for (int i = 0; i < 3; i++)
-            {
-                string lookupString = contextString + "." + "xyz"[i];
-                if (!dictionary.ContainsKey(lookupString))
-                {
-                    logger.Info("CSV file does not contain column for " + lookupString);
-                    continue;
-                }
-
-                object value = URDFAttribute.GetValueFromString(dictionary[lookupString]);
-                if (value != null && value.GetType() == typeof(double))
-                {
-                    xyz[i] = (double)value;
-                }
-            }
-
-            contextString = string.Join(".", updatedContext) + ".rpy";
-            for (int i = 0; i < 3; i++)
-            {
-                string lookupString = contextString + "." + "rpy"[i];
-                if (!dictionary.ContainsKey(lookupString))
-                {
-                    logger.Info("CSV file does not contain column for " + lookupString);
-                    continue;
-                }
-
-                object value = URDFAttribute.GetValueFromString(dictionary[lookupString]);
-                if (value != null && value.GetType() == typeof(double))
-                {
-                    rpy[i] = (double)value;
-                }
-            }
-
-            XYZAttribute.Value = xyz;
-            RPYAttribute.Value = rpy;
-        }
     }
 }

@@ -87,6 +87,24 @@ namespace SW2URDF.MJCF
         public bool HasFriction { get; set; } = false;
         public double Friction { get; set; }
 
+        // MJCF armature (equivalent rotor inertia of the actuator). No
+        // URDF analog; populated only on MJCF export when the user sets
+        // the Joint Properties Armature textbox.
+        public bool HasArmature { get; set; } = false;
+        public double Armature { get; set; }
+
+        // MJCF ref (joint position assumed by the model when MuJoCo
+        // loads it). No URDF analog. 0 is a valid value distinct from
+        // "unset", so this is gated on a separate flag.
+        public bool HasRef { get; set; } = false;
+        public double Ref { get; set; }
+
+        // MJCF actuatorfrcrange = [-Effort, +Effort]. Mirrors URDF's
+        // single-magnitude <limit effort>. Only emitted when the user
+        // supplies a finite Effort on the Joint Properties UI.
+        public bool HasEffort { get; set; } = false;
+        public double Effort { get; set; }
+
         public void WriteMJCF(XmlWriter writer)
         {
             // "Free" joints don't take an axis and only need a name; they let the body
@@ -110,6 +128,10 @@ namespace SW2URDF.MJCF
                     "range",
                     MJCFFormat.FormatDouble(LowerLimit) + " " + MJCFFormat.FormatDouble(UpperLimit));
             }
+            if (HasRef && Type != MJCFJointType.Free && Type != MJCFJointType.Ball)
+            {
+                writer.WriteAttributeString("ref", MJCFFormat.FormatDouble(Ref));
+            }
             if (HasDamping)
             {
                 writer.WriteAttributeString("damping", MJCFFormat.FormatDouble(Damping));
@@ -117,6 +139,18 @@ namespace SW2URDF.MJCF
             if (HasFriction)
             {
                 writer.WriteAttributeString("frictionloss", MJCFFormat.FormatDouble(Friction));
+            }
+            if (HasArmature)
+            {
+                writer.WriteAttributeString("armature", MJCFFormat.FormatDouble(Armature));
+            }
+            if (HasEffort && Type != MJCFJointType.Free && Type != MJCFJointType.Ball)
+            {
+                // MJCF actuatorfrcrange is a symmetric range around zero
+                // matching the URDF effort magnitude convention.
+                writer.WriteAttributeString(
+                    "actuatorfrcrange",
+                    MJCFFormat.FormatDouble(-Effort) + " " + MJCFFormat.FormatDouble(Effort));
             }
 
             writer.WriteEndElement();
