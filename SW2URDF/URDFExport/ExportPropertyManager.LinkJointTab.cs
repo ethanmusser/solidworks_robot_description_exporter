@@ -98,7 +98,23 @@ namespace SW2URDF.URDFExport
             // EnableControls.Visible-toggle leak (fixed) and the
             // GetRefAxis SelectionMgr clobber (fixed) - not anything
             // intrinsic to SingleEntityOnly.
-            PMSelectionGlobalCoordsys.AllowSelectInMultipleBoxes = true;
+            //
+            // AllowSelectInMultipleBoxes = FALSE: each feature picker
+            // represents a SEMANTICALLY DISTINCT logical role - global
+            // origin coord-sys, joint coord-sys, joint axis, site
+            // coord-sys - and the same entity must never occupy two of
+            // them at once. With it set to true, picking the same
+            // coord-sys in box B (e.g. Joint) would DUPLICATE it into
+            // both A (Global) and B; with it set to false, picking it
+            // in B MOVES it out of A, so the user's last action wins
+            // and the data model never has the same feature filling
+            // two distinct roles. (Note: the previously-observed
+            // cross-tab bleed where one pick rendered in every sibling
+            // SelectionBox was NOT caused by this setting; it was a
+            // mark bitmask collision and is fixed at the
+            // *SelectionMark constants in ExportPropertyManager.cs.
+            // See AGENTS.md for the marks-must-be-powers-of-two rule.)
+            PMSelectionGlobalCoordsys.AllowSelectInMultipleBoxes = false;
             PMSelectionGlobalCoordsys.SingleEntityOnly = true;
             PMSelectionGlobalCoordsys.AllowMultipleSelectOfSameEntity = false;
             PMSelectionGlobalCoordsys.Height = 18;
@@ -125,8 +141,13 @@ namespace SW2URDF.URDFExport
                 SelectionJointCoordsysID, (short)controlType,
                 "Pick joint coordinate system", (short)alignment, options, tip);
             // SW-native single-entity overwrite UX - see
-            // PMSelectionGlobalCoordsys above for rationale.
-            PMSelectionJointCoordsys.AllowSelectInMultipleBoxes = true;
+            // PMSelectionGlobalCoordsys above for the full rationale,
+            // including why AllowSelectInMultipleBoxes is FALSE
+            // (semantic exclusivity: the same coord-sys can never be
+            // both the global origin and a joint origin in the data
+            // model, so the picker must move the entity out of the
+            // sibling box on a fresh pick).
+            PMSelectionJointCoordsys.AllowSelectInMultipleBoxes = false;
             PMSelectionJointCoordsys.SingleEntityOnly = true;
             PMSelectionJointCoordsys.AllowMultipleSelectOfSameEntity = false;
             PMSelectionJointCoordsys.Height = 18;
@@ -160,8 +181,12 @@ namespace SW2URDF.URDFExport
                 SelectionJointAxisID, (short)controlType, "Pick joint axis",
                 (short)alignment, options, tip);
             // SW-native single-entity overwrite UX - see
-            // PMSelectionGlobalCoordsys above for rationale.
-            PMSelectionJointAxis.AllowSelectInMultipleBoxes = true;
+            // PMSelectionGlobalCoordsys above for the full rationale.
+            // AllowSelectInMultipleBoxes = FALSE keeps the joint axis
+            // pick exclusive to this box (different selection filter
+            // from the coord-sys pickers, but the semantic-exclusivity
+            // intent is the same: one logical role, one home box).
+            PMSelectionJointAxis.AllowSelectInMultipleBoxes = false;
             PMSelectionJointAxis.SingleEntityOnly = true;
             PMSelectionJointAxis.AllowMultipleSelectOfSameEntity = false;
             PMSelectionJointAxis.Height = 18;

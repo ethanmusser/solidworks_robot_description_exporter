@@ -412,7 +412,7 @@ namespace SW2URDF.URDFExport
         {
             if (Id == CheckCollisionUsesVisualID)
             {
-                SetCollisionEditorVisible(!Checked);
+                SetCollisionEditorEnabled(!Checked);
 
                 // Persist the toggle on the active node so a later save round-
                 // trip captures it. SaveActiveNode is also called when the
@@ -645,6 +645,21 @@ namespace SW2URDF.URDFExport
         // guard around the loaders prevents re-entrant
         // OnSelectionboxListChanged events from double-committing the
         // selection back into the active group.
+        //
+        // This MUST run synchronously - SW activates the tab AFTER
+        // OnTabClicked returns true, and a synchronous load populates
+        // the underlying SelectionMgr marks BEFORE SW paints the now-
+        // active tab, so the freshly-loaded contents render
+        // immediately. A previous attempt to defer the load via
+        // Tree.BeginInvoke removed this synchronous path and broke
+        // rendering: SW painted the empty tab first, our deferred
+        // load wrote to the marks afterwards, and SW never re-rendered
+        // (the user saw "(N comp.)" in the listbox but an empty
+        // SelectionBox below it on every tab switch). The marks
+        // themselves are independent powers of 2 (see
+        // *SelectionMark constants in ExportPropertyManager.cs and
+        // the AGENTS.md "marks are bitmasks" note), so cross-mark
+        // contamination is not a concern here.
         bool IPropertyManagerPage2Handler9.OnTabClicked(int Id)
         {
             LinkNode node = (LinkNode)Tree?.SelectedNode;
@@ -652,6 +667,8 @@ namespace SW2URDF.URDFExport
             {
                 return true;
             }
+
+            bool prior = suppressGroupListboxRefresh;
             suppressGroupListboxRefresh = true;
             try
             {
@@ -700,11 +717,11 @@ namespace SW2URDF.URDFExport
             }
             catch (Exception ex)
             {
-                logger.Warn("OnTabClicked rehydrate failed: " + ex.Message);
+                logger.Warn("OnTabClicked(" + Id + ") rehydrate failed: " + ex.Message);
             }
             finally
             {
-                suppressGroupListboxRefresh = false;
+                suppressGroupListboxRefresh = prior;
             }
             return true;
         }

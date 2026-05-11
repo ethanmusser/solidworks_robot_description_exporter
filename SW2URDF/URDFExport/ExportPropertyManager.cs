@@ -143,7 +143,7 @@ namespace SW2URDF.URDFExport
         private PropertyManagerPageButton PMButtonVisualGroupRemove;
 
         // Collision Groups sub-section, mirrors Visual Groups. The label fields
-        // are captured so SetCollisionEditorVisible can hide / show the whole
+        // are captured so SetCollisionEditorEnabled can grey out the whole
         // collision editor when the user toggles "Use visual groups as
         // collision".
         private PropertyManagerPageListbox PMListBoxCollisionGroups;
@@ -154,8 +154,15 @@ namespace SW2URDF.URDFExport
         private PropertyManagerPageLabel PMLabelCollisionGroupsName;
 
         // "Use visual groups as collision" toggle. When checked, the collision
-        // editor below it is hidden and the export pipeline reuses the visual
-        // meshes for collision.
+        // editor below it is greyed out (Enabled=false but still rendered)
+        // and the export pipeline reuses the visual meshes for collision.
+        // We deliberately do NOT also flip Visible: the prior implementation
+        // toggled both, which produced inconsistent UX between the two
+        // entry paths (FillPropertyManager loading a config with the box
+        // pre-checked rendered the controls "greyed but visible", whereas
+        // the user clicking the checkbox at runtime made them disappear).
+        // Enabled-only toggling keeps the layout stable and matches the
+        // SW idiom for "this section is inactive but still discoverable".
         private PropertyManagerPageCheckbox PMCheckCollisionUsesVisual;
 
         // "Reverse Direction" toggle for the joint axis. swControlType_BitmapButton
@@ -379,16 +386,31 @@ namespace SW2URDF.URDFExport
         private const int LabelSiteCoordSysHeaderID = 147;
         private const int LabelActiveLinkTreeID = 148;
 
-        // Marks for the visual/collision/inertial selection boxes so SolidWorks can
-        // attribute the user's selection to the right list. -1 (default mark) is reserved
-        // by SolidWorks itself; using small distinct positive numbers per box.
-        private const int VisualSelectionMark = 11;
-        private const int CollisionSelectionMark = 12;
-        private const int InertialSelectionMark = 13;
-        private const int GlobalCoordSysSelectionMark = 21;
-        private const int JointCoordSysSelectionMark = 22;
-        private const int JointAxisSelectionMark = 23;
-        private const int SiteCoordSysSelectionMark = 24;
+        // Marks for every PMP SelectionBox so SOLIDWORKS can attribute the
+        // user's selection to the right list. CRITICAL:
+        // IPropertyManagerPageSelectionbox.Mark is a BITMASK, not an
+        // arbitrary integer. SW dispatches a pick to every box whose Mark
+        // shares ANY bit with the pick's mark, so marks MUST be unique
+        // powers of 2 (1, 2, 4, 8, 16, ...) - one bit per box. Using
+        // multi-bit values (we shipped 11, 12, 13, 21-24 briefly) caused
+        // the picked entity to render in every sibling box whose mask
+        // overlapped, AND caused programmatic loaders that wrote to one
+        // box's mark to be cross-cleared by sibling DeselectAllAtMark
+        // calls that scoped to an overlapping bit. See
+        // https://codestack.net/labs/solidworks/swex/pmpage/controls/selection-box
+        // and the official SW C# multi-select sample
+        // (Select_Multiple_Objects_for_Selection_Boxes_Example_CSharp.htm)
+        // which uses mark = 1 / mark2 = 2 for two adjacent boxes. -1 is
+        // SW's "no mark" sentinel and must never be assigned to a box.
+        // Bits currently consumed (0..6); a future agent adding an eighth
+        // SelectionBox should claim bit 7 (= 128) and so on.
+        private const int VisualSelectionMark = 1 << 0;          // 1
+        private const int CollisionSelectionMark = 1 << 1;       // 2
+        private const int InertialSelectionMark = 1 << 2;        // 4
+        private const int GlobalCoordSysSelectionMark = 1 << 3;  // 8
+        private const int JointCoordSysSelectionMark = 1 << 4;   // 16
+        private const int JointAxisSelectionMark = 1 << 5;       // 32
+        private const int SiteCoordSysSelectionMark = 1 << 6;    // 64
 
         #endregion class variables
 
@@ -566,11 +588,21 @@ namespace SW2URDF.URDFExport
             PMSelectionVisual.SetSelectionFocus();
             PMPage.SetFocus(dotNetTree);
         }
-        // Toggle the visibility of every control in the Collision Groups
-        // editor. Used by OnCheckboxCheck to hide the editor when the user
-        // checks "Use visual groups as collision". Both Visible and Enabled are
-        // flipped together so a hidden control is also non-interactive.
-        private void SetCollisionEditorVisible(bool visible)
+        // Toggle the Enabled state of every control in the Collision Groups
+        // editor. Used by OnCheckboxCheck to grey out the editor when the
+        // user checks "Use visual groups as collision". Visible is NOT
+        // flipped: the prior implementation toggled both Visible and
+        // Enabled, which produced inconsistent UX between the two entry
+        // paths. FillPropertyManager (which fires for an existing config
+        // already carrying the toggle) ran before SW had laid out the
+        // controls, so the resulting Visible=false had no immediate
+        // visual effect and the controls appeared "greyed but visible";
+        // OnCheckboxCheck (firing after the controls had rendered) flipped
+        // Visible=false on rendered controls and they disappeared.
+        // Enabled-only avoids that split: every entry path produces the
+        // same "greyed out but still in layout" result, which is also
+        // closer to the SW idiom for an inactive section.
+        private void SetCollisionEditorEnabled(bool enabled)
         {
             object[] collisionEditorControls = new object[]
             {
@@ -588,8 +620,7 @@ namespace SW2URDF.URDFExport
                 IPropertyManagerPageControl pageControl = ctl as IPropertyManagerPageControl;
                 if (pageControl != null)
                 {
-                    pageControl.Visible = visible;
-                    pageControl.Enabled = visible;
+                    pageControl.Enabled = enabled;
                 }
             }
         }

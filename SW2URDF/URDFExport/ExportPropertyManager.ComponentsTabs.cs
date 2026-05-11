@@ -140,9 +140,10 @@ namespace SW2URDF.URDFExport
         }
 
         // "Use visual groups as collision" toggle. When checked,
-        // SetCollisionEditorVisible(false) hides the entire collision
-        // editor below and ExportHelper reuses the visual meshes for
-        // collision via Link.CollisionUsesVisual.
+        // SetCollisionEditorEnabled(false) greys out the entire collision
+        // editor below (Enabled=false but still rendered) and ExportHelper
+        // reuses the visual meshes for collision via
+        // Link.CollisionUsesVisual.
         private void BuildCollisionUsesVisualToggle()
         {
             int controlType = (int)swPropertyManagerPageControlType_e.swControlType_Checkbox;

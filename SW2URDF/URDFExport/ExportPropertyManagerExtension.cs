@@ -439,7 +439,7 @@ namespace SW2URDF.URDFExport
             // visibility on every node switch so the UI matches the data
             // model.
             PMCheckCollisionUsesVisual.Checked = node.Link.CollisionUsesVisual;
-            SetCollisionEditorVisible(!node.Link.CollisionUsesVisual);
+            SetCollisionEditorEnabled(!node.Link.CollisionUsesVisual);
 
             //Setting joint properties (controls already Enable-toggled above
             //before the SelectionBox loads).

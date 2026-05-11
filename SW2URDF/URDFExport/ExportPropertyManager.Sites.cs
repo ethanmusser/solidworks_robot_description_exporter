@@ -98,8 +98,13 @@ namespace SW2URDF.URDFExport
             // SingleEntityOnly = true matches SW's own coord-system /
             // mate creation single-entity pickers - a new pick OVERWRITES
             // the prior pick in place. See PMSelectionGlobalCoordsys in
-            // ExportPropertyManager.LinkJointTab.cs for the rationale.
-            PMSelectionSiteCoordSys.AllowSelectInMultipleBoxes = true;
+            // ExportPropertyManager.LinkJointTab.cs for the full
+            // rationale, including why AllowSelectInMultipleBoxes is
+            // FALSE (semantic exclusivity: a site coord-sys cannot
+            // simultaneously be the global origin or a joint origin in
+            // the data model, so the picker must move the entity out
+            // of any sibling box on a fresh pick).
+            PMSelectionSiteCoordSys.AllowSelectInMultipleBoxes = false;
             PMSelectionSiteCoordSys.SingleEntityOnly = true;
             PMSelectionSiteCoordSys.AllowMultipleSelectOfSameEntity = false;
             PMSelectionSiteCoordSys.Height = 18;

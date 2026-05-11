@@ -29,6 +29,8 @@ using SW2URDF.URDFExport;
 using SW2URDF.Utilities;
 using System;
 using System.Collections;
+using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
@@ -63,6 +65,12 @@ namespace SW2URDF.SW
         public const int mainItemID2 = 1;
         public const int mainItemID3 = 2;
         public const int flyoutGroupID = 91;
+
+        // Caption used as the CommandGroup title and as the lookup key
+        // for the SOLIDWORKS Add-Ins tab insertion. SW shows this string
+        // in the Customize > Toolbars dialog so the user can disable
+        // the toolbar without uninstalling the add-in.
+        private const string CmdGroupTitle = "URDF/MJCF Exporter";
 
         #region Event Handler Variables
 
@@ -244,23 +252,43 @@ namespace SW2URDF.SW
 
         public void AddCommandMgr()
         {
-            // Do not use AddMenuItem5 here despite the obselete warning, AddMenuItem5 doesn't work
-            string[] images = {
-                "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\URDFExporter\\images\\ros_logo_20x20.png",
-                "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\URDFExporter\\images\\ros_logo_32x32.png",
-                "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\URDFExporter\\images\\ros_logo_40x40.png",
-                "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\URDFExporter\\images\\ros_logo_64x64.png",
-                "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\URDFExporter\\images\\ros_logo_96x96.png",
-                "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\URDFExporter\\images\\ros_logo_128x128.png",
-            };
+            // The icon paths must be resolvable at SOLIDWORKS load time.
+            // The legacy code hardcoded "C:\Program Files\SOLIDWORKS Corp\
+            // SOLIDWORKS\URDFExporter\images\..." which only worked on the
+            // installer-built copy and silently broke on dev machines that
+            // load the DLL out of bin\x64\Debug or bin\x64\Release. Resolve
+            // the directory at runtime relative to the loaded assembly and
+            // fall back through search paths (DLL\images, DLL parent\images,
+            // legacy install dir) so a missing file is never the reason
+            // the menu / toolbar fails to register.
+            string[] images = BuildIconList();
             int ret = SwApp.AddMenuItem5((int)swDocumentTypes_e.swDocASSEMBLY, add_in_id_, "Export as URDF/MJCF@&Tools",
                 -1, "AssemblyURDFExporter", "", "Export assembly as URDF/MJCF file", images);
             if (ret < 0)
             {
                 logger.Error("Failure to add menu item 'Export as URDF/MJCF' to menu 'Tools'");
-                return;
             }
-            logger.Info("Adding Assembly export to file menu");
+            else
+            {
+                logger.Info("Adding Assembly export to Tools menu");
+            }
+
+            // Also publish the export action as a CommandManager toolbar
+            // entry. SW's CmdMgr places the toolbar under the "SOLIDWORKS
+            // Add-Ins" ribbon tab when we ask for that tab by name; if the
+            // user has disabled that ribbon tab the toolbar still exists
+            // and is reachable via View > Toolbars > URDF/MJCF Exporter.
+            // Failures register as warnings rather than errors so the
+            // legacy AddMenuItem5 path is still the documented escape
+            // hatch for a broken toolbar.
+            try
+            {
+                AddCommandManagerToolbar(images);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("AddCommandManagerToolbar failed (toolbar entry skipped, menu still works): " + ex.Message, ex);
+            }
 
             // Single-part export was retired during the modernization rollup;
             // the canonical workflow exports an assembly. Open the part as an
@@ -273,8 +301,318 @@ namespace SW2URDF.SW
         }
         public void RemoveCommandMgr()
         {
-            SwApp.RemoveMenu((int)swDocumentTypes_e.swDocASSEMBLY, "Export as URDF/MJCF@&File", "");
-            logger.Info("Removing assembly export from file menu");
+            // Tear down the dedicated URDF/MJCF Exporter ribbon tab for
+            // every doc type BEFORE RemoveCommandGroup2 drops the
+            // commands the tab references. We own the tab outright, so
+            // RemoveCommandTab here leaves no other add-in's boxes
+            // behind. Belt-and-suspenders with the connect-time
+            // RemoveCommandTab in AttachCommandToOwnTab: doing it here
+            // too means a clean unload (no rebuild) also leaves the
+            // ribbon free of stale tabs, which matters if the user
+            // disables the add-in without restarting SW.
+            int[] docTypes = new[]
+            {
+                (int)swDocumentTypes_e.swDocASSEMBLY,
+                (int)swDocumentTypes_e.swDocPART,
+                (int)swDocumentTypes_e.swDocDRAWING,
+            };
+            foreach (int docType in docTypes)
+            {
+                try
+                {
+                    // RemoveCommandTab takes the concrete CommandTab
+                    // coclass; GetCommandTab returns the same underlying
+                    // RCW typed as ICommandTab. Explicit cast threads the
+                    // SW interop signature without changing semantics.
+                    CommandTab existing = (CommandTab)CmdMgr?.GetCommandTab(docType, CmdGroupTitle);
+                    if (existing != null)
+                    {
+                        bool removed = CmdMgr.RemoveCommandTab(existing);
+                        if (!removed)
+                        {
+                            logger.Warn("RemoveCommandTab returned false on disconnect for tab '" +
+                                CmdGroupTitle + "', docType=" + docType);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn("RemoveCommandTab (disconnect) failed for docType=" + docType +
+                        ": " + ex.Message, ex);
+                }
+            }
+
+            // RemoveCommandGroup2 is the inverse of CreateCommandGroup2;
+            // it clears the underlying commands that the now-removed
+            // ribbon tabs referenced. Order matters: tabs first
+            // (above), then the group, so SW never sees a ribbon
+            // referencing a freed command ID.
+            try
+            {
+                CmdMgr?.RemoveCommandGroup2(mainCmdGroupID, true);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("RemoveCommandGroup2 failed: " + ex.Message, ex);
+            }
+
+            SwApp.RemoveMenu((int)swDocumentTypes_e.swDocASSEMBLY, "Export as URDF/MJCF@&Tools", "");
+            logger.Info("Removing assembly export from Tools menu");
+        }
+
+        // Builds the list of icon PNG paths handed to AddMenuItem5 and
+        // CommandGroup. Resolves the icons relative to the loaded DLL so
+        // the same code path works for both the installer build (icons
+        // sit alongside the DLL in the install dir) and the dev build
+        // (icons sit alongside the DLL in bin\x64\<Configuration>\images
+        // courtesy of the <Content CopyToOutputDirectory> entries in
+        // SW2URDF.csproj).
+        //
+        // SW expects the strings to point at PNGs at six standard sizes;
+        // any missing file is dropped from the list and SW falls back
+        // to the next-larger size, but a totally empty list causes the
+        // CommandGroup to render with the SW default (an empty bitmap),
+        // which is hard to spot on the toolbar.
+        private string[] BuildIconList()
+        {
+            string[] candidates = ResolveIconDirectories();
+            string[] sizes = new[] { "20x20", "32x32", "40x40", "64x64", "96x96", "128x128" };
+            string[] result = new string[sizes.Length];
+            for (int i = 0; i < sizes.Length; i++)
+            {
+                string fileName = "ros_logo_" + sizes[i] + ".png";
+                string match = null;
+                foreach (string dir in candidates)
+                {
+                    if (string.IsNullOrEmpty(dir))
+                    {
+                        continue;
+                    }
+                    string candidate = Path.Combine(dir, fileName);
+                    if (File.Exists(candidate))
+                    {
+                        match = candidate;
+                        break;
+                    }
+                }
+                // Fall back to the legacy install path even if it does
+                // not exist on disk - SW's AddMenuItem5 silently drops
+                // missing entries, so the worst case is a placeholder
+                // icon rather than a broken menu.
+                result[i] = match ?? Path.Combine(
+                    "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\URDFExporter\\images",
+                    fileName);
+            }
+            return result;
+        }
+
+        // Search order for icon files: DLL dir\images, DLL dir, DLL
+        // parent dir\images, and (last resort) the legacy install
+        // directory. The "DLL parent dir\images" entry covers builds
+        // where SW2URDF.csproj copies images alongside the DLL but
+        // the build system also produces a sibling "images" folder.
+        private string[] ResolveIconDirectories()
+        {
+            string dllDir = null;
+            try
+            {
+                dllDir = Path.GetDirectoryName(typeof(SwAddin).Assembly.Location);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("Could not resolve DLL location for icon search: " + ex.Message);
+            }
+            string[] dirs = new string[5];
+            dirs[0] = string.IsNullOrEmpty(dllDir) ? null : Path.Combine(dllDir, "images");
+            dirs[1] = dllDir;
+            dirs[2] = string.IsNullOrEmpty(dllDir) ? null : Path.Combine(Path.GetDirectoryName(dllDir) ?? "", "images");
+            dirs[3] = "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\URDFExporter\\images";
+            dirs[4] = "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS (2)\\URDFExporter\\images";
+            return dirs;
+        }
+
+        // Creates the CommandManager toolbar / ribbon entry. We put a
+        // single command ("Export as URDF/MJCF") under a CommandGroup
+        // titled CmdGroupTitle and attach a CommandTabBox to a ribbon
+        // tab of the same title so the icon shows up for assembly /
+        // part / drawing documents.
+        //
+        // The whole sequence (CreateCommandGroup2 -> AddCommandItem2 ->
+        // Activate -> per-doc-type CommandTab wiring) is the canonical
+        // SW add-in ribbon recipe. The non-obvious bits:
+        //   - We pass `ignorePrevious = true` to CreateCommandGroup2 so
+        //     a re-register on the same dev box always rebuilds the
+        //     CommandGroup (a stale registry entry from a prior version
+        //     would otherwise cause SW to silently skip our updates).
+        //   - We own a DEDICATED ribbon tab (`CmdGroupTitle`) rather
+        //     than sharing the built-in "SOLIDWORKS Add-Ins" tab.
+        //     Background: SOLIDWORKS caches the layout of each ribbon
+        //     tab (including the CommandTabBoxes hanging off it) across
+        //     SW sessions. RemoveCommandGroup2 on disconnect tears down
+        //     the underlying commands but NOT the CommandTabBoxes that
+        //     reference them. When we attached our box to the shared
+        //     Add-Ins tab, each rebuild + SW restart left another
+        //     stale box behind on that shared tab, and the user saw
+        //     duplicate icons accumulate. Owning the tab outright lets
+        //     us call RemoveCommandTab on connect (and again on
+        //     disconnect) to drop the entire stale tab in one shot
+        //     without touching any other add-in's boxes.
+        //   - HasMenu = false because the legacy AddMenuItem5 path
+        //     already publishes the menu entry under Tools. Setting
+        //     HasMenu = true would duplicate the menu entry.
+        //   - If you ever rename the tab, KEEP the connect-time
+        //     RemoveCommandTab pass against the NEW name; otherwise
+        //     each rename produces a new stale tab. The matching
+        //     cleanup against the OLD name needs to live in
+        //     RemoveCommandMgr until every dev box has cycled through
+        //     a disconnect under the old name.
+        private void AddCommandManagerToolbar(string[] iconList)
+        {
+            if (CmdMgr == null)
+            {
+                logger.Warn("AddCommandManagerToolbar: CmdMgr is null; skipping toolbar setup");
+                return;
+            }
+
+            int errors = 0;
+            ICommandGroup cmdGroup = CmdMgr.CreateCommandGroup2(
+                mainCmdGroupID,
+                CmdGroupTitle,
+                "Export the active assembly as URDF or MJCF",
+                "Export the active assembly as URDF or MJCF",
+                -1,
+                true,  // ignorePrevious - always rebuild
+                ref errors);
+
+            if (cmdGroup == null)
+            {
+                logger.Warn("CreateCommandGroup2 returned null (errors=" + errors + "); toolbar entry skipped");
+                return;
+            }
+
+            // SW 2017+ accepts a single multi-resolution PNG list for
+            // both IconList (per-button icons) and MainIconList
+            // (CommandGroup header icons). Reusing the same list keeps
+            // the toolbar visually consistent at every DPI / icon-size
+            // setting in SW.
+            cmdGroup.IconList = iconList;
+            cmdGroup.MainIconList = iconList;
+
+            // SW exposes the placement bits as swMenuItem / swToolbarItem.
+            // We only want the toolbar entry here - the menu entry is
+            // already published via AddMenuItem5 above; setting both
+            // would duplicate "Export as URDF/MJCF" under Tools.
+            int menuToolbarOption = (int)swCommandItemType_e.swToolbarItem;
+            int cmdIndex = cmdGroup.AddCommandItem2(
+                "Export as URDF/MJCF",
+                -1,
+                "Export the active assembly as a URDF or MJCF robot description",
+                "Export to URDF/MJCF",
+                0,                              // image list index
+                "AssemblyURDFExporter",         // callback function
+                "ToolbarEnableMethod",          // enable method
+                mainItemID1,
+                menuToolbarOption);
+
+            if (cmdIndex < 0)
+            {
+                logger.Warn("AddCommandItem2 returned " + cmdIndex + "; toolbar item skipped");
+                return;
+            }
+
+            cmdGroup.HasToolbar = true;
+            cmdGroup.HasMenu = false; // menu entry is published via AddMenuItem5
+            cmdGroup.Activate();
+
+            int commandID = cmdGroup.get_CommandID(cmdIndex);
+
+            // Wire the new command into the dedicated URDF/MJCF
+            // Exporter ribbon tab for every document type the add-in is
+            // active in. We own this tab outright (no other add-in
+            // touches it) so we can drop any stale tab from a prior
+            // registration cleanly via RemoveCommandTab before
+            // recreating it - that's what prevents the duplicate-icon
+            // accumulation across rebuilds.
+            int[] docTypes = new[]
+            {
+                (int)swDocumentTypes_e.swDocASSEMBLY,
+                (int)swDocumentTypes_e.swDocPART,
+                (int)swDocumentTypes_e.swDocDRAWING,
+            };
+            foreach (int docType in docTypes)
+            {
+                try
+                {
+                    AttachCommandToOwnTab(docType, commandID);
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn("AttachCommandToOwnTab(docType=" + docType + ") failed: " + ex.Message, ex);
+                }
+            }
+
+            logger.Info("Added URDF/MJCF Exporter CommandGroup to CommandManager toolbar");
+        }
+
+        // Attaches `commandID` to the dedicated URDF/MJCF Exporter
+        // ribbon tab for `docType`. The tab name is `CmdGroupTitle`,
+        // which we own; if a tab with that name already exists from a
+        // previous registration (SW caches ribbon layouts across
+        // sessions) we drop it via RemoveCommandTab and recreate from
+        // scratch, otherwise each rebuild + SW restart would leave
+        // another stale CommandTabBox attached to the cached tab and
+        // the user would see duplicate icons accumulate.
+        private void AttachCommandToOwnTab(int docType, int commandID)
+        {
+            string tabName = CmdGroupTitle;
+
+            // Drop any stale tab from a previous registration. SW
+            // serializes the ribbon layout to the per-user registry
+            // and re-applies it on next launch, so the tab can be
+            // present here even though our CmdMgr was just connected.
+            // RemoveCommandTab on a non-existent tab is a no-op
+            // (GetCommandTab returns null), so the guard is cheap. The
+            // explicit (CommandTab) cast satisfies the SW interop
+            // signature, which takes the concrete coclass rather than
+            // the ICommandTab interface returned by GetCommandTab.
+            CommandTab existing = (CommandTab)CmdMgr.GetCommandTab(docType, tabName);
+            if (existing != null)
+            {
+                bool removed = CmdMgr.RemoveCommandTab(existing);
+                if (!removed)
+                {
+                    logger.Warn("RemoveCommandTab returned false for tab '" + tabName +
+                        "', docType=" + docType + "; existing tab may carry stale boxes");
+                }
+            }
+
+            ICommandTab cmdTab = CmdMgr.AddCommandTab(docType, tabName);
+            if (cmdTab == null)
+            {
+                logger.Warn("AddCommandTab returned null for tab '" + tabName +
+                    "', docType=" + docType + "; toolbar item not pinned to ribbon");
+                return;
+            }
+
+            ICommandTabBox cmdBox = cmdTab.AddCommandTabBox();
+            if (cmdBox == null)
+            {
+                logger.Warn("AddCommandTabBox returned null for tab '" + tabName +
+                    "', docType=" + docType + "; toolbar item not pinned to ribbon");
+                return;
+            }
+
+            int[] cmdIDs = new[] { commandID };
+            int[] textTypes = new[]
+            {
+                (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow,
+            };
+            bool ok = cmdBox.AddCommands(cmdIDs, textTypes);
+            if (!ok)
+            {
+                logger.Warn("ICommandTabBox.AddCommands returned false for tab '" + tabName +
+                    "', docType=" + docType);
+            }
         }
 
         #endregion UI Methods

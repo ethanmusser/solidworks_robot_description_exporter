@@ -268,6 +268,23 @@ namespace SW2URDF.URDFExport
             // the "Visual tab opens empty under (1 comp.)" symptom when
             // the collision loader ran after this one in
             // FillPropertyManager.
+            //
+            // SAVE/RESTORE the prior flag value (do NOT unconditionally
+            // reset to false in the finally). FillPropertyManager wraps
+            // its entire SelectionBox load block in an outer
+            // suppressGroupListboxRefresh = true; an unconditional finally
+            // = false here would clobber the outer guard for everything
+            // that runs AFTER this loader (notably the inertial direct
+            // SelectComponents call). When that runs with suppress = false,
+            // Component2.Select4 fires OnSelectionboxListChanged ->
+            // inertial branch -> active.Link.InertialComponents.Clear() +
+            // AddRange(picked), which mutates the very list being foreach'd
+            // -> InvalidOperationException("Collection was modified").
+            // That exception then aborts SwitchActiveNodes before line 147
+            // (previouslySelectedNode = node), and the stale textbox state
+            // becomes a link-rename trapdoor on the next tree click. See
+            // AGENTS.md for the full cascade.
+            bool prior = suppressGroupListboxRefresh;
             suppressGroupListboxRefresh = true;
             try
             {
@@ -293,7 +310,7 @@ namespace SW2URDF.URDFExport
             }
             finally
             {
-                suppressGroupListboxRefresh = false;
+                suppressGroupListboxRefresh = prior;
             }
         }
 
@@ -303,6 +320,14 @@ namespace SW2URDF.URDFExport
             // pre-populate clear to the collision mark only via
             // DeselectAllAtMark so we don't disturb siblings (visual,
             // inertial, feature pickers).
+            //
+            // SAVE/RESTORE the prior flag value - see the comment on
+            // LoadActiveVisualGroupIntoSelectionBox for the full rationale.
+            // Tldr: FillPropertyManager wraps the whole load block in
+            // suppress = true; an unconditional finally = false here would
+            // expose the inertial direct SelectComponents call to the
+            // "Collection was modified" foreach exception.
+            bool prior = suppressGroupListboxRefresh;
             suppressGroupListboxRefresh = true;
             try
             {
@@ -326,7 +351,7 @@ namespace SW2URDF.URDFExport
             }
             finally
             {
-                suppressGroupListboxRefresh = false;
+                suppressGroupListboxRefresh = prior;
             }
         }
 
