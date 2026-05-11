@@ -225,6 +225,20 @@ namespace SW2URDF.URDFExport
         // SolidWorks UI thread, so a plain bool is safe here.
         private bool suppressGroupListboxRefresh;
 
+        // ID of the tab that is currently active in the PMP. Drives the
+        // "viewer highlight follows the active tab" behavior: when this
+        // is e.g. VisualTabID, only the Visual SelectionBox's mark is
+        // populated and all other marks are cleared, so the SOLIDWORKS
+        // viewer highlights ONLY the components of the active visual
+        // group (not the union of every group ever loaded by
+        // FillPropertyManager). OnTabClicked updates this on every tab
+        // change; FillPropertyManager reads it when the active link
+        // changes, so a link switch repopulates only the marks the
+        // currently-visible tab needs. Defaults to SetupTabID because
+        // SW shows the first-added tab (Setup) on initial PMP open and
+        // does not fire OnTabClicked for it.
+        private int currentActiveTabId = SetupTabID;
+
         // Set true while OnClose is executing. When the property-manager page
         // closes (green check OR PMPage.Close(true) from the Preview-and-Export
         // button), SolidWorks releases the marked selections owned by the

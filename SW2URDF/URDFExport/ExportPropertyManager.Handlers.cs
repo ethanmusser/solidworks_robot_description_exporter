@@ -255,6 +255,27 @@ namespace SW2URDF.URDFExport
                 // its inertial refresh when pageIsClosing is true, so this
                 // incremental commit is the authoritative path for the
                 // green-check-without-navigating case.
+                //
+                // InertialSource gate (read from the combobox, not the
+                // data model - see SaveActiveNode for the same reasoning):
+                // when the user has source = Visual or Collision, the
+                // inertial mark holds the visual / collision union for
+                // highlight purposes ONLY. The SelectionBox is disabled
+                // in those states (SetInertialEditorEnabled), but
+                // synthetic events from programmatic Select4 / DeselectAll
+                // calls and SW PMP teardown still reach this handler;
+                // committing those picks back into InertialComponents
+                // would silently corrupt the user's saved Custom picks
+                // every time we re-rehydrate the inertial mark with a
+                // non-Custom resolved set.
+                short choice = (PMComboBoxInertialSource != null)
+                    ? PMComboBoxInertialSource.CurrentSelection
+                    : (short)0;
+                if (choice != 2) // 2 = Custom
+                {
+                    return;
+                }
+
                 if (active.Link.InertialComponents == null)
                 {
                     active.Link.InertialComponents = new List<SolidWorks.Interop.sldworks.Component2>();
@@ -423,6 +444,28 @@ namespace SW2URDF.URDFExport
                 if (active != null)
                 {
                     active.Link.CollisionUsesVisual = Checked;
+
+                    // Re-rehydrate the collision mark so the viewer
+                    // highlight follows the toggle: checked = show
+                    // the visual-component union (what will be exported
+                    // as collision); unchecked = show the active
+                    // collision group's components. The rehydrate is a
+                    // no-op when the user is not currently on the
+                    // Collision tab - their highlight on whatever tab
+                    // they are looking at must stay scoped to THAT
+                    // tab's marks (see RehydrateMarksForActiveTab).
+                    if (currentActiveTabId == CollisionTabID)
+                    {
+                        try
+                        {
+                            RehydrateMarksForActiveTab(active, CollisionTabID);
+                        }
+                        catch (Exception ex)
+                        {
+                            logger.Warn(
+                                "OnCheckboxCheck(CollisionUsesVisual) rehydrate failed: " + ex.Message);
+                        }
+                    }
                 }
                 return;
             }
@@ -479,6 +522,30 @@ namespace SW2URDF.URDFExport
             logger.Info("OnCheckboxCheck called for Id=" + Id + ". No special handler registered.");
         }
 
+        // Toggle the inertial SelectionBox enable in lockstep with the
+        // InertialSource dropdown. Source = Custom means the
+        // SelectionBox is the editor for Link.InertialComponents and
+        // user picks commit normally. Source = Visual / Collision means
+        // the SelectionBox is a READ-ONLY display of the resolved set
+        // (the same set that drives mass / inertia per
+        // Link.GetInertialComponents); disabling it prevents user
+        // picks from committing visual / collision components into
+        // InertialComponents (which would silently corrupt the
+        // user's saved Custom picks). The commit gates in
+        // SaveActiveNode and OnSelectionboxListChanged enforce the
+        // same rule on the write path; SetInertialEditorEnabled is
+        // the UX surface for it.
+        private void SetInertialEditorEnabled(InertialSource source)
+        {
+            IPropertyManagerPageControl pageControl =
+                PMSelectionInertial as IPropertyManagerPageControl;
+            if (pageControl == null)
+            {
+                return;
+            }
+            pageControl.Enabled = (source == InertialSource.Custom);
+        }
+
         // Toggle the joint-axis picker controls (SelectionBox + reverse-
         // direction button) in lockstep with PMCheckAutoDeriveAxis. Auto-
         // derive ON disables them; auto-derive OFF re-enables. Visibility
@@ -509,12 +576,52 @@ namespace SW2URDF.URDFExport
 
         void IPropertyManagerPage2Handler9.OnComboboxSelectionChanged(int Id, int Item)
         {
-            // PMComboBoxJointType is the only remaining read-only
-            // combobox on the Link/Joint tab; coord-sys / axis
-            // pickers are SelectionBox-only. Joint-type changes don't
-            // affect the axis overlay so this handler is currently a
-            // no-op, but kept for future expansion (e.g. surfacing a
-            // warning when "fixed" is picked but an axis is selected).
+            if (Id == ComboInertialSourceID)
+            {
+                // Map the dropdown index to the InertialSource enum
+                // (must stay in sync with the AddItems call in
+                // BuildInertialTab and the persistence map in
+                // SaveActiveNode).
+                InertialSource newSource = (Item == 1) ? InertialSource.Collision
+                    : (Item == 2) ? InertialSource.Custom
+                    : InertialSource.Visual;
+
+                LinkNode active = (LinkNode)Tree?.SelectedNode;
+                if (active != null && active.Link != null)
+                {
+                    active.Link.InertialSource = newSource;
+                }
+
+                // SelectionBox is editable only when source = Custom;
+                // Visual / Collision turn it into a read-only display
+                // of the resolved set. Toggle the enable state in
+                // lockstep with the source so the user sees the right
+                // affordance immediately.
+                SetInertialEditorEnabled(newSource);
+
+                // Refresh the highlight so the viewer shows the set
+                // that will actually drive mass / inertia. No-op when
+                // the user isn't currently on the Inertial tab.
+                if (active != null && currentActiveTabId == InertialTabID)
+                {
+                    try
+                    {
+                        RehydrateMarksForActiveTab(active, InertialTabID);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.Warn(
+                            "OnComboboxSelectionChanged(InertialSource) rehydrate failed: " + ex.Message);
+                    }
+                }
+                return;
+            }
+
+            // PMComboBoxJointType is the only other combobox on the
+            // page; changes there don't affect the axis overlay so
+            // they're a no-op (kept for future expansion - e.g.
+            // surfacing a warning when "fixed" is picked but an
+            // axis is selected).
         }
 
         void IPropertyManagerPage2Handler9.OnGroupCheck(int Id, bool Checked)
@@ -638,13 +745,15 @@ namespace SW2URDF.URDFExport
         // SolidWorks does not paint marked SelectionBox contents into a
         // SelectionBox whose tab is not currently active, and switching
         // tabs after FillPropertyManager has populated the marks does NOT
-        // retroactively rehydrate the box. Re-firing the per-group loader
-        // when the user activates Visual / Collision / Inertial puts the
-        // resolved Component2 list back into the SelectionBox so the user
-        // sees what they configured. The suppressGroupListboxRefresh
-        // guard around the loaders prevents re-entrant
-        // OnSelectionboxListChanged events from double-committing the
-        // selection back into the active group.
+        // retroactively rehydrate the box. We also use the tab change
+        // to keep the SOLIDWORKS VIEWER highlight in sync with the
+        // active tab: RehydrateMarksForActiveTab drains every PMP mark
+        // and repopulates only the ones the new tab owns, so the user
+        // sees exactly the entities they're editing on the active tab
+        // and nothing else (no "union of every group ever loaded for
+        // this link" noise). currentActiveTabId is also remembered so
+        // a subsequent link switch (via FillPropertyManager) restores
+        // the same active-tab-only viewer state on the new node.
         //
         // This MUST run synchronously - SW activates the tab AFTER
         // OnTabClicked returns true, and a synchronous load populates
@@ -662,66 +771,20 @@ namespace SW2URDF.URDFExport
         // contamination is not a concern here.
         bool IPropertyManagerPage2Handler9.OnTabClicked(int Id)
         {
+            currentActiveTabId = Id;
             LinkNode node = (LinkNode)Tree?.SelectedNode;
             if (node == null)
             {
                 return true;
             }
 
-            bool prior = suppressGroupListboxRefresh;
-            suppressGroupListboxRefresh = true;
             try
             {
-                switch (Id)
-                {
-                    case LinkJointTabID:
-                        LoadActiveGlobalCoordsysIntoSelectionBox(node);
-                        LoadActiveJointCoordsysIntoSelectionBox(node);
-                        LoadActiveJointAxisIntoSelectionBox(node);
-                        break;
-                    case VisualTabID:
-                        LoadActiveVisualGroupIntoSelectionBox(node);
-                        break;
-                    case CollisionTabID:
-                        LoadActiveCollisionGroupIntoSelectionBox(node);
-                        break;
-                    case InertialTabID:
-                        if (node.Link.InertialComponents == null)
-                        {
-                            node.Link.InertialComponents = new List<Component2>();
-                        }
-                        // Scope the clear to the inertial mark only so we
-                        // don't disturb sibling SelectionBoxes (visual,
-                        // collision, feature pickers).
-                        CommonSwOperations.DeselectAllAtMark(
-                            ActiveSWModel, PMSelectionInertial.Mark);
-                        CommonSwOperations.SelectComponents(
-                            ActiveSWModel,
-                            node.Link.InertialComponents,
-                            false,
-                            PMSelectionInertial.Mark);
-                        break;
-                    case SitesTabID:
-                        // Sites coord-sys SelectionBox is transient (it
-                        // gets consumed on Add Site click). Clear any
-                        // stale selection at the site mark so the user
-                        // starts from a clean slate, but DO NOT touch
-                        // sibling marks.
-                        if (PMSelectionSiteCoordSys != null)
-                        {
-                            CommonSwOperations.DeselectAllAtMark(
-                                ActiveSWModel, PMSelectionSiteCoordSys.Mark);
-                        }
-                        break;
-                }
+                RehydrateMarksForActiveTab(node, Id);
             }
             catch (Exception ex)
             {
                 logger.Warn("OnTabClicked(" + Id + ") rehydrate failed: " + ex.Message);
-            }
-            finally
-            {
-                suppressGroupListboxRefresh = prior;
             }
             return true;
         }

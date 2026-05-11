@@ -238,6 +238,20 @@ namespace SW2URDF.URDFExport
                 {
                     previouslySelectedNode.Link.InertialComponents = new List<Component2>();
                 }
+
+                // Read the InertialSource dropdown FIRST so the inertial
+                // commit gate below decides based on the user's CURRENT
+                // choice. The data model may still hold the previous
+                // source value until this SaveActiveNode pass persists
+                // it below; OnComboboxSelectionChanged DOES update the
+                // data model on every user pick, but reading the
+                // combobox directly here is the safe authoritative read
+                // regardless of whether SW fired the combo change event.
+                short choice = PMComboBoxInertialSource.CurrentSelection;
+                InertialSource currentSource = (choice == 1) ? InertialSource.Collision
+                    : (choice == 2) ? InertialSource.Custom
+                    : InertialSource.Visual;
+
                 // Same SelectionMgr-during-OnClose hazard as
                 // CommitActiveVisualGroupSelection: the inertial SelectionBox
                 // is backed by a marked selection that SolidWorks has already
@@ -255,7 +269,20 @@ namespace SW2URDF.URDFExport
                 // RefAxis under positive-mark queries on some SW versions;
                 // without this defense the mid-PM-session navigation
                 // would silently wipe the user's saved inertial picks.
-                if (!pageIsClosing)
+                //
+                // InertialSource gate: when source != Custom, the
+                // inertial mark holds the visual / collision union for
+                // highlight purposes only (see
+                // LoadActiveInertialIntoSelectionBox / ResolveInertialHighlightSet).
+                // Committing those into InertialComponents would
+                // silently corrupt the user's saved Custom picks every
+                // time they navigate away from a Visual-or-Collision-
+                // sourced link. The SelectionBox is disabled in this
+                // state (SetInertialEditorEnabled), but the
+                // green-check + OnSelectionboxListChanged paths can
+                // still fire while the mark is populated; the gate
+                // here is the canonical write-side enforcement.
+                if (!pageIsClosing && currentSource == InertialSource.Custom)
                 {
                     List<Component2> pickedInertial = new List<Component2>();
                     CommonSwOperations.GetSelectedComponents(
@@ -268,20 +295,7 @@ namespace SW2URDF.URDFExport
                     }
                 }
 
-                // Persist the inertial source choice.
-                short choice = PMComboBoxInertialSource.CurrentSelection;
-                if (choice == 1)
-                {
-                    previouslySelectedNode.Link.InertialSource = InertialSource.Collision;
-                }
-                else if (choice == 2)
-                {
-                    previouslySelectedNode.Link.InertialSource = InertialSource.Custom;
-                }
-                else
-                {
-                    previouslySelectedNode.Link.InertialSource = InertialSource.Visual;
-                }
+                previouslySelectedNode.Link.InertialSource = currentSource;
             }
         }
 
@@ -373,45 +387,16 @@ namespace SW2URDF.URDFExport
             // controls.
             EnableControls(!node.IsBaseNode);
 
-            // Pre-populate the SelectionBoxes for the active groups + the
-            // single inertial-components box + the joint coord-sys /
-            // joint axis / global coord-sys feature pickers.
-            //
-            // Every ClearSelection2 / SelectComponents / SelectByID2 call
-            // below can fire OnSelectionboxListChanged for an arbitrary
-            // box. Without the suppress guard around the whole population
-            // block the Count=0 event from this top-level clear (and from
-            // the inner loaders' clears) would re-enter
-            // CommitActiveVisualGroupSelection and wipe the freshly-loaded
-            // groups with an empty SelectionMgr read. The inner loaders
-            // also set this flag for the same reason - the redundancy is
-            // intentional so that any individual loader is safe to call
-            // in isolation.
-            suppressGroupListboxRefresh = true;
-            try
-            {
-                // No top-level ClearSelection2(true) - that was the
-                // prior cross-mark wipe that left mark 11 (Visual)
-                // empty after FillPropertyManager because the
-                // collision loader's own ClearSelection2(true) ran
-                // immediately after the visual loader populated mark
-                // 11. Each loader below now scopes its own clear via
-                // CommonSwOperations.DeselectAllAtMark(model, ownMark)
-                // and is safe to compose with siblings.
-                LoadActiveVisualGroupIntoSelectionBox(node);
-                LoadActiveCollisionGroupIntoSelectionBox(node);
-                CommonSwOperations.DeselectAllAtMark(
-                    ActiveSWModel, PMSelectionInertial.Mark);
-                CommonSwOperations.SelectComponents(
-                    ActiveSWModel, node.Link.InertialComponents, false, PMSelectionInertial.Mark);
-                LoadActiveGlobalCoordsysIntoSelectionBox(node);
-                LoadActiveJointCoordsysIntoSelectionBox(node);
-                LoadActiveJointAxisIntoSelectionBox(node);
-            }
-            finally
-            {
-                suppressGroupListboxRefresh = false;
-            }
+            // Repopulate ONLY the SelectionBox marks owned by the
+            // currently-active tab so the SOLIDWORKS viewer highlight
+            // shows the entities for the tab the user is looking at
+            // (rather than the union of every SelectionBox that ever
+            // held a pick for this link). Every other mark is drained
+            // first. See RehydrateMarksForActiveTab and AGENTS.md for
+            // the per-tab mark mapping. OnTabClicked uses the same
+            // helper, so a tab change after this point also keeps the
+            // viewer in sync.
+            RehydrateMarksForActiveTab(node, currentActiveTabId);
 
             // Inertial source combo.
             switch (node.Link.InertialSource)
@@ -427,6 +412,11 @@ namespace SW2URDF.URDFExport
                     PMComboBoxInertialSource.CurrentSelection = 0;
                     break;
             }
+            // Mirror the source on the SelectionBox enable so the user
+            // immediately sees "read-only display" affordance when
+            // source != Custom. See SetInertialEditorEnabled for the
+            // full rationale.
+            SetInertialEditorEnabled(node.Link.InertialSource);
 
             // Sites tab: nothing to pre-populate for the SelectionBox
             // (the pick is consumed at Add Site click time, not

@@ -223,6 +223,19 @@ namespace SW2URDF.URDFExport
             {
                 return;
             }
+            // CollisionUsesVisual contract: the collision mark holds the
+            // VISUAL component union for highlight purposes when the
+            // toggle is checked (see LoadActiveCollisionGroupIntoSelectionBox).
+            // Committing those back into the active collision group
+            // would overwrite the user's saved collision picks with
+            // visual components - a destructive corruption that the
+            // user can't easily undo (and that they'd hit immediately
+            // on next link switch). The editor is disabled in this
+            // state, so the saved groups are already authoritative.
+            if (node.Link.CollisionUsesVisual)
+            {
+                return;
+            }
             EnsureGroupsInitialized(node);
             if (activeCollisionGroupIndex < 0 || activeCollisionGroupIndex >= node.Link.CollisionGroups.Count)
             {
@@ -327,6 +340,21 @@ namespace SW2URDF.URDFExport
             // suppress = true; an unconditional finally = false here would
             // expose the inertial direct SelectComponents call to the
             // "Collection was modified" foreach exception.
+            //
+            // CollisionUsesVisual override: when the user has checked
+            // "Use visual groups as collision", the collision editor is
+            // greyed out (SetCollisionEditorEnabled(false)) and the
+            // saved per-group collision picks are irrelevant at export
+            // time - the visual groups feed the collision writer
+            // directly. The viewer-highlight contract is "show what
+            // will be exported as collision for the active link", so
+            // we load the union of visual components into the collision
+            // mark here. The collision SelectionBox is disabled in this
+            // state so the user can't accidentally edit; the commit
+            // gate in CommitActiveCollisionGroupSelection refuses to
+            // write back when CollisionUsesVisual is true, preserving
+            // the saved per-group collision picks for if the user
+            // unchecks the toggle later.
             bool prior = suppressGroupListboxRefresh;
             suppressGroupListboxRefresh = true;
             try
@@ -337,6 +365,18 @@ namespace SW2URDF.URDFExport
                     return;
                 }
                 EnsureGroupsInitialized(node);
+
+                if (node.Link.CollisionUsesVisual)
+                {
+                    List<Component2> visuals = node.Link.VisualComponents;
+                    if (visuals != null && visuals.Count > 0)
+                    {
+                        CommonSwOperations.SelectComponents(
+                            ActiveSWModel, visuals, false, PMSelectionCollision.Mark);
+                    }
+                    return;
+                }
+
                 if (activeCollisionGroupIndex < 0 || activeCollisionGroupIndex >= node.Link.CollisionGroups.Count)
                 {
                     return;
@@ -348,6 +388,196 @@ namespace SW2URDF.URDFExport
                 }
                 CommonSwOperations.SelectComponents(
                     ActiveSWModel, group.Components, false, PMSelectionCollision.Mark);
+            }
+            finally
+            {
+                suppressGroupListboxRefresh = prior;
+            }
+        }
+
+        // Loads the inertial mark with the set of components that will
+        // drive mass / inertia at export time, per the InertialSource
+        // dropdown. Pulled out of FillPropertyManager so the
+        // viewer-highlight-follows-active-tab logic in RehydrateMarksForActiveTab
+        // has a uniform "load the inertial mark" entry point.
+        //
+        // Source resolution rules (must mirror Link.GetInertialComponents
+        // so the highlight shows EXACTLY what the export pipeline will
+        // use - any divergence here is a user-confusing UX bug):
+        //   Visual    -> union of all VisualGroups[].Components
+        //   Collision -> union of all CollisionGroups[].Components,
+        //                falling back to VisualGroups[] when empty
+        //   Custom    -> Link.InertialComponents, falling back to
+        //                VisualGroups[] when empty
+        //
+        // The user's Custom picks (Link.InertialComponents) are
+        // preserved even when source != Custom: we just don't show
+        // them. Switching back to Custom rehydrates from the same
+        // list. The commit gates in SaveActiveNode and
+        // OnSelectionboxListChanged keep this guarantee on the
+        // write path by refusing to write into InertialComponents
+        // unless source == Custom.
+        private void LoadActiveInertialIntoSelectionBox(LinkNode node)
+        {
+            bool prior = suppressGroupListboxRefresh;
+            suppressGroupListboxRefresh = true;
+            try
+            {
+                CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionInertial.Mark);
+                if (node == null)
+                {
+                    return;
+                }
+                if (node.Link.InertialComponents == null)
+                {
+                    node.Link.InertialComponents = new List<Component2>();
+                }
+                List<Component2> resolved = ResolveInertialHighlightSet(node);
+                if (resolved != null && resolved.Count > 0)
+                {
+                    CommonSwOperations.SelectComponents(
+                        ActiveSWModel, resolved, false, PMSelectionInertial.Mark);
+                }
+            }
+            finally
+            {
+                suppressGroupListboxRefresh = prior;
+            }
+        }
+
+        // Mirrors Link.GetInertialComponents (without the isFallback
+        // out-param) for the viewer-highlight + read-only SelectionBox
+        // display path. Returns a fresh list each call - both
+        // VisualComponents and CollisionComponents are union getters
+        // that already allocate per-call - so callers may modify the
+        // returned list freely.
+        //
+        // INVARIANT: any change to the source resolution rule MUST
+        // land in Link.GetInertialComponents as well, or the
+        // highlighted set will drift from what gets exported.
+        private static List<Component2> ResolveInertialHighlightSet(LinkNode node)
+        {
+            if (node == null || node.Link == null)
+            {
+                return null;
+            }
+            switch (node.Link.InertialSource)
+            {
+                case InertialSource.Collision:
+                    List<Component2> coll = node.Link.CollisionComponents;
+                    if (coll != null && coll.Count > 0)
+                    {
+                        return coll;
+                    }
+                    return node.Link.VisualComponents;
+                case InertialSource.Custom:
+                    if (node.Link.InertialComponents != null && node.Link.InertialComponents.Count > 0)
+                    {
+                        return node.Link.InertialComponents;
+                    }
+                    return node.Link.VisualComponents;
+                case InertialSource.Visual:
+                default:
+                    return node.Link.VisualComponents;
+            }
+        }
+
+        // Clears every component / feature-picker mark owned by the PMP.
+        // Used by RehydrateMarksForActiveTab to drain the marks for the
+        // tabs the user is leaving so the SOLIDWORKS viewer highlight no
+        // longer shows them. Safe to call even before all SelectionBoxes
+        // have been added (defensive null checks per box).
+        private void ClearAllSelectionMarks()
+        {
+            if (ActiveSWModel == null)
+            {
+                return;
+            }
+            if (PMSelectionVisual != null)
+            {
+                CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionVisual.Mark);
+            }
+            if (PMSelectionCollision != null)
+            {
+                CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionCollision.Mark);
+            }
+            if (PMSelectionInertial != null)
+            {
+                CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionInertial.Mark);
+            }
+            if (PMSelectionGlobalCoordsys != null)
+            {
+                CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionGlobalCoordsys.Mark);
+            }
+            if (PMSelectionJointCoordsys != null)
+            {
+                CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionJointCoordsys.Mark);
+            }
+            if (PMSelectionJointAxis != null)
+            {
+                CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionJointAxis.Mark);
+            }
+            if (PMSelectionSiteCoordSys != null)
+            {
+                CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionSiteCoordSys.Mark);
+            }
+        }
+
+        // Drains every PMP-owned SelectionBox mark and repopulates only
+        // the marks that belong to the currently-active tab. The net
+        // effect is that the SOLIDWORKS viewer highlight reflects ONLY
+        // the entities of the active tab (not the union of every
+        // SelectionBox that ever held a pick for this link).
+        //
+        // Tab -> marks mapping:
+        //   SetupTabID:        none
+        //   LinkJointTabID:    Global / Joint coord-sys + Joint axis
+        //   VisualTabID:       active visual group
+        //   CollisionTabID:    active collision group
+        //   InertialTabID:     inertial components
+        //   SitesTabID:        none (the site coord-sys SelectionBox is
+        //                      transient - consumed on Add Site click -
+        //                      and intentionally starts empty)
+        //
+        // The whole sequence runs under suppressGroupListboxRefresh = true
+        // so the synthetic OnSelectionboxListChanged events fired by the
+        // DeselectAllAtMark / Select4 dance below don't re-enter
+        // CommitActive*GroupSelection. The loaders called below ALSO save
+        // and restore the flag (see the rationale on each), so this
+        // outer guard is the canonical "I'm doing programmatic mark
+        // surgery, don't commit anything back" envelope.
+        private void RehydrateMarksForActiveTab(LinkNode node, int tabId)
+        {
+            if (node == null)
+            {
+                return;
+            }
+            bool prior = suppressGroupListboxRefresh;
+            suppressGroupListboxRefresh = true;
+            try
+            {
+                ClearAllSelectionMarks();
+                switch (tabId)
+                {
+                    case LinkJointTabID:
+                        LoadActiveGlobalCoordsysIntoSelectionBox(node);
+                        LoadActiveJointCoordsysIntoSelectionBox(node);
+                        LoadActiveJointAxisIntoSelectionBox(node);
+                        break;
+                    case VisualTabID:
+                        LoadActiveVisualGroupIntoSelectionBox(node);
+                        break;
+                    case CollisionTabID:
+                        LoadActiveCollisionGroupIntoSelectionBox(node);
+                        break;
+                    case InertialTabID:
+                        LoadActiveInertialIntoSelectionBox(node);
+                        break;
+                    // SetupTabID and SitesTabID: no marks to populate.
+                    // Sites' site coord-sys SelectionBox is transient
+                    // (consumed on Add Site click) and intentionally
+                    // starts empty when the user lands on the tab.
+                }
             }
             finally
             {
