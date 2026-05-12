@@ -1,23 +1,11 @@
-name: Build installer and attach to release
+name: Build SW2URDF and (optionally) installer
 
-# Fires whenever a Release is created in the GitHub UI (the user picks/creates
-# the tag, writes release notes, and clicks "Publish release"). The workflow:
-#   1. Builds SW2URDF.dll in Release configuration against the SOLIDWORKS API
-#      DLLs vendored under SW2URDF/lib/sw-api/.
-#   2. Compiles the Inno Setup installer (sw2urdfSetup_<tag>.exe).
-#   3. Computes a SHA-256 checksum file (sw2urdfSetup_<tag>.exe.sha256)
-#      alongside the installer.
-#   4. Generates a Sigstore-backed build provenance attestation for the
-#      installer via actions/attest@v4. Users verify the download with
-#      `gh attestation verify <file> -R <owner>/<repo>`.
-#   5. Attaches the .exe and .sha256 to the triggering release.
-#
-# Also exposes a workflow_dispatch entry so the pipeline can be smoke-tested
-# from the Actions tab without cutting a real release; in that mode the
-# installer + checksum are only uploaded as workflow artifacts, not attached
-# to a release (and the attestation is still minted so the verify flow can be
-# exercised end-to-end). PR runs build and upload artifacts but do NOT mint
-# attestations because forks don't have the required OIDC permissions.
+# `build` runs on every supported trigger and compiles SW2URDF.dll. `installer`
+# depends on `build`, downloads its artifact, and runs Inno Setup + checksum +
+# attestation + upload. The installer job runs only when:
+#   - trigger is `release` (cuts a tagged release with assets attached)
+#   - trigger is `workflow_dispatch` (manual smoke test from the Actions tab)
+#   - trigger is `pull_request` AND the PR has the `ci:installer` label
 
 on:
   release:
@@ -29,6 +17,9 @@ on:
         required: false
         default: "manual"
   pull_request:
+    # `labeled` / `unlabeled` re-trigger the workflow when the `ci:installer`
+    # label is added or removed without a fresh push.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - 'SW2URDF/**'
       - 'INSTALL/**'
@@ -36,16 +27,22 @@ on:
       - 'SW2URDF.sln'
       - '.github/workflows/release.yml'
 
+# Collapse rapid pushes on the same ref into one build. Release events use a
+# unique tag ref so they never share a group with anything else.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# `id-token: write` + `attestations: write` are required by actions/attest@v4
+# in the installer job. Scoped at workflow level for simplicity.
 permissions:
   contents: write
-  # id-token + attestations are required for actions/attest@v4 to mint a
-  # Sigstore-backed build provenance attestation against the installer.
-  # See "GitHub Artifact Attestations" in AGENTS.md.
   id-token: write
   attestations: write
 
 jobs:
-  build-installer:
+  build:
+    name: Build SW2URDF.dll
     runs-on: windows-latest
     defaults:
       run:
@@ -57,42 +54,70 @@ jobs:
         with:
           fetch-depth: 0
 
-      # actions/checkout fetches tags as part of fetch-depth: 0, but force-refresh
-      # to be defensive: scripts/UpdateVersionInfo.ps1 runs `git describe --tags`
-      # at MSBuild BeforeBuild and embeds the result as
-      # [assembly: AssemblyInformationalVersion(...)]. Without the tag pointing
-      # at the release commit, the embedded version would fall back to a bare
-      # short SHA.
+      # scripts/UpdateVersionInfo.ps1 runs `git describe --tags` at MSBuild
+      # BeforeBuild and embeds the result as AssemblyInformationalVersion.
+      # Force-refresh tags so a release commit's tag is visible.
       - name: Fetch tags
         run: git fetch --tags --force
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v3
 
-      # Restore + build SW2URDF.csproj in a single MSBuild invocation. We
-      # deliberately do NOT use the standalone `nuget.exe restore` against the
-      # solution: NuGet 7.x has surfaced a "MsBuild timeout out while trying
-      # to get project to project references" failure when restoring this
-      # solution, and a sln-level restore also pulls in the sibling
-      # TestRunner project (which references solidworkstools.dll via
-      # $(SolidWorksPath), unsatisfiable on GitHub-hosted runners). SW2URDF
-      # is an SDK-style project, so `msbuild /restore /t:Build` uses the
-      # NuGet client that ships inside Visual Studio and scopes the work
-      # to exactly the project we ship.
+      # Target SW2URDF.csproj directly (not SW2URDF.sln) so we skip the sibling
+      # TestRunner project, which references solidworkstools.dll and is
+      # unsatisfiable on GitHub-hosted runners. `msbuild /restore /t:Build` uses
+      # the NuGet client that ships with VS and scopes restore to one project.
       #
-      # /p:SolidWorksPath redirects the HintPaths in SW2URDF.csproj to the
-      # vendored SOLIDWORKS DLLs under SW2URDF/lib/sw-api/api/redist/.
+      # /p:SolidWorksPath points SW2URDF.csproj's HintPaths at the vendored
+      # SOLIDWORKS DLLs under SW2URDF/lib/sw-api/api/redist/.
       - name: Restore + Build SW2URDF (Release, x64)
         run: msbuild SW2URDF\SW2URDF.csproj /restore /t:Build /p:Configuration=Release /p:Platform=x64 "/p:SolidWorksPath=$env:GITHUB_WORKSPACE\SW2URDF\lib\sw-api" /verbosity:minimal /nologo
+
+      # Upload the full bin/x64/Release/ tree (DLL, vendored NuGet refs,
+      # images/, .config files) so the installer job can reconstruct it at the
+      # path Install.iss reads from. A DLL-only artifact would silently produce
+      # a broken installer.
+      - name: Upload build output
+        uses: actions/upload-artifact@v6
+        with:
+          name: sw2urdf-build-output
+          path: SW2URDF/bin/x64/Release/
+          retention-days: 7
+          if-no-files-found: error
+
+  installer:
+    name: Build installer
+    needs: build
+    if: |
+      github.event_name == 'release' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:installer'))
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      # Shallow checkout: only Install.iss and the trigger event payload are
+      # needed here; no `git describe` runs in this job.
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Land at the relative path Install.iss reads from
+      # (SourceDir=..\SW2URDF\bin\, Source: x64\Release\* recursive).
+      - name: Download build output
+        uses: actions/download-artifact@v6
+        with:
+          name: sw2urdf-build-output
+          path: SW2URDF/bin/x64/Release/
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
 
-      # Compute the installer filename suffix from the release tag (or the
-      # workflow_dispatch input). AssemblyVersion in the DLL is deliberately
-      # pinned (see AssemblyInfo.cs) so the .iss-default OutputBaseFilename
-      # (derived from the DLL's FileVersion) would collide across releases.
-      # Override explicitly with the release tag instead.
+      # AssemblyVersion is pinned at 1.6.0.0 (see AssemblyInfo.cs), so the
+      # .iss-default OutputBaseFilename (computed from GetFileVersion) would
+      # collide across releases. Derive a unique suffix from the trigger
+      # payload instead.
       - name: Compute installer filename
         id: filename
         run: |
@@ -118,11 +143,9 @@ jobs:
       - name: List built installer
         run: Get-ChildItem INSTALL\OUTPUT
 
-      # SHA-256 checksum is published alongside the installer as a release
-      # asset so users without the gh CLI can still verify the download via
-      # Get-FileHash / sha256sum -c. The "<sha> *<filename>" output format is
-      # GNU coreutils' "binary mode" convention so `sha256sum -c` works
-      # unmodified on the receiving side. See README "Verifying downloads".
+      # Output format is GNU coreutils binary mode ("<sha> *<filename>") so
+      # `sha256sum -c` works unmodified on the receiving side. See README
+      # "Verifying downloads".
       - name: Compute SHA-256 checksum
         run: |
           $exe = "INSTALL\OUTPUT\${{ steps.filename.outputs.name }}.exe"
@@ -131,21 +154,17 @@ jobs:
           Set-Content -Path "$exe.sha256" -Value $line -NoNewline
           Write-Host "Checksum: $line"
 
-      # Generate a Sigstore-backed build provenance attestation tying the
-      # built installer to this workflow run, the source commit, and the
-      # repository identity. Verified by users with:
+      # Mint a Sigstore-backed build provenance attestation. Users verify with:
       #
       #   gh attestation verify sw2urdfSetup_<tag>.exe -R <owner>/<repo>
       #
-      # Skipped on pull_request runs because PR-built installers are not
-      # shipped (and forks don't have the OIDC permissions to mint
-      # attestations anyway). Predicate type is pinned to SLSA v1 explicitly
-      # because `gh attestation verify` defaults to it and a future change
-      # would silently break verification of already-published installers.
+      # predicate-type is pinned to SLSA v1 because `gh attestation verify`
+      # defaults to it; changing it silently breaks verification of installers
+      # already in the wild.
       #
-      # actions/attest@v4 is the current canonical action; the older
-      # actions/attest-build-provenance is a deprecated wrapper around it
-      # as of its v4.1.0 release (Feb 2026).
+      # Skipped on pull_request because (1) fork PRs lack OIDC permissions to
+      # mint attestations and would fail noisily, and (2) PR-built installers
+      # are iteration artifacts that shouldn't appear in the transparency log.
       - name: Generate build provenance attestation
         if: github.event_name != 'pull_request'
         uses: actions/attest@v4

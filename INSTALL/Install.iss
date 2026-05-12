@@ -4,13 +4,12 @@
 #define MyAppName "SolidWorks To URDF"
 #define MyAppVersion "2026 v2.0"
 #define MyAppPublisher "Ethan J. Musser"
-#define MyAppURL "https://github.com/ethanmusser/solidworks_urdf_exporter"
+#define MyAppURL "https://github.com/ethanmusser/solidworks_robot_description_exporter"
 
 #define MainBinaryName  "SW2URDF.dll"
 #define SetupBaseName   "sw2urdfSetup_"
-; BuildConfig can be overridden on the ISCC command line via /DBuildConfig=Release.
-; Local Inno Setup compilation continues to use the Debug build by default so the
-; existing developer workflow is unchanged; CI passes /DBuildConfig=Release.
+; BuildConfig defaults to Debug for local iscc runs; CI passes
+; /DBuildConfig=Release on the ISCC command line.
 #ifndef BuildConfig
   #define BuildConfig "Debug"
 #endif
@@ -37,10 +36,9 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 CreateAppDir=yes
-; Version-suffix the installer filename so each release produces a uniquely
-; named asset (e.g. sw2urdfSetup_1_6_0_0.exe). Override on the ISCC command
-; line via /DOutputBaseFilename=sw2urdfSetup if the legacy fixed name is
-; needed.
+; Default the installer filename to sw2urdfSetup_<dll-version>.exe for local
+; iscc runs. CI passes /DOutputBaseFilename=sw2urdfSetup_<release-tag> so each
+; release produces a uniquely named asset.
 #ifndef OutputBaseFilename
   #define OutputBaseFilename SetupBaseName + AppVersionFile
 #endif
@@ -69,20 +67,12 @@ Root: HKCU64; Subkey: "Software\SolidWorks\AddInsStartup\65c9fc17-6a74-45a3-8f84
 
 [Code]
 {
-  COM (un)registration is done from [Code] rather than [Run]/[UninstallRun]
-  so we can:
+  COM (un)registration runs from [Code] so we can validate that RegAsm.exe
+  exists before launching it, and surface explicit error messages when RegAsm
+  fails (missing .NET Framework, registry write blocked by AV, non-zero exit).
 
-  1. Use Exec() (which wraps CreateProcess directly) and get an explicit
-     ResultCode back from RegAsm, so a real failure (RegAsm missing,
-     registry write blocked by antivirus, etc.) can surface a useful
-     message instead of a generic system-error popup.
-
-  2. Validate that RegAsm.exe actually exists before trying to launch it,
-     and bail with a clear "install .NET Framework 4.x" message if not.
-
-  RegAsm.exe lives in the canonical .NET Framework 4.x 64-bit directory.
-  The v4.0.30319 folder name has been stable across every 4.x minor
-  version (4.0 through 4.8.1) since .NET 4.0 shipped.
+  RegAsm.exe lives in the canonical .NET Framework 4.x 64-bit directory; the
+  v4.0.30319 folder name has been stable across every 4.x minor version.
 }
 
 function RegAsmPath: String;

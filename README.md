@@ -6,19 +6,19 @@ Authored and maintained by [Stephen Brawner](brawner@gmail.com). Past supporters
 
 **SolidWorks 2021**
 
-https://github.com/ros/solidworks_urdf_exporter/releases/tag/1.6.1
+https://github.com/ethanmusser/solidworks_robot_description_exporter/releases/tag/1.6.1
 
 **SolidWorks 2020**
 
-https://github.com/ros/solidworks_urdf_exporter/releases/tag/1.6.0
+https://github.com/ethanmusser/solidworks_robot_description_exporter/releases/tag/1.6.0
 
 **SolidWorks 2019 on 2018 SP 5**
 
-https://github.com/ros/solidworks_urdf_exporter/releases/tag/1.5.1
+https://github.com/ethanmusser/solidworks_robot_description_exporter/releases/tag/1.5.1
 
 ## SolidWorks Version Requirements
 
-1. The minimum required version of SolidWorks for use with this add-in is 2018 Service Pack 5. SolidWorks 2017 or earlier may work. See [this issue](https://github.com/ros/solidworks_urdf_exporter/issues/73).
+1. The minimum required version of SolidWorks for use with this add-in is 2018 Service Pack 5. SolidWorks 2017 or earlier may work. See [this issue](https://github.com/ethanmusser/solidworks_robot_description_exporter/issues/73).
 
 ## Usage
 
@@ -74,7 +74,7 @@ The installer is not Authenticode-signed, so Windows SmartScreen and some antivi
 This verifies the cryptographic [build provenance attestation](https://docs.github.com/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations) minted by GitHub at build time. Requires the [`gh`](https://cli.github.com/) CLI but no additional tooling.
 
 ```powershell
-gh attestation verify sw2urdfSetup_<tag>.exe -R ethanmusser/solidworks_urdf_exporter
+gh attestation verify sw2urdfSetup_<tag>.exe --repo ethanmusser/solidworks_robot_description_exporter
 ```
 
 A successful run prints the workflow file (`.github/workflows/release.yml`), the source commit SHA, and the timestamp of the run that produced the file.
