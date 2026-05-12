@@ -1,6 +1,6 @@
-name: Build SW2URDF and (optionally) installer
+name: Build SW2RD and (optionally) installer
 
-# `build` runs on every supported trigger and compiles SW2URDF.dll. `installer`
+# `build` runs on every supported trigger and compiles SW2RD.dll. `installer`
 # depends on `build`, downloads its artifact, and runs Inno Setup + checksum +
 # attestation + upload. The installer job runs only when:
 #   - trigger is `release` (cuts a tagged release with assets attached)
@@ -21,10 +21,10 @@ on:
     # label is added or removed without a fresh push.
     types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
-      - 'SW2URDF/**'
+      - 'SW2RD/**'
       - 'INSTALL/**'
       - 'scripts/**'
-      - 'SW2URDF.sln'
+      - 'SW2RD.sln'
       - '.github/workflows/release.yml'
 
 # Collapse rapid pushes on the same ref into one build. Release events use a
@@ -42,7 +42,7 @@ permissions:
 
 jobs:
   build:
-    name: Build SW2URDF.dll
+    name: Build SW2RD.dll
     runs-on: windows-latest
     defaults:
       run:
@@ -63,15 +63,15 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v3
 
-      # Target SW2URDF.csproj directly (not SW2URDF.sln) so we skip the sibling
+      # Target SW2RD.csproj directly (not SW2RD.sln) so we skip the sibling
       # TestRunner project, which references solidworkstools.dll and is
       # unsatisfiable on GitHub-hosted runners. `msbuild /restore /t:Build` uses
       # the NuGet client that ships with VS and scopes restore to one project.
       #
-      # /p:SolidWorksPath points SW2URDF.csproj's HintPaths at the vendored
-      # SOLIDWORKS DLLs under SW2URDF/lib/sw-api/api/redist/.
-      - name: Restore + Build SW2URDF (Release, x64)
-        run: msbuild SW2URDF\SW2URDF.csproj /restore /t:Build /p:Configuration=Release /p:Platform=x64 "/p:SolidWorksPath=$env:GITHUB_WORKSPACE\SW2URDF\lib\sw-api" /verbosity:minimal /nologo
+      # /p:SolidWorksPath points SW2RD.csproj's HintPaths at the vendored
+      # SOLIDWORKS DLLs under SW2RD/lib/sw-api/api/redist/.
+      - name: Restore + Build SW2RD (Release, x64)
+        run: msbuild SW2RD\SW2RD.csproj /restore /t:Build /p:Configuration=Release /p:Platform=x64 "/p:SolidWorksPath=$env:GITHUB_WORKSPACE\SW2RD\lib\sw-api" /verbosity:minimal /nologo
 
       # Upload the full bin/x64/Release/ tree (DLL, vendored NuGet refs,
       # images/, .config files) so the installer job can reconstruct it at the
@@ -80,8 +80,8 @@ jobs:
       - name: Upload build output
         uses: actions/upload-artifact@v6
         with:
-          name: sw2urdf-build-output
-          path: SW2URDF/bin/x64/Release/
+          name: sw2rd-build-output
+          path: SW2RD/bin/x64/Release/
           retention-days: 7
           if-no-files-found: error
 
@@ -104,17 +104,17 @@ jobs:
         uses: actions/checkout@v5
 
       # Land at the relative path Install.iss reads from
-      # (SourceDir=..\SW2URDF\bin\, Source: x64\Release\* recursive).
+      # (SourceDir=..\SW2RD\bin\, Source: x64\Release\* recursive).
       - name: Download build output
         uses: actions/download-artifact@v6
         with:
-          name: sw2urdf-build-output
-          path: SW2URDF/bin/x64/Release/
+          name: sw2rd-build-output
+          path: SW2RD/bin/x64/Release/
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
 
-      # AssemblyVersion is pinned at 1.6.0.0 (see AssemblyInfo.cs), so the
+      # AssemblyVersion is pinned at 0.1.0.0 (see AssemblyInfo.cs), so the
       # .iss-default OutputBaseFilename (computed from GetFileVersion) would
       # collide across releases. Derive a unique suffix from the trigger
       # payload instead.
@@ -133,7 +133,7 @@ jobs:
           }
           if ([string]::IsNullOrWhiteSpace($tag)) { $tag = 'manual' }
           $safe = ($tag -replace '[^A-Za-z0-9._-]', '_')
-          $name = "sw2urdfSetup_$safe"
+          $name = "sw2rdSetup_$safe"
           Write-Host "Installer base filename: $name"
           Add-Content -Path $env:GITHUB_OUTPUT -Value "name=$name"
 
@@ -156,7 +156,7 @@ jobs:
 
       # Mint a Sigstore-backed build provenance attestation. Users verify with:
       #
-      #   gh attestation verify sw2urdfSetup_<tag>.exe -R <owner>/<repo>
+      #   gh attestation verify sw2rdSetup_<tag>.exe -R <owner>/<repo>
       #
       # predicate-type is pinned to SLSA v1 because `gh attestation verify`
       # defaults to it; changing it silently breaks verification of installers

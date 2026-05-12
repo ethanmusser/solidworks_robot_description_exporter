@@ -1,46 +1,31 @@
-# SolidWorks to URDF Exporter
+# SolidWorks Robot Description Exporter
 
-Authored and maintained by [Stephen Brawner](brawner@gmail.com). Past supporters include [PickNik Consulting](https://picknik.ai), Verb Surgical, Open Robotics, and Willow Garage. 
+A SolidWorks add-in that exports assemblies as URDF and MJCF robot descriptions.
 
-## Latest Release
-
-**SolidWorks 2021**
-
-https://github.com/ethanmusser/solidworks_robot_description_exporter/releases/tag/1.6.1
-
-**SolidWorks 2020**
-
-https://github.com/ethanmusser/solidworks_robot_description_exporter/releases/tag/1.6.0
-
-**SolidWorks 2019 on 2018 SP 5**
-
-https://github.com/ethanmusser/solidworks_robot_description_exporter/releases/tag/1.5.1
+The exporter is a hard fork of [Stephen Brawner's SolidWorks to URDF Exporter](https://github.com/ros/solidworks_urdf_exporter), extended with native MJCF support (separate visual / collision meshes, `<site>` tags, per-link inertial-source selection, etc.). See `AGENTS.md` for the project's design rationale.
 
 ## SolidWorks Version Requirements
 
-1. The minimum required version of SolidWorks for use with this add-in is 2018 Service Pack 5. SolidWorks 2017 or earlier may work. See [this issue](https://github.com/ethanmusser/solidworks_robot_description_exporter/issues/73).
+The minimum required version of SolidWorks for use with this add-in is 2018 Service Pack 5. SolidWorks 2017 or earlier may work but is not tested.
 
 ## Usage
 
-See the [ROS Wiki](http://wiki.ros.org/sw_urdf_exporter) and associated [tutorials](http://wiki.ros.org/sw_urdf_exporter/Tutorials).
+URDF-side usage follows the original [ROS Wiki](http://wiki.ros.org/sw_urdf_exporter) and associated [tutorials](http://wiki.ros.org/sw_urdf_exporter/Tutorials); the SW UI flow is unchanged. MJCF output is selected from the same "Export Robot Description" PropertyManager page via the output-format combo box.
 
 ## Development
 
-1. Install Visual Studio 2017
-1. Install .NET desktop development
-    1. From Visual Studio: `Tools > Get Tools and Features...`
-    1. Check `.NET desktop development` package
-    1. Select `Modify`
-1. Install the [SolidWorks API tools](https://help.solidworks.com/2019/english/api/sldworksapiprogguide/GettingStarted/SolidWorks_API_Getting_Started_Overview.htm)
-1. Launch Visual Studio with admin privileges. Right click and select `Run as Administrator`
-1. Open `sw2urdf/SW2URDF.sln`  
-1. Enable Debugging
-    1. Right click `SW2URDF` in the Solution Explorer
-    1. Click the `Debug` Tab
-    1. Ensure `Configuration:` is set to `Debug`
-    1. Ensure `Start external program:` is pointing to the SolidWorks executable. For example `C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\SLDWORKS.exe`
+1. Install Visual Studio 2017 or newer.
+1. Install the `.NET desktop development` workload from `Tools > Get Tools and Features...`.
+1. Install the [SolidWorks API tools](https://help.solidworks.com/2019/english/api/sldworksapiprogguide/GettingStarted/SolidWorks_API_Getting_Started_Overview.htm).
+1. Launch Visual Studio with admin privileges (right-click -> `Run as Administrator`).
+1. Open `solidworks_urdf_exporter/SW2RD.sln`.
+1. Enable Debugging:
+    1. Right click `SW2RD` in the Solution Explorer -> `Properties`.
+    1. Click the `Debug` tab.
+    1. Ensure `Configuration:` is set to `Debug`.
+    1. Ensure `Start external program:` is pointing to the SolidWorks executable (e.g. `C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\SLDWORKS.exe`).
 
-Local development continues to use the SolidWorks API DLLs from the developer's SolidWorks install (`$(SolidWorksPath)` in[SW2URDF.csproj](SW2URDF/SW2URDF.csproj)). The vendored copies under [SW2URDF/lib/sw-api/](SW2URDF/lib/sw-api/) are only consulted by CI; see that folder's README for details.
+Local development uses the SolidWorks API DLLs from the developer's SolidWorks install (`$(SolidWorksPath)` in [SW2RD/SW2RD.csproj](SW2RD/SW2RD.csproj)). The vendored copies under [SW2RD/lib/sw-api/](SW2RD/lib/sw-api/) are only consulted by CI; see that folder's README for details.
 
 ## Releasing
 
@@ -49,13 +34,13 @@ The Inno Setup installer is built automatically by
 
 1. Publish a Release on GitHub (Releases tab -> Draft a new release). Pick or
    create the tag you want the release to point at and write release notes.
-1. The workflow builds `SW2URDF.dll` in `Release` configuration against the
+1. The workflow builds `SW2RD.dll` in `Release` configuration against the
    vendored SolidWorks API DLLs under
-   [SW2URDF/lib/sw-api/](SW2URDF/lib/sw-api/), compiles
+   [SW2RD/lib/sw-api/](SW2RD/lib/sw-api/), compiles
    [INSTALL/Install.iss](INSTALL/Install.iss) with Inno Setup, and attaches
    two assets to the triggering release:
-   - `sw2urdfSetup_<tag>.exe` - the installer itself
-   - `sw2urdfSetup_<tag>.exe.sha256` - SHA-256 checksum of the installer
+   - `sw2rdSetup_<tag>.exe` - the installer itself
+   - `sw2rdSetup_<tag>.exe.sha256` - SHA-256 checksum of the installer
 1. The workflow also mints a [GitHub Artifact Attestation](https://docs.github.com/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
    for the installer. The attestation cryptographically ties the .exe to this
    workflow file, the source commit, and the workflow run that produced it.
@@ -74,7 +59,7 @@ The installer is not Authenticode-signed, so Windows SmartScreen and some antivi
 This verifies the cryptographic [build provenance attestation](https://docs.github.com/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations) minted by GitHub at build time. Requires the [`gh`](https://cli.github.com/) CLI but no additional tooling.
 
 ```powershell
-gh attestation verify sw2urdfSetup_<tag>.exe --repo ethanmusser/solidworks_robot_description_exporter
+gh attestation verify sw2rdSetup_<tag>.exe --repo ethanmusser/solidworks_robot_description_exporter
 ```
 
 A successful run prints the workflow file (`.github/workflows/release.yml`), the source commit SHA, and the timestamp of the run that produced the file.
@@ -83,18 +68,24 @@ This proves that the installer was built by `.github/workflows/release.yml` in t
 
 ### SHA-256 checksum
 
-Each release also publishes a `sw2urdfSetup_<tag>.exe.sha256` file alongside the installer. To verify:
+Each release also publishes a `sw2rdSetup_<tag>.exe.sha256` file alongside the installer. To verify:
 
 ```powershell
-Get-FileHash sw2urdfSetup_<tag>.exe -Algorithm SHA256
-# Compare the printed hash against the contents of sw2urdfSetup_<tag>.exe.sha256
+Get-FileHash sw2rdSetup_<tag>.exe -Algorithm SHA256
+# Compare the printed hash against the contents of sw2rdSetup_<tag>.exe.sha256
 ```
 
 On Linux / WSL / macOS:
 
 ```bash
-sha256sum -c sw2urdfSetup_<tag>.exe.sha256
+sha256sum -c sw2rdSetup_<tag>.exe.sha256
 ```
+
+## Migrating from SW2URDF
+
+The SolidWorks Robot Description Exporter (SW2RD) is intentionally a separate add-in from the original SolidWorks URDF Exporter (SW2URDF): the DLL filename, COM CLSID, install directory, and Inno Setup AppId are all distinct. Both add-ins can coexist on the same machine.
+
+When SW2RD opens an existing SW2URDF assembly, it transparently reads the SW2URDF v2 JSON configuration attribute (`URDF Export Configuration (v2)`) once, then writes the new attribute (`SW2RD Export Configuration (v1)`) on the next save. The old attribute is preserved on the model so the SW2URDF exporter can still read it; SW2URDF v1.5 DataContract XML and older are not carried over.
 
 ## Converting mesh format from 3dxml to dae
 
@@ -105,7 +96,7 @@ pip3 install scikit-robot -U
 convert-urdf-mesh <URDF_PATH> --output <OUTPUT_URDF_PATH>
 ```
 
-### Trouble Shooting
+### Troubleshooting
 
-1. `AxImp.exe` error - Check the installation of the .Net Tools. If there is no error, install the Windows 10 SDK.
-1. `Resourse.resx` error - Check if `sw2urdf/SW2URDF/Resources.resx` exists and is empty. If empty, delete this file then right click the `SW2URDF` in the Solution Explorer and select `Properties`. Navigate to the Resources tab and click the button to create a new file.
+1. `AxImp.exe` error - Check the installation of the .NET tools. If there is no error, install the Windows 10 SDK.
+1. `Resources.resx` error - Check if `solidworks_urdf_exporter/SW2RD/Properties/Resources.resx` exists and is empty. If empty, delete this file then right-click `SW2RD` in the Solution Explorer and select `Properties`. Navigate to the Resources tab and click the button to create a new file.
