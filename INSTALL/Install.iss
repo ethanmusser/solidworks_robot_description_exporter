@@ -63,14 +63,83 @@ Source: x64\{#BuildConfig}\*;  DestDir: {app}; Flags: ignoreversion recursesubdi
 
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
-[Run]                                                        
-Filename: "{reg:HKLM64\SOFTWARE\Microsoft\.NETFramework,InstallRoot}\v4.0.30319\RegAsm.exe"; Parameters: """{app}\SW2URDF.dll"" ""/codebase"""; StatusMsg: Registering controls ...; Check: IsWin64; Languages:
-
-
 [Registry]
 Root: HKLM64; Subkey: "SOFTWARE\SolidWorks\Addins\65c9fc17-6a74-45a3-8f84-55185900275d";        ValueType: none; ValueName: ""; Flags: dontcreatekey deletekey uninsdeletevalue; Check: IsWin64
 Root: HKCU64; Subkey: "Software\SolidWorks\AddInsStartup\65c9fc17-6a74-45a3-8f84-55185900275d"; ValueType: none; ValueName: ""; Flags: dontcreatekey deletekey uninsdeletevalue; Check: IsWin64
 
-[UninstallRun]
+[Code]
+{
+  COM (un)registration is done from [Code] rather than [Run]/[UninstallRun]
+  so we can:
 
-Filename: "{reg:HKLM64\SOFTWARE\Microsoft\.NETFramework,InstallRoot}\v4.0.30319\RegAsm.exe"; Parameters:  """{app}\SW2URDF.dll"" ""/unregister"""; StatusMsg: Unregistering controls ...; Check: IsWin64; Languages:
+  1. Use Exec() (which wraps CreateProcess directly) and get an explicit
+     ResultCode back from RegAsm, so a real failure (RegAsm missing,
+     registry write blocked by antivirus, etc.) can surface a useful
+     message instead of a generic system-error popup.
+
+  2. Validate that RegAsm.exe actually exists before trying to launch it,
+     and bail with a clear "install .NET Framework 4.x" message if not.
+
+  RegAsm.exe lives in the canonical .NET Framework 4.x 64-bit directory.
+  The v4.0.30319 folder name has been stable across every 4.x minor
+  version (4.0 through 4.8.1) since .NET 4.0 shipped.
+}
+
+function RegAsmPath: String;
+begin
+  Result := ExpandConstant('{win}\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe');
+end;
+
+function InstalledDllPath: String;
+begin
+  Result := ExpandConstant('{app}\SW2URDF.dll');
+end;
+
+function UninstalledDllPath: String;
+begin
+  Result := ExpandConstant('{app}\SW2URDF.dll');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+  RegAsm, Dll: String;
+begin
+  if CurStep <> ssPostInstall then
+    Exit;
+  RegAsm := RegAsmPath;
+  Dll := InstalledDllPath;
+  if not FileExists(RegAsm) then begin
+    MsgBox('Could not register the URDF/MJCF Exporter add-in for SOLIDWORKS:'#13#10 +
+           'RegAsm.exe was not found at:'#13#10#13#10 + RegAsm + #13#10#13#10 +
+           '.NET Framework 4.x must be installed for the add-in to work.',
+           mbCriticalError, MB_OK);
+    Exit;
+  end;
+  WizardForm.StatusLabel.Caption := 'Registering controls ...';
+  if not Exec(RegAsm, '"' + Dll + '" /codebase', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then begin
+    MsgBox('Failed to launch RegAsm.exe to register the add-in:'#13#10 +
+           SysErrorMessage(ResultCode),
+           mbError, MB_OK);
+  end else if ResultCode <> 0 then begin
+    MsgBox('RegAsm.exe exited with code ' + IntToStr(ResultCode) + ' while registering the add-in.'#13#10 +
+           'The SOLIDWORKS add-in may not load correctly until this is resolved.',
+           mbError, MB_OK);
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
+  RegAsm, Dll: String;
+begin
+  if CurUninstallStep <> usUninstall then
+    Exit;
+  RegAsm := RegAsmPath;
+  Dll := UninstalledDllPath;
+  if not FileExists(RegAsm) then
+    Exit;
+  if not FileExists(Dll) then
+    Exit;
+  Exec(RegAsm, '"' + Dll + '" /unregister', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
