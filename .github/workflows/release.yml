@@ -55,21 +55,21 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Setup NuGet
-        uses: NuGet/setup-nuget@v2
-
-      - name: Restore NuGet packages
-        run: nuget restore SW2URDF.sln
-
-      # Build only the SW2URDF project. The sibling TestRunner project in the
-      # solution is a developer test harness that references the SOLIDWORKS
-      # interop DLLs without EmbedInteropTypes and is not part of the
-      # installer payload, so we deliberately skip it.
+      # Restore + build SW2URDF.csproj in a single MSBuild invocation. We
+      # deliberately do NOT use the standalone `nuget.exe restore` against the
+      # solution: NuGet 7.x has surfaced a "MsBuild timeout out while trying
+      # to get project to project references" failure when restoring this
+      # solution, and a sln-level restore also pulls in the sibling
+      # TestRunner project (which references solidworkstools.dll via
+      # $(SolidWorksPath), unsatisfiable on GitHub-hosted runners). SW2URDF
+      # is an SDK-style project, so `msbuild /restore /t:Build` uses the
+      # NuGet client that ships inside Visual Studio and scopes the work
+      # to exactly the project we ship.
       #
       # /p:SolidWorksPath redirects the HintPaths in SW2URDF.csproj to the
       # vendored SOLIDWORKS DLLs under SW2URDF/lib/sw-api/api/redist/.
-      - name: Build SW2URDF (Release, x64)
-        run: msbuild SW2URDF\SW2URDF.csproj /t:Build /p:Configuration=Release /p:Platform=x64 "/p:SolidWorksPath=$env:GITHUB_WORKSPACE\SW2URDF\lib\sw-api" /verbosity:minimal /nologo
+      - name: Restore + Build SW2URDF (Release, x64)
+        run: msbuild SW2URDF\SW2URDF.csproj /restore /t:Build /p:Configuration=Release /p:Platform=x64 "/p:SolidWorksPath=$env:GITHUB_WORKSPACE\SW2URDF\lib\sw-api" /verbosity:minimal /nologo
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
@@ -82,8 +82,13 @@ jobs:
       - name: Compute installer filename
         id: filename
         run: |
-          if ($env:GITHUB_EVENT_NAME -eq 'release') {
+          $evt = $env:GITHUB_EVENT_NAME
+          if ($evt -eq 'release') {
             $tag = '${{ github.event.release.tag_name }}'
+          } elseif ($evt -eq 'pull_request') {
+            $sha = '${{ github.event.pull_request.head.sha }}'
+            $shortSha = if ($sha.Length -ge 7) { $sha.Substring(0,7) } else { $sha }
+            $tag = "pr${{ github.event.pull_request.number }}-$shortSha"
           } else {
             $tag = '${{ github.event.inputs.tag_name }}'
           }
