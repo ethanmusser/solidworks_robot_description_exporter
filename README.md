@@ -53,12 +53,48 @@ The Inno Setup installer is built automatically by
    vendored SolidWorks API DLLs under
    [SW2URDF/lib/sw-api/](SW2URDF/lib/sw-api/), compiles
    [INSTALL/Install.iss](INSTALL/Install.iss) with Inno Setup, and attaches
-   the resulting `sw2urdfSetup_<tag>.exe` to the triggering release as an
-   asset.
+   two assets to the triggering release:
+   - `sw2urdfSetup_<tag>.exe` - the installer itself
+   - `sw2urdfSetup_<tag>.exe.sha256` - SHA-256 checksum of the installer
+1. The workflow also mints a [GitHub Artifact Attestation](https://docs.github.com/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
+   for the installer. The attestation cryptographically ties the .exe to this
+   workflow file, the source commit, and the workflow run that produced it.
+   See "Verifying downloads" below.
 1. The pipeline can also be invoked manually from the Actions tab
    (`workflow_dispatch`) to smoke-test changes without cutting a real
-   release; in that mode the installer is uploaded only as a workflow
-   artifact, not attached to a release.
+   release; in that mode the installer + checksum are uploaded only as
+   workflow artifacts, not attached to a release.
+
+## Verifying downloads
+
+The installer is not Authenticode-signed, so Windows SmartScreen and some antivirus / EDR products will warn about an "unknown publisher" the first time you run it. To verify that the `.exe` you downloaded was actually produced by this repository's CI pipeline (and not modified in transit, on the release page, or by anyone other than this workflow), use one of the two paths below.
+
+### GitHub CLI
+
+This verifies the cryptographic [build provenance attestation](https://docs.github.com/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations) minted by GitHub at build time. Requires the [`gh`](https://cli.github.com/) CLI but no additional tooling.
+
+```powershell
+gh attestation verify sw2urdfSetup_<tag>.exe -R ethanmusser/solidworks_urdf_exporter
+```
+
+A successful run prints the workflow file (`.github/workflows/release.yml`), the source commit SHA, and the timestamp of the run that produced the file.
+
+This proves that the installer was built by `.github/workflows/release.yml` in this repository, from a specific commit, by GitHub-hosted runners, at a specific time. This does NOT prove that the resulting executable is free of malware; only its provenance.
+
+### SHA-256 checksum
+
+Each release also publishes a `sw2urdfSetup_<tag>.exe.sha256` file alongside the installer. To verify:
+
+```powershell
+Get-FileHash sw2urdfSetup_<tag>.exe -Algorithm SHA256
+# Compare the printed hash against the contents of sw2urdfSetup_<tag>.exe.sha256
+```
+
+On Linux / WSL / macOS:
+
+```bash
+sha256sum -c sw2urdfSetup_<tag>.exe.sha256
+```
 
 ## Converting mesh format from 3dxml to dae
 
