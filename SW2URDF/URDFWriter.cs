@@ -8,7 +8,6 @@ using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swpublished;
 using SolidWorks.Interop.swconst;
 using SolidWorksTools;
-using SolidWorksTools.File;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Windows.Forms;

@@ -65,9 +65,15 @@
       <HintPath>$(SolidWorksPath)\api\redist\SolidWorks.Interop.swpublished.dll</HintPath>
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </Reference>
-    <Reference Include="solidworkstools">
-      <HintPath>$(SolidWorksPath)\solidworkstools.dll</HintPath>
-    </Reference>
+
+    <!--
+      The SwAddinAttribute used by SwAddin.cs would normally come from
+      SolidWorksTools.dll, which lives in the main SOLIDWORKS install folder
+      (NOT api/redist/) and is NOT on SolidWorks's redistribution allow-list.
+      We replace it with an in-project shim in SW/SwAddinAttribute.cs so the
+      build does not need that DLL and the produced installer is fully
+      license-clean.
+    -->
 
     <!-- log4net is shipped as a vendored binary in lib/. -->
     <Reference Include="log4net">
