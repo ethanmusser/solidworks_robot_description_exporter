@@ -1,4 +1,5 @@
 using SolidWorks.Interop.sldworks;
+using SW2URDF.Core;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
@@ -107,6 +108,15 @@ namespace SW2URDF.URDF
         // Sites attached to this link/body for MJCF export. Ignored by the URDF writer.
         [DataMember(IsRequired = false)]
         public List<SiteSpec> Sites;
+
+        // How a top-level body (immediate child of the world) attaches to
+        // the world frame. Welded -> no joint emitted; Free -> MJCF
+        // <freejoint/> on the body (URDF cannot express this and the writer
+        // warns + drops it). Ignored on nested links, which describe their
+        // attachment via Joint.Type. IsRequired=false so legacy configs
+        // (pre-WorldNode) deserialize cleanly with the default Welded.
+        [DataMember(IsRequired = false)]
+        public WorldAttachmentModel WorldAttachment;
 
         // VisualComponents is a flattened view across all visual groups. Setter
         // collapses to a single default group containing the supplied list.
@@ -482,6 +492,7 @@ namespace SW2URDF.URDF
 
             isFixedFrame = externalLink.isFixedFrame;
             CollisionUsesVisual = externalLink.CollisionUsesVisual;
+            WorldAttachment = externalLink.WorldAttachment;
         }
 
         private static List<MeshGroup> CloneGroups(List<MeshGroup> source)

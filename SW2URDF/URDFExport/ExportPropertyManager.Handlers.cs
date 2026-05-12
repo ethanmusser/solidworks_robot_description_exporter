@@ -300,31 +300,43 @@ namespace SW2URDF.URDFExport
             }
             else if (Id == SelectionGlobalCoordsysID)
             {
-                // Base-link global origin coord-sys. The picked feature
-                // name is the source of truth; an empty mark means the
-                // user cleared the box (or SW released marks during a
-                // tab switch) and we keep the existing value to avoid
-                // wiping it on programmatic teardown.
+                // Global origin coord-sys lives on the WorldNode at the
+                // root of the tree. The picked feature name writes to
+                // the WorldNode's GlobalOriginCoordinateSystemName which
+                // (for backwards-compat with the existing STL anchor /
+                // LocalizeJoint reads) is stored on the WorldNode's
+                // sentinel Link.Joint.CoordinateSystemName. An empty
+                // mark means the user cleared the box (or SW released
+                // marks during a tab switch); we keep the existing
+                // value to avoid wiping it on programmatic teardown.
                 string picked = ReadMarkedFeatureName(GlobalCoordSysSelectionMark);
-                if (!string.IsNullOrEmpty(picked))
+                if (!string.IsNullOrEmpty(picked) && active is WorldNode worldActive)
                 {
-                    active.Link.Joint.CoordinateSystemName = picked;
+                    worldActive.GlobalOriginCoordinateSystemName = picked;
                 }
             }
             else if (Id == SelectionJointCoordsysID)
             {
+                // The "Link coordinate system" picker is enabled for both
+                // top-level bodies (where it is the world->body offset
+                // coord-sys) and nested links (where it is the joint
+                // origin). It is disabled on the WorldNode itself, so
+                // the gate is `active is not WorldNode` rather than the
+                // pre-refactor `!active.IsBaseNode`.
                 string picked = ReadMarkedFeatureName(JointCoordSysSelectionMark);
                 logger.Info("OnSelectionboxListChanged(JointCoordsysID, Count=" + Count +
-                            ") picked='" + picked + "' isBase=" + active.IsBaseNode);
-                if (!string.IsNullOrEmpty(picked) && !active.IsBaseNode)
+                            ") picked='" + picked + "' isWorld=" + (active is WorldNode));
+                if (!string.IsNullOrEmpty(picked) && !(active is WorldNode))
                 {
                     active.Link.Joint.CoordinateSystemName = picked;
-                    // RefreshAxisDirectionPreview MUST be deferred -
-                    // it calls EstimateAxis -> ClearSelection2(true)
-                    // which would otherwise wipe the marked pick the
-                    // user just made out of this very SelectionBox
-                    // before SW gets a chance to render it. Same
-                    // re-entrancy hazard as OnAxisOverlayDirectionFlipped.
+                    // RefreshAxisDirectionPreview is only meaningful for
+                    // nested links (where there's an actual joint axis
+                    // to preview). For top-level bodies the axis
+                    // SelectionBox is disabled and Link.Joint.AxisName is
+                    // empty, so the preview helper short-circuits to a
+                    // no-op overlay clear. Defer either way - the
+                    // EstimateAxis -> ClearSelection2(true) re-entrancy
+                    // hazard is identical to OnAxisOverlayDirectionFlipped.
                     DeferRefreshAxisPreview();
                 }
             }
@@ -333,7 +345,7 @@ namespace SW2URDF.URDFExport
                 string picked = ReadMarkedFeatureName(JointAxisSelectionMark);
                 logger.Info("OnSelectionboxListChanged(JointAxisID, Count=" + Count +
                             ") picked='" + picked + "' isBase=" + active.IsBaseNode);
-                if (!string.IsNullOrEmpty(picked) && !active.IsBaseNode)
+                if (!string.IsNullOrEmpty(picked) && !active.IsBaseNode && !active.IsTopLevelBody)
                 {
                     active.Link.Joint.AxisName = picked;
                     // An explicit pick means the user no longer wants
@@ -613,6 +625,22 @@ namespace SW2URDF.URDFExport
                         logger.Warn(
                             "OnComboboxSelectionChanged(InertialSource) rehydrate failed: " + ex.Message);
                     }
+                }
+                return;
+            }
+
+            if (Id == ComboBoxWorldAttachmentID)
+            {
+                // World attachment combobox order MUST match
+                // WorldAttachmentModel (Welded = 0, Free = 1) - see the
+                // AddItems call in BuildWorldAttachmentControls.
+                LinkNode active = (LinkNode)Tree?.SelectedNode;
+                if (active != null && active.IsTopLevelBody && active.Link != null)
+                {
+                    active.Link.WorldAttachment =
+                        (Item == 1)
+                            ? SW2URDF.Core.WorldAttachmentModel.Free
+                            : SW2URDF.Core.WorldAttachmentModel.Welded;
                 }
                 return;
             }

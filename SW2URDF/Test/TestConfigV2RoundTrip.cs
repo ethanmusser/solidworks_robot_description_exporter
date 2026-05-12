@@ -9,9 +9,10 @@ namespace SW2URDF.Test
 {
     // SW-less coverage for the ConfigV2 JSON persistence path. These tests
     // protect the System.Text.Json record-deserialization invariant: every
-    // ConfigV2 / KinematicTree / LinkModel / JointModel record must be
-    // reconstructible from its own JSON output. A regression here breaks
-    // configuration save/load on every assembly that uses the exporter.
+    // ConfigV2 / KinematicTree / LinkModel / JointModel record
+    // must be reconstructible from its own JSON output. A regression here
+    // breaks configuration save/load on every assembly that uses the
+    // exporter.
     public class TestConfigV2RoundTrip
     {
         [Fact]
@@ -35,8 +36,8 @@ namespace SW2URDF.Test
             string json = ConfigV2JsonSerializer.Serialize(original);
             ConfigV2 read = ConfigV2JsonSerializer.Deserialize(json);
 
-            LinkModel originalRoot = original.Tree.BaseLink;
-            LinkModel readRoot = read.Tree.BaseLink;
+            LinkModel originalRoot = FirstTopLevel(original.Tree);
+            LinkModel readRoot = FirstTopLevel(read.Tree);
 
             Assert.Equal(originalRoot.Name, readRoot.Name);
             Assert.Equal(originalRoot.Children.Count, readRoot.Children.Count);
@@ -63,8 +64,8 @@ namespace SW2URDF.Test
             string json = ConfigV2JsonSerializer.Serialize(original);
             ConfigV2 read = ConfigV2JsonSerializer.Deserialize(json);
 
-            byte[] originalPid = original.Tree.BaseLink.VisualGroups[0].Components[0].PersistentId;
-            byte[] readPid = read.Tree.BaseLink.VisualGroups[0].Components[0].PersistentId;
+            byte[] originalPid = FirstTopLevel(original.Tree).VisualGroups[0].Components[0].PersistentId;
+            byte[] readPid = FirstTopLevel(read.Tree).VisualGroups[0].Components[0].PersistentId;
 
             Assert.NotNull(readPid);
             Assert.Equal(originalPid.Length, readPid.Length);
@@ -74,17 +75,12 @@ namespace SW2URDF.Test
         [Fact]
         public void TestRoundTripPreservesNewJointPropertiesFields()
         {
-            // SampleConfig populates all of: AutoComputeLimits=false,
-            // Damping, Friction, Armature, Reference. Verifies that the
-            // System.Text.Json record-deserialization picks up the new
-            // ctor parameters (added with default values for backward
-            // compat) when present in the JSON.
             ConfigV2 original = SampleConfig();
             string json = ConfigV2JsonSerializer.Serialize(original);
             ConfigV2 read = ConfigV2JsonSerializer.Deserialize(json);
 
-            JointModel originalJoint = original.Tree.BaseLink.Children[0].Joint;
-            JointModel readJoint = read.Tree.BaseLink.Children[0].Joint;
+            JointModel originalJoint = FirstTopLevel(original.Tree).Children[0].Joint;
+            JointModel readJoint = FirstTopLevel(read.Tree).Children[0].Joint;
 
             Assert.Equal(originalJoint.AutoComputeLimits, readJoint.AutoComputeLimits);
             Assert.Equal(originalJoint.Damping, readJoint.Damping);
@@ -96,15 +92,12 @@ namespace SW2URDF.Test
         [Fact]
         public void TestRoundTripPreservesAutoDeriveAxisField()
         {
-            // SampleConfig sets AutoDeriveAxis = false by default.
-            // Build a parallel config with AutoDeriveAxis = true and
-            // verify the JSON round-trip preserves the bit.
             ConfigV2 original = SampleConfigWithAutoDeriveAxis(autoDerive: true);
             string json = ConfigV2JsonSerializer.Serialize(original);
             ConfigV2 read = ConfigV2JsonSerializer.Deserialize(json);
 
-            JointModel originalJoint = original.Tree.BaseLink.Children[0].Joint;
-            JointModel readJoint = read.Tree.BaseLink.Children[0].Joint;
+            JointModel originalJoint = FirstTopLevel(original.Tree).Children[0].Joint;
+            JointModel readJoint = FirstTopLevel(read.Tree).Children[0].Joint;
 
             Assert.True(originalJoint.AutoDeriveAxis);
             Assert.True(readJoint.AutoDeriveAxis);
@@ -129,10 +122,6 @@ namespace SW2URDF.Test
                 AxisName: "Automatically Generate",
                 AxisFlipped: false);
 
-            SW2URDF.URDF.Joint adapted = new SW2URDF.URDF.Joint();
-            // Use reflection: ApplyJoint is private. Instead, we invoke
-            // the public ToLegacyLink on a synthetic LinkModel that
-            // wraps the legacy joint so the adapter pipeline runs.
             LinkModel root = new LinkModel(
                 "base_link", null, null,
                 Array.Empty<MeshGroupModel>(), Array.Empty<MeshGroupModel>(),
@@ -157,8 +146,6 @@ namespace SW2URDF.Test
 
             Assert.True(legacyChild.Joint.AutoDeriveAxis);
             Assert.Equal(string.Empty, legacyChild.Joint.AxisName);
-            // Quiet unused-local warning.
-            Assert.NotNull(adapted);
         }
 
         [Fact]
@@ -171,7 +158,12 @@ namespace SW2URDF.Test
             // would silently flip to "manual limits" on first reload.
             string json = "{ \"SchemaVersion\": " + ConfigV2.CurrentSchemaVersion + ", " +
                 "\"ExporterVersion\": \"\", \"SavedAtUtc\": \"2024-01-01T00:00:00Z\", " +
-                "\"Tree\": { \"Name\": \"x\", \"BaseLink\": { " +
+                "\"Tree\": { \"Name\": \"x\", " +
+                "\"GlobalOriginCoordinateSystemName\": \"\", " +
+                "\"WorldBody\": { \"Name\": \"world\", \"Inertial\": null, \"Material\": null, " +
+                "\"VisualGroups\": [], \"CollisionGroups\": [], \"CollisionUsesVisual\": false, " +
+                "\"InertialSource\": 0, \"InertialComponents\": [], \"Sites\": [], " +
+                "\"Joint\": null, \"Children\": [{ " +
                 "\"Name\": \"base\", \"Inertial\": null, \"Material\": null, " +
                 "\"VisualGroups\": [], \"CollisionGroups\": [], \"CollisionUsesVisual\": false, " +
                 "\"InertialSource\": 0, \"InertialComponents\": [], \"Sites\": [], " +
@@ -185,10 +177,10 @@ namespace SW2URDF.Test
                 "\"Rotation\": { \"Roll\": 0, \"Pitch\": 0, \"Yaw\": 0 } }, " +
                 "\"Axis\": { \"X\": 0, \"Y\": 0, \"Z\": 1 }, \"Limit\": null, " +
                 "\"CoordinateSystemName\": \"\", \"AxisName\": \"\", \"AxisFlipped\": false }, " +
-                "\"Children\": [] }] } } }";
+                "\"Children\": [] }] }] } } }";
 
             ConfigV2 read = ConfigV2JsonSerializer.Deserialize(json);
-            JointModel joint = read.Tree.BaseLink.Children[0].Joint;
+            JointModel joint = FirstTopLevel(read.Tree).Children[0].Joint;
             Assert.True(joint.AutoComputeLimits);
             Assert.Null(joint.Damping);
             Assert.Null(joint.Friction);
@@ -203,8 +195,8 @@ namespace SW2URDF.Test
             string json = ConfigV2JsonSerializer.Serialize(original);
             ConfigV2 read = ConfigV2JsonSerializer.Deserialize(json);
 
-            LinkModel originalChild = original.Tree.BaseLink.Children[0];
-            LinkModel readChild = read.Tree.BaseLink.Children[0];
+            LinkModel originalChild = FirstTopLevel(original.Tree).Children[0];
+            LinkModel readChild = FirstTopLevel(read.Tree).Children[0];
 
             Assert.Equal(originalChild.InertialSource, readChild.InertialSource);
             Assert.Equal(originalChild.CollisionUsesVisual, readChild.CollisionUsesVisual);
@@ -221,11 +213,13 @@ namespace SW2URDF.Test
         {
             ConfigV2 stale = new ConfigV2(99, "1.0", DateTime.UtcNow,
                 new KinematicTree("x",
-                    new LinkModel("base", null, null,
-                        Array.Empty<MeshGroupModel>(), Array.Empty<MeshGroupModel>(), false,
-                        InertialSourceModel.Visual,
-                        Array.Empty<ComponentReferenceModel>(),
-                        Array.Empty<SiteModel>(), null, Array.Empty<LinkModel>())));
+                    "",
+                    WorldBody(
+                        new LinkModel("base", null, null,
+                            Array.Empty<MeshGroupModel>(), Array.Empty<MeshGroupModel>(), false,
+                            InertialSourceModel.Visual,
+                            Array.Empty<ComponentReferenceModel>(),
+                            Array.Empty<SiteModel>(), null, Array.Empty<LinkModel>()))));
             string json = JsonSerializer.Serialize(stale, new JsonSerializerOptions { WriteIndented = true });
 
             Assert.Throws<NotSupportedException>(() => ConfigV2JsonSerializer.Deserialize(json));
@@ -241,13 +235,150 @@ namespace SW2URDF.Test
             Assert.True(ConfigV2JsonSerializer.LooksLikeJson(json));
         }
 
+        [Fact]
+        public void TestRoundTripPreservesWorldGlobalOriginAndAttachment()
+        {
+            // Verifies the new WorldBody / TopLevelBodies shape: the world's
+            // global-origin coord-sys and each top-level body's
+            // WorldAttachment must round-trip across JSON.
+            ConfigV2 original = SampleConfig();
+            string json = ConfigV2JsonSerializer.Serialize(original);
+            ConfigV2 read = ConfigV2JsonSerializer.Deserialize(json);
+
+            Assert.NotNull(read.Tree.WorldBody);
+            Assert.Equal(
+                original.Tree.GlobalOriginCoordinateSystemName,
+                read.Tree.GlobalOriginCoordinateSystemName);
+            Assert.Equal(original.Tree.TopLevelBodies.Count, read.Tree.TopLevelBodies.Count);
+            for (int i = 0; i < original.Tree.TopLevelBodies.Count; i++)
+            {
+                Assert.Equal(
+                    original.Tree.TopLevelBodies[i].WorldAttachment,
+                    read.Tree.TopLevelBodies[i].WorldAttachment);
+            }
+        }
+
+        [Fact]
+        public void TestRoundTripPreservesMultipleTopLevelBodiesAndFreeAttachment()
+        {
+            // Two top-level bodies, the second is Free. Verifies multi-tree
+            // round-trip and WorldAttachment.Free preservation.
+            LinkModel root1 = SimpleLink("base_a");
+            LinkModel root2 = SimpleLink("base_b") with
+            {
+                WorldAttachment = WorldAttachmentModel.Free,
+            };
+            KinematicTree tree = new KinematicTree(
+                "multi_tree",
+                "Origin_global",
+                WorldBody(root1, root2));
+            ConfigV2 original = new ConfigV2(
+                ConfigV2.CurrentSchemaVersion, "1.6.1-test",
+                new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                tree);
+
+            string json = ConfigV2JsonSerializer.Serialize(original);
+            ConfigV2 read = ConfigV2JsonSerializer.Deserialize(json);
+
+            Assert.Equal(2, read.Tree.TopLevelBodies.Count);
+            Assert.Equal("base_a", read.Tree.TopLevelBodies[0].Name);
+            Assert.Equal("base_b", read.Tree.TopLevelBodies[1].Name);
+            Assert.Equal(WorldAttachmentModel.Welded, read.Tree.TopLevelBodies[0].WorldAttachment);
+            Assert.Equal(WorldAttachmentModel.Free, read.Tree.TopLevelBodies[1].WorldAttachment);
+            Assert.Equal("Origin_global", read.Tree.GlobalOriginCoordinateSystemName);
+        }
+
+        [Fact]
+        public void TestRoundTripPreservesWorldLevelGeometryAndSites()
+        {
+            // A world with one visual mesh group and one site must
+            // round-trip through ConfigV2 JSON without losing either.
+            ComponentReferenceModel comp = new ComponentReferenceModel(
+                "ground-1", new byte[] { 0xAA });
+            MeshGroupModel worldVisual = new MeshGroupModel(
+                "world_visual", "world_visual.STL", new[] { comp });
+            SiteModel worldSite = new SiteModel("origin_marker", "Origin_global", null);
+            LinkModel world = WorldBody(SimpleLink("base")) with
+            {
+                Material = new MaterialModel("", new RgbaModel(0.5, 0.5, 0.5, 1), ""),
+                VisualGroups = new[] { worldVisual },
+                Sites = new[] { worldSite },
+            };
+
+            KinematicTree tree = new KinematicTree(
+                "world_geom_test", "Origin_global", world);
+            ConfigV2 original = new ConfigV2(
+                ConfigV2.CurrentSchemaVersion, "1.6.1-test", DateTime.UtcNow, tree);
+
+            string json = ConfigV2JsonSerializer.Serialize(original);
+            ConfigV2 read = ConfigV2JsonSerializer.Deserialize(json);
+
+            Assert.NotNull(read.Tree.WorldBody);
+            Assert.Equal(1, read.Tree.WorldBody.VisualGroups.Count);
+            Assert.Equal("world_visual", read.Tree.WorldBody.VisualGroups[0].Name);
+            Assert.Equal(1, read.Tree.WorldBody.VisualGroups[0].Components.Count);
+            Assert.Equal(1, read.Tree.WorldBody.Sites.Count);
+            Assert.Equal("origin_marker", read.Tree.WorldBody.Sites[0].Name);
+        }
+
+        [Fact]
+        public void TestRoundTripPreservesWorldBodyCollisionUsesVisual()
+        {
+            LinkModel world = WorldBody(SimpleLink("base")) with
+            {
+                CollisionUsesVisual = true,
+            };
+            KinematicTree tree = new KinematicTree("world_collision", "Origin_global", world);
+            ConfigV2 original = new ConfigV2(
+                ConfigV2.CurrentSchemaVersion, "1.6.1-test", DateTime.UtcNow, tree);
+
+            string json = ConfigV2JsonSerializer.Serialize(original);
+            ConfigV2 read = ConfigV2JsonSerializer.Deserialize(json);
+
+            Assert.True(read.Tree.WorldBody.CollisionUsesVisual);
+        }
+
+        // Convenience accessor used throughout the tests. All sample configs
+        // have exactly one top-level body, so this is the single-tree
+        // analogue of the old `tree.BaseLink`.
+        private static LinkModel FirstTopLevel(KinematicTree tree)
+        {
+            Assert.NotEmpty(tree.TopLevelBodies);
+            return tree.TopLevelBodies[0];
+        }
+
+        private static LinkModel SimpleLink(string name)
+        {
+            return new LinkModel(
+                name, null, null,
+                Array.Empty<MeshGroupModel>(), Array.Empty<MeshGroupModel>(),
+                false, InertialSourceModel.Visual,
+                Array.Empty<ComponentReferenceModel>(),
+                Array.Empty<SiteModel>(),
+                null, Array.Empty<LinkModel>());
+        }
+
+        private static LinkModel WorldBody(params LinkModel[] topLevelBodies)
+        {
+            return new LinkModel(
+                "world",
+                null,
+                new MaterialModel("", new RgbaModel(1, 1, 1, 1), ""),
+                Array.Empty<MeshGroupModel>(),
+                Array.Empty<MeshGroupModel>(),
+                false,
+                InertialSourceModel.Visual,
+                Array.Empty<ComponentReferenceModel>(),
+                Array.Empty<SiteModel>(),
+                null,
+                topLevelBodies);
+        }
+
         // Variant of SampleConfig that flips the AutoDeriveAxis bit on
         // the child joint so the round-trip test can verify the JSON
         // record-deserialization picks the value up off the wire.
         private static ConfigV2 SampleConfigWithAutoDeriveAxis(bool autoDerive)
         {
-            ComponentReferenceModel comp = new ComponentReferenceModel(
-                "part1-1", new byte[] { 0x01 });
             JointModel childJoint = new JointModel(
                 "joint1", "revolute", "base_link", "child_link",
                 new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
@@ -273,7 +404,9 @@ namespace SW2URDF.Test
                 null, new[] { child });
             return new ConfigV2(
                 ConfigV2.CurrentSchemaVersion, "1.0", DateTime.UtcNow,
-                new KinematicTree("autoderive_robot", root));
+                new KinematicTree("autoderive_robot",
+                    "",
+                    WorldBody(root)));
         }
 
         private static ConfigV2 SampleConfig()
@@ -327,7 +460,10 @@ namespace SW2URDF.Test
                 null,
                 new[] { child });
 
-            KinematicTree tree = new KinematicTree("test_robot", root);
+            KinematicTree tree = new KinematicTree(
+                "test_robot",
+                "Origin_global",
+                WorldBody(root));
             return new ConfigV2(
                 ConfigV2.CurrentSchemaVersion,
                 "1.6.1-test",

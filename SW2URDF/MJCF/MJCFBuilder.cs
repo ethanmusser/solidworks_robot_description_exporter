@@ -35,10 +35,19 @@ namespace SW2URDF.MJCF
         // lives in mjcf/.
         public const string DefaultTextureDir = "../textures/";
 
+        /// <summary>
+        /// Synthetic key used in <c>auxByLinkName</c> to carry world-direct
+        /// geometry / sites (the worldbody's own meshes, ground planes,
+        /// scene fiducials). Distinct from any real link name (LinkModel.Name
+        /// cannot legally start with '&lt;').
+        /// </summary>
+        public const string WorldAuxKey = "<world>";
+
         // Canonical entry point. Walks the KinematicTree and assembles the
         // MJCFModel. `auxByLinkName` carries per-link mesh/site information
         // that depends on the SolidWorks export step (mesh filenames, site
-        // poses) and is keyed by the LinkModel.Name.
+        // poses) and is keyed by the LinkModel.Name. World-direct geometry
+        // is keyed by <see cref="WorldAuxKey"/>.
         public static MJCFModel Build(
             KinematicTree tree,
             string meshDir,
@@ -52,8 +61,118 @@ namespace SW2URDF.MJCF
             MJCFModel model = new MJCFModel(tree.Name ?? "");
             model.Compiler.MeshDir = string.IsNullOrEmpty(meshDir) ? "meshes/" : meshDir;
             model.Compiler.TextureDir = DefaultTextureDir;
-            model.RootBody = BuildBody(tree.BaseLink, model.Asset, auxByLinkName, isRoot: true);
+
+            // Reset the default RootBody seed so we can build TopLevelBodies
+            // from scratch via the multi-tree walk below.
+            model.TopLevelBodies.Clear();
+            model.WorldGeoms.Clear();
+            model.WorldSites.Clear();
+
+            LinkModel worldBody = tree.WorldBody;
+            IReadOnlyList<LinkModel> topLevels =
+                worldBody?.Children ?? Array.Empty<LinkModel>();
+            foreach (LinkModel topLevel in topLevels)
+            {
+                if (topLevel == null)
+                {
+                    continue;
+                }
+                Body body = BuildBody(topLevel, model.Asset, auxByLinkName, isRoot: true);
+
+                // World->body offset: when the body's reference frame
+                // matches the world's global origin coord-sys, the legacy
+                // single-tree byte-identical output is preserved
+                // (SuppressTransform=true). When they differ, the body
+                // carries an explicit pos/quat - which is computed by
+                // the export pipeline (ExportHelperExtension's
+                // localization step) and stamped on link.Joint.Origin.
+                if (!IsWorldOffsetIdentity(tree.GlobalOriginCoordinateSystemName, topLevel))
+                {
+                    Vector3Model pos = topLevel.Joint?.Origin?.Position ?? new Vector3Model(0, 0, 0);
+                    RpyModel rpy = topLevel.Joint?.Origin?.Rotation ?? new RpyModel(0, 0, 0);
+                    body.SuppressTransform = false;
+                    body.Position = new[] { pos.X, pos.Y, pos.Z };
+                    body.Quaternion = MathOps.RPYToQuaternion(new[] { rpy.Roll, rpy.Pitch, rpy.Yaw });
+                }
+                else
+                {
+                    body.SuppressTransform = true;
+                }
+
+                if (topLevel.WorldAttachment == WorldAttachmentModel.Free)
+                {
+                    body.HasFreeJoint = true;
+                }
+
+                model.TopLevelBodies.Add(body);
+            }
+
+            // World-direct geometry / sites. The WorldAuxKey carries the
+            // mesh filenames / site transforms that the SW export step
+            // pre-computed. Empty world collections produce no <geom> /
+            // <site> elements at all, preserving today's single-tree output.
+            EmitWorldGeometry(worldBody, model, auxByLinkName);
+
             return model;
+        }
+
+        // True when the top-level body's reference frame coincides with the
+        // world's global origin (so MJCF emits SuppressTransform=true and
+        // the byte diff against today's single-tree output is zero). The
+        // canonical legacy case has both names equal to oldRoot.Joint.
+        // CoordinateSystemName, so the string compare suffices; if the
+        // names differ but the resolved transforms are equal, the export
+        // pipeline must have already stamped Origin to identity, so we
+        // also check for that.
+        private static bool IsWorldOffsetIdentity(string globalOriginName, LinkModel topLevel)
+        {
+            string worldName = globalOriginName ?? "";
+            string bodyName = topLevel?.Joint?.CoordinateSystemName ?? "";
+            if (string.Equals(worldName, bodyName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+            // Origin pose all zeros also implies identity. Defensive against
+            // a pipeline that resolves the offset down to zero numerically
+            // even when the names differ (e.g. two different feature names
+            // pointing at the same global frame).
+            PoseModel origin = topLevel?.Joint?.Origin;
+            if (origin == null)
+            {
+                return true;
+            }
+            Vector3Model pos = origin.Position ?? new Vector3Model(0, 0, 0);
+            RpyModel rpy = origin.Rotation ?? new RpyModel(0, 0, 0);
+            return pos.X == 0.0 && pos.Y == 0.0 && pos.Z == 0.0
+                && rpy.Roll == 0.0 && rpy.Pitch == 0.0 && rpy.Yaw == 0.0;
+        }
+
+        // Emits world-direct <geom> and <site> elements. Reuses the
+        // EmitVisualGeoms / EmitCollisionGeoms / EmitSites helpers via a
+        // synthetic Body that we drain into model.WorldGeoms / WorldSites.
+        // This keeps the asset-deduplication + material-naming logic
+        // identical between body-level and world-level emission.
+        private static void EmitWorldGeometry(
+            LinkModel world,
+            MJCFModel model,
+            Dictionary<string, LinkAuxiliary> auxByLinkName)
+        {
+            if (world == null || auxByLinkName == null)
+            {
+                return;
+            }
+            if (!auxByLinkName.TryGetValue(WorldAuxKey, out LinkAuxiliary aux) || aux == null)
+            {
+                return;
+            }
+
+            Body scratch = new Body { Name = "world" };
+            EmitVisualGeoms(scratch, model.Asset, world, aux);
+            EmitCollisionGeoms(scratch, model.Asset, world, aux);
+            EmitSites(scratch, aux);
+
+            model.WorldGeoms.AddRange(scratch.Geoms);
+            model.WorldSites.AddRange(scratch.Sites);
         }
 
         // Convenience overload retained for the export pipeline, which still

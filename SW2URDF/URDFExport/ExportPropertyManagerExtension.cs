@@ -192,7 +192,18 @@ namespace SW2URDF.URDFExport
             if (previouslySelectedNode != null)
             {
                 previouslySelectedNode.Link.Name = PMTextBoxLinkName.Text;
-                if (!previouslySelectedNode.IsBaseNode)
+
+                // Joint state save - only for nested links. Top-level bodies
+                // have a "Joint" object that is repurposed to carry their
+                // world->body offset coord-sys (committed inline via
+                // OnSelectionboxListChanged), and the WorldNode has no joint
+                // at all. For both non-nested cases we leave Link.Joint
+                // unchanged here - the joint name/type/axis textboxes were
+                // disabled when the user was on the node, so reading them
+                // would commit stale values from a previously-edited nested
+                // link.
+                NodeRole previousRole = ResolveNodeRole(previouslySelectedNode);
+                if (previousRole == NodeRole.NestedLink)
                 {
                     previouslySelectedNode.Link.Joint.Name = PMTextBoxJointName.Text;
                     previouslySelectedNode.Link.Joint.Type = PMComboBoxJointType.get_ItemText(-1);
@@ -218,6 +229,20 @@ namespace SW2URDF.URDFExport
                     // auto-compute toggle are plain Joint fields and use
                     // local helpers.
                     SaveJointPropertiesToLink(previouslySelectedNode.Link.Joint);
+                }
+                else if (previousRole == NodeRole.TopLevelBody)
+                {
+                    // World attachment combo: also written through on
+                    // every dropdown change via OnComboboxSelectionChanged;
+                    // this node-switch save is the safety net.
+                    if (PMComboBoxWorldAttachment != null)
+                    {
+                        short worldAttachmentChoice = PMComboBoxWorldAttachment.CurrentSelection;
+                        previouslySelectedNode.Link.WorldAttachment =
+                            (worldAttachmentChoice == 1)
+                                ? SW2URDF.Core.WorldAttachmentModel.Free
+                                : SW2URDF.Core.WorldAttachmentModel.Welded;
+                    }
                 }
 
                 EnsureGroupsInitialized(previouslySelectedNode);
@@ -302,18 +327,30 @@ namespace SW2URDF.URDFExport
         //Creates an Empty node when children are added to a link
         public LinkNode CreateEmptyNode(LinkNode Parent)
         {
-            LinkNode node = new LinkNode();
-
-            if (Parent == null)             //For the base_link node
+            // Tree root: synthesize a WorldNode container with one default
+            // Welded top-level body underneath (named "base_link" to match
+            // the fresh-tree convention pre-refactor). The WorldNode itself
+            // owns the global-origin coord-sys + worldbody-direct geometry
+            // slots; the inner "base_link" is the first body the user
+            // configures.
+            if (Parent == null)
             {
-                node.Link.Name = "base_link";
-                node.Link.Joint.AxisName = "";
-                node.Link.Joint.CoordinateSystemName = "";
-                node.Link.InertialComponents = new List<Component2>();
-                node.Link.Sites = new List<SiteSpec>();
-                node.Link.InertialSource = InertialSource.Visual;
-                node.IsBaseNode = true;
-                node.IsIncomplete = true;
+                WorldNode worldNode = new WorldNode();
+                worldNode.IsIncomplete = true;
+                worldNode.ContextMenuStrip = docMenu;
+
+                LinkNode baseBody = CreateEmptyTopLevelBody();
+                worldNode.Link.Children.Add(baseBody.Link);
+                baseBody.Link.Parent = worldNode.Link;
+                worldNode.Nodes.Add(baseBody);
+                return worldNode;
+            }
+
+            LinkNode node = new LinkNode();
+            if (Parent is WorldNode)
+            {
+                // First-level child: top-level body. Welded by default.
+                node = CreateEmptyTopLevelBody();
             }
             else
             {
@@ -333,11 +370,40 @@ namespace SW2URDF.URDFExport
                 node.Link.InertialSource = InertialSource.Visual;
                 node.IsBaseNode = false;
                 node.IsIncomplete = true;
+                // Seed a single empty visual group so the SelectionBox always has
+                // a place to commit user picks into.
+                node.Link.VisualGroups = new List<MeshGroup>
+                {
+                    new MeshGroup(MeshGroup.DefaultVisualName(node.Link.Name)),
+                };
+                node.Link.CollisionGroups = new List<MeshGroup>();
+                node.Name = node.Link.Name;
+                node.Text = node.Link.Name;
             }
-            // Seed a single empty visual group so the SelectionBox always has
-            // a place to commit user picks into. Collision starts empty so the
-            // URDF/MJCF fallback "reuse visual mesh" behavior kicks in until
-            // the user explicitly creates a collision group.
+            node.ContextMenuStrip = docMenu;
+            return node;
+        }
+
+        // Builds a default top-level body LinkNode (immediate child of a
+        // WorldNode). WorldAttachment defaults to Welded. The body's
+        // Joint.CoordinateSystemName is the world->body offset, NOT an
+        // incoming kinematic joint; joint type / axis / properties are
+        // disabled in the PM for top-level bodies.
+        private LinkNode CreateEmptyTopLevelBody()
+        {
+            LinkNode node = new LinkNode();
+            node.Link.Name = "base_link";
+            node.Link.Joint.Name = "";
+            node.Link.Joint.AxisName = "";
+            node.Link.Joint.CoordinateSystemName = "";
+            node.Link.Joint.AutoDeriveAxis = false;
+            node.Link.Joint.Type = "";
+            node.Link.WorldAttachment = SW2URDF.Core.WorldAttachmentModel.Welded;
+            node.Link.InertialComponents = new List<Component2>();
+            node.Link.Sites = new List<SiteSpec>();
+            node.Link.InertialSource = InertialSource.Visual;
+            node.IsBaseNode = false;
+            node.IsIncomplete = true;
             node.Link.VisualGroups = new List<MeshGroup>
             {
                 new MeshGroup(MeshGroup.DefaultVisualName(node.Link.Name)),
@@ -345,7 +411,6 @@ namespace SW2URDF.URDFExport
             node.Link.CollisionGroups = new List<MeshGroup>();
             node.Name = node.Link.Name;
             node.Text = node.Link.Name;
-            node.ContextMenuStrip = docMenu;
             return node;
         }
 
@@ -384,8 +449,23 @@ namespace SW2URDF.URDFExport
             // SelectionBox display contents when a control's Enabled
             // state flips after the box has been populated; doing the
             // Enable pass first means every load runs against settled
-            // controls.
-            EnableControls(!node.IsBaseNode);
+            // controls. The role-based EnableControls overload
+            // distinguishes World / TopLevelBody / NestedLink so the
+            // World attachment combo + Link coord-sys + Global Origin
+            // pickers all get the right enabled state.
+            NodeRole nodeRole = ResolveNodeRole(node);
+            EnableControls(nodeRole);
+
+            // Preload World attachment combobox for top-level bodies.
+            // The combobox order matches WorldAttachmentModel (Welded=0,
+            // Free=1) so we cast the enum directly to the index. For
+            // non-top-level nodes we leave the previously-selected index
+            // in place because the control is disabled and the user
+            // can't see / interact with it.
+            if (PMComboBoxWorldAttachment != null && nodeRole == NodeRole.TopLevelBody)
+            {
+                PMComboBoxWorldAttachment.CurrentSelection = (short)(int)node.Link.WorldAttachment;
+            }
 
             // Repopulate ONLY the SelectionBox marks owned by the
             // currently-active tab so the SOLIDWORKS viewer highlight
@@ -432,8 +512,14 @@ namespace SW2URDF.URDFExport
             SetCollisionEditorEnabled(!node.Link.CollisionUsesVisual);
 
             //Setting joint properties (controls already Enable-toggled above
-            //before the SelectionBox loads).
-            if (!node.IsBaseNode && node.Parent != null)
+            //before the SelectionBox loads). Joint name / axis / type /
+            //properties round-trip only for nested links - the WorldNode
+            //has no joint at all and a top-level body has no incoming
+            //kinematic joint (its Link.Joint is repurposed to carry the
+            //world->body offset coord-sys). For both non-nested cases we
+            //clear the joint inputs so the disabled controls don't show
+            //stale values from a previously-edited nested link.
+            if (nodeRole == NodeRole.NestedLink && node.Parent != null)
             {
                 PMTextBoxJointName.Text = node.Link.Joint.Name;
                 PMLabelParentLink.Caption = node.Parent.Name;
@@ -468,17 +554,19 @@ namespace SW2URDF.URDFExport
             else
             {
                 //Labels and text box have be blanked before de-activating them
-                PMLabelParentLink.Caption = " ";
+                PMTextBoxJointName.Text = "";
+                PMLabelParentLink.Caption = (nodeRole == NodeRole.TopLevelBody && node.Parent != null)
+                    ? node.Parent.Name
+                    : " ";
                 SelectComboBox(PMComboBoxJointType, "");
 
-                // Base node has no joint axis: clear any previously-rendered
+                // No joint axis on this node: clear any previously-rendered
                 // overlay so we don't leave a stale arrow in the viewport.
                 currentAxisFlipped = false;
                 Exporter.ClearAxisOverlay();
 
-                // Base node has no joint properties; clear the textboxes
-                // so the next non-base node load starts from a clean
-                // slate.
+                // No joint properties on this node; clear the textboxes
+                // so the next nested-link load starts from a clean slate.
                 ClearJointPropertyTextboxes();
             }
         }
@@ -676,25 +764,51 @@ namespace SW2URDF.URDFExport
             return null;
         }
 
-        // Toggles Enabled state of joint / global-origin controls on the
-        // Link/Joint tab as the active link changes. Visibility is FIXED
-        // at create-time on every Link/Joint control - we never flip
-        // Visible cross-tab. Reason: on SW 2024 a control.Visible flip
-        // applied while the user is on a different tab leaks the
-        // control onto whichever tab is currently active (the leak
-        // appears as joint-name / coord-sys / axis controls suddenly
-        // showing up under the Setup or Inertial tab footer). The
-        // always-visible-disabled layout matches SW's own coord-sys /
-        // mate creation PMs - the user sees the joint row at all
-        // times; the base node greys out joint-only inputs and the
-        // global-origin SelectionBox stays enabled, and conversely a
-        // non-base node enables joint inputs and greys out the
-        // global-origin box.
+        // Three-way enable/disable layout driven by the active node's role
+        // in the WorldNode-rooted tree:
+        //
+        //   World           : only the Global Origin picker is enabled.
+        //                     Visual / Collision / Sites tabs ARE enabled
+        //                     (worldbody-direct geometry, MJCF idiom);
+        //                     Inertial tab is disabled (worldbody is massless).
+        //                     Joint name / coord-sys / axis / type / properties
+        //                     are all disabled.
+        //   TopLevelBody    : Link coordinate system + World attachment combo
+        //                     enabled; Global Origin disabled (the World
+        //                     node owns it). Joint name / axis / type /
+        //                     properties disabled (top-level bodies have
+        //                     no incoming kinematic joint).
+        //   NestedLink      : today's behavior - all joint controls enabled,
+        //                     Global Origin disabled, World attachment
+        //                     disabled.
+        //
+        // Visibility is FIXED at create-time on every Link/Joint control - we
+        // never flip Visible cross-tab. Reason: on SW 2024 a control.Visible
+        // flip applied while the user is on a different tab leaks the
+        // control onto whichever tab is currently active (the leak appears
+        // as joint-name / coord-sys / axis controls suddenly showing up
+        // under the Setup or Inertial tab footer). The always-visible-
+        // disabled layout matches SW's own coord-sys / mate creation PMs.
         private void EnableControls(bool enableJoints)
         {
+            EnableControls(enableJoints
+                ? NodeRole.NestedLink
+                : NodeRole.WorldOrTopLevelLegacy);
+        }
+
+        // Per-link-role enable pass. Use the NodeRole-typed overload from
+        // FillPropertyManager; the bool overload above exists only for
+        // historical call-site compatibility (legacy "is base" boolean).
+        private void EnableControls(NodeRole role)
+        {
+            bool enableJointInputs = role == NodeRole.NestedLink;
+            bool enableLinkCoordSys = role == NodeRole.TopLevelBody || role == NodeRole.NestedLink;
+            bool enableGlobalOrigin = role == NodeRole.World || role == NodeRole.WorldOrTopLevelLegacy;
+            bool enableWorldAttachment = role == NodeRole.TopLevelBody;
+
             // Per-joint inputs (joint name, axis, type, joint properties).
-            // Greyed out on the base node which owns no joint; visible at
-            // all times so the layout doesn't reflow under the user.
+            // Greyed out on the World node and on top-level bodies; visible
+            // at all times so the layout doesn't reflow under the user.
             PropertyManagerPageControl[] pmJointControls =
                 new PropertyManagerPageControl[] {
                     (PropertyManagerPageControl)PMTextBoxJointName,
@@ -724,33 +838,76 @@ namespace SW2URDF.URDFExport
                     (PropertyManagerPageControl)PMLabelJointReference,
                     (PropertyManagerPageControl)PMTextBoxJointReference };
 
-            // Base-node-only controls. The global origin SelectionBox +
-            // its label are enabled when EnableControls is called with
-            // enableJoints=false (the user is on the base node) and
-            // greyed out otherwise.
+            // World-only controls. Enabled when the active node is the
+            // WorldNode root.
             PropertyManagerPageControl[] pmGlobalOriginControls = new PropertyManagerPageControl[] {
                 (PropertyManagerPageControl)PMSelectionGlobalCoordsys,
                 (PropertyManagerPageControl)PMLabelGlobalCoordsys};
 
-            // Per-joint reference-coord-system controls. Greyed out on the
-            // base node, enabled on non-base nodes - inverse of the
-            // global-origin pair above.
+            // Reference-coord-system controls. Enabled on top-level bodies
+            // (where the picker doubles as the world->body offset coord-sys)
+            // and on nested links (where it's the joint-origin coord-sys).
+            // Disabled only on the WorldNode itself.
             PropertyManagerPageControl[] pmJointOriginControls = new PropertyManagerPageControl[] {
                 (PropertyManagerPageControl)PMSelectionJointCoordsys,
                 (PropertyManagerPageControl)PMLabelCoordSys};
 
+            // World-attachment combo (Welded / Free). Enabled on top-level
+            // bodies only. The control may be null if the build script that
+            // owns it hasn't run for this PM session - guard accordingly.
+            PropertyManagerPageControl worldAttachmentLabel =
+                PMLabelWorldAttachment as PropertyManagerPageControl;
+            PropertyManagerPageControl worldAttachmentCombo =
+                PMComboBoxWorldAttachment as PropertyManagerPageControl;
+
             foreach (PropertyManagerPageControl control in pmGlobalOriginControls)
             {
-                control.Enabled = !enableJoints;
+                control.Enabled = enableGlobalOrigin;
             }
             foreach (PropertyManagerPageControl control in pmJointOriginControls)
             {
-                control.Enabled = enableJoints;
+                control.Enabled = enableLinkCoordSys;
             }
             foreach (PropertyManagerPageControl control in pmJointControls)
             {
-                control.Enabled = enableJoints;
+                control.Enabled = enableJointInputs;
             }
+            if (worldAttachmentLabel != null)
+            {
+                worldAttachmentLabel.Enabled = enableWorldAttachment;
+            }
+            if (worldAttachmentCombo != null)
+            {
+                worldAttachmentCombo.Enabled = enableWorldAttachment;
+            }
+        }
+
+        // Per-active-node role used by EnableControls. WorldOrTopLevelLegacy
+        // captures the legacy bool=false behavior (today's "base link"
+        // shape) that is still reachable from a few internal call sites.
+        private enum NodeRole
+        {
+            World = 0,
+            TopLevelBody = 1,
+            NestedLink = 2,
+
+            // Legacy compatibility: today's pre-refactor "base link" was
+            // both the global-origin holder AND a body. The bool overload
+            // of EnableControls maps `enableJoints=false` to this.
+            WorldOrTopLevelLegacy = 3,
+        }
+
+        private static NodeRole ResolveNodeRole(LinkNode node)
+        {
+            if (node is WorldNode)
+            {
+                return NodeRole.World;
+            }
+            if (node != null && node.IsTopLevelBody)
+            {
+                return NodeRole.TopLevelBody;
+            }
+            return NodeRole.NestedLink;
         }
 
         //Populates the TreeView with the organized links from the robot

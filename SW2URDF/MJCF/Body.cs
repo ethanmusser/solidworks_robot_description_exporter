@@ -19,9 +19,19 @@ namespace SW2URDF.MJCF
         public List<Body> Children { get; }
 
         // If true, suppress pos/quat attributes on this <body>. This is what we do
-        // for the worldbody-level emission of the root link, where the transform is
-        // implicit (worldbody origin == base link origin).
+        // for the worldbody-level emission of a top-level body whose offset from
+        // the world is identity (the welded single-tree case): the worldbody
+        // origin coincides with the body origin, so writing pos="0 0 0"
+        // quat="1 0 0 0" would just be noise.
         public bool SuppressTransform { get; set; } = false;
+
+        // If true, emit a <freejoint/> as the first child of this body
+        // (after <inertial>). MJCF freejoints attach a body to world with
+        // 6 DoF; we use it for top-level bodies marked
+        // WorldAttachmentModel.Free. Mutually exclusive with
+        // <see cref="Joint"/> in practice (top-level bodies have no
+        // incoming kinematic joint).
+        public bool HasFreeJoint { get; set; } = false;
 
         public Body()
         {
@@ -43,12 +53,18 @@ namespace SW2URDF.MJCF
                 writer.WriteAttributeString("quat", MJCFFormat.FormatQuat(Quaternion));
             }
 
-            // Order: inertial, joint, geoms, sites, child bodies. This mirrors the
-            // canonical MuJoCo example layout and keeps the diff against URDF easy to
-            // follow.
+            // Order: inertial, freejoint, joint, geoms, sites, child bodies. This
+            // mirrors the canonical MuJoCo example layout and keeps the diff
+            // against URDF easy to follow. <freejoint/> goes BEFORE any
+            // standard <joint> by MuJoCo convention.
             if (Inertial != null)
             {
                 Inertial.WriteMJCF(writer);
+            }
+            if (HasFreeJoint)
+            {
+                writer.WriteStartElement("freejoint");
+                writer.WriteEndElement();
             }
             if (Joint != null)
             {

@@ -1,5 +1,6 @@
 using SW2URDF.Core;
 using SW2URDF.URDF;
+using SW2URDF.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,6 +15,24 @@ namespace SW2URDF.URDFExport
     /// </summary>
     public static class KinematicTreeAdapter
     {
+        private static readonly log4net.ILog logger = Logger.GetLogger();
+
+        /// <summary>
+        /// Converts a KinematicTree (multi-tree, world-aware) into the legacy
+        /// Robot graph used by the URDF writer. Picks the FIRST top-level body
+        /// as the URDF base_link, since URDF describes a single robot in
+        /// isolation.
+        ///
+        /// Warns (logger.Warn) on three URDF degradation cases:
+        /// 1. <c>tree.TopLevelBodies.Count &gt; 1</c> - additional bodies are dropped.
+        /// 2. The first top-level body has <c>WorldAttachment.Free</c> - URDF
+        ///    cannot express a floating base in a way the common loaders honor.
+        /// 3. The world has any non-empty visual / collision / sites - URDF
+        ///    has no analog to MJCF's worldbody-direct geometry.
+        ///
+        /// All three warnings are advisory; the URDF is still produced for
+        /// the first welded body.
+        /// </summary>
         public static Robot ToLegacyRobot(KinematicTree tree)
         {
             if (tree == null)
@@ -21,14 +40,58 @@ namespace SW2URDF.URDFExport
                 throw new ArgumentNullException(nameof(tree));
             }
 
+            IReadOnlyList<LinkModel> topLevels = tree.TopLevelBodies ?? Array.Empty<LinkModel>();
+            if (topLevels.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "KinematicTree has no top-level bodies; cannot synthesize a URDF Robot.");
+            }
+
+            LinkModel chosen = topLevels[0];
+            if (topLevels.Count > 1)
+            {
+                List<string> dropped = new List<string>();
+                for (int i = 1; i < topLevels.Count; i++)
+                {
+                    dropped.Add(topLevels[i]?.Name ?? "<null>");
+                }
+                logger.Warn("URDF: model has " + topLevels.Count + " top-level bodies; URDF describes a single " +
+                    "robot in isolation, so only '" + (chosen.Name ?? "") +
+                    "' will be written as <robot>'s base_link. Dropped: " +
+                    string.Join(", ", dropped) + ". Use MJCF or pair with an external SDFormat/.world file " +
+                    "if you need multiple bodies.");
+            }
+
+            if (chosen.WorldAttachment == WorldAttachmentModel.Free)
+            {
+                logger.Warn("URDF: top-level body '" + (chosen.Name ?? "") +
+                    "' has WorldAttachment=Free; URDF cannot express a floating base in a way most loaders " +
+                    "honor. Emitting a fixed-base URDF instead.");
+            }
+
+            if (LinkHasGeometry(tree.WorldBody))
+            {
+                logger.Warn("URDF: world-level visual/collision/site geometry is dropped on URDF export. " +
+                    "URDF describes the robot only; pair with an SDFormat .world file or use MJCF if you need " +
+                    "scene geometry.");
+            }
+
             Robot robot = new Robot
             {
                 Name = tree.Name ?? "",
             };
-            robot.SetBaseLink(ToLegacyLink(tree.BaseLink, null));
+            robot.SetBaseLink(ToLegacyLink(chosen, null));
             return robot;
         }
 
+        /// <summary>
+        /// Convenience wrapper for callers that only have a single-tree
+        /// legacy Robot. Synthesizes an empty world <see cref="LinkModel"/>
+        /// (global origin inherited from the base link's coord-sys so STL
+        /// anchoring + LocalizeJoint behavior are unchanged) and a single
+        /// Welded top-level body. Multi-tree / world geometry callers should
+        /// build the <see cref="KinematicTree"/> directly.
+        /// </summary>
         public static KinematicTree ToCore(Robot robot)
         {
             if (robot == null)
@@ -36,7 +99,134 @@ namespace SW2URDF.URDFExport
                 throw new ArgumentNullException(nameof(robot));
             }
 
-            return new KinematicTree(robot.Name ?? "", ToCore(robot.BaseLink, isRoot: true));
+            LinkModel topLevel = ToCore(robot.BaseLink);
+            string globalOrigin = robot.BaseLink?.Joint?.CoordinateSystemName ?? "";
+            LinkModel worldBody = CreateWorldBody(new[] { topLevel });
+            return new KinematicTree(robot.Name ?? "", globalOrigin, worldBody);
+        }
+
+        private static bool LinkHasGeometry(LinkModel link)
+        {
+            if (link == null)
+            {
+                return false;
+            }
+            if (link.VisualGroups != null && link.VisualGroups.Count > 0)
+            {
+                return true;
+            }
+            if (link.CollisionGroups != null && link.CollisionGroups.Count > 0)
+            {
+                return true;
+            }
+            if (link.Sites != null && link.Sites.Count > 0)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private static LinkModel CreateWorldBody(IReadOnlyList<LinkModel> topLevelBodies)
+        {
+            return new LinkModel(
+                WorldNode.DefaultName,
+                EmptyInertial(),
+                new MaterialModel("", new RgbaModel(1, 1, 1, 1), ""),
+                Array.Empty<MeshGroupModel>(),
+                Array.Empty<MeshGroupModel>(),
+                false,
+                InertialSourceModel.Visual,
+                Array.Empty<ComponentReferenceModel>(),
+                Array.Empty<SiteModel>(),
+                null,
+                topLevelBodies ?? Array.Empty<LinkModel>());
+        }
+
+        /// <summary>
+        /// Converts a fully-built LinkNode tree (rooted at a <see cref="WorldNode"/>)
+        /// into a <see cref="KinematicTree"/>. The WorldNode's underlying Link
+        /// becomes the world body - its visual / collision / site groups are
+        /// persisted on <see cref="KinematicTree.WorldBody"/>, and its
+        /// <c>Joint.CoordinateSystemName</c> becomes
+        /// <see cref="KinematicTree.GlobalOriginCoordinateSystemName"/>.
+        ///
+        /// For backwards compatibility, this method also accepts a plain
+        /// <see cref="LinkNode"/> root (no WorldNode) - in which case it
+        /// synthesizes a Welded single-body tree wrapped in an empty world
+        /// body whose global origin name is taken from
+        /// the legacy root's joint coord-sys.
+        /// </summary>
+        public static KinematicTree ToCore(LinkNode rootNode, string treeName)
+        {
+            if (rootNode == null)
+            {
+                throw new ArgumentNullException(nameof(rootNode));
+            }
+
+            if (rootNode is WorldNode worldNode)
+            {
+                // Refresh Link.Children from the LinkNode hierarchy so the
+                // recursive ToCore(Link) walks the live tree shape.
+                worldNode.UpdateLinkTree(null);
+
+                LinkModel worldBody = ToCore(worldNode.Link, isRoot: true);
+                return new KinematicTree(
+                    treeName ?? "",
+                    worldNode.GlobalOriginCoordinateSystemName ?? "",
+                    worldBody);
+            }
+
+            // Legacy single-tree LinkNode (no WorldNode wrapper). Wrap as a
+            // Welded single-body tree under an empty World whose global
+            // origin name inherits from the root's joint coord-sys.
+            rootNode.UpdateLinkTree(null);
+            LinkModel legacyTopLevel = ToCore(rootNode.Link);
+            string globalOrigin = rootNode.Link?.Joint?.CoordinateSystemName ?? "";
+            return new KinematicTree(treeName ?? "", globalOrigin, CreateWorldBody(new[] { legacyTopLevel }));
+        }
+
+        /// <summary>
+        /// Reverse of <see cref="ToCore(LinkNode, string)"/>: builds a LinkNode
+        /// tree rooted at a <see cref="WorldNode"/> from a <see cref="KinematicTree"/>.
+        /// The world's geometry / global origin are unpacked onto the WorldNode's
+        /// underlying Link, and each top-level body becomes a child LinkNode of
+        /// the WorldNode.
+        /// </summary>
+        public static WorldNode ToWorldNode(KinematicTree tree)
+        {
+            if (tree == null)
+            {
+                throw new ArgumentNullException(nameof(tree));
+            }
+
+            WorldNode worldNode = new WorldNode();
+            LinkModel worldModel = tree.WorldBody ?? CreateWorldBody(Array.Empty<LinkModel>());
+
+            // Repurpose the WorldNode's Link as the world-geometry container.
+            Link worldLink = ToLegacyLink(worldModel, null);
+            worldNode.Link = worldLink;
+            worldLink.Name = WorldNode.DefaultName;
+            worldNode.Text = WorldNode.DefaultName;
+            worldNode.Name = WorldNode.DefaultName;
+
+            // Global origin coord-sys lives in Joint.CoordinateSystemName on
+            // the world's Link (matching pre-refactor base-link semantics so
+            // the STL / LocalizeJoint anchor reads work unchanged).
+            if (worldLink.Joint != null)
+            {
+                worldLink.Joint.CoordinateSystemName = tree.GlobalOriginCoordinateSystemName ?? "";
+            }
+
+            // Rebuild the TreeNode children from the Link children, then clear
+            // the embedded Link.Children list so the PMPage's LinkNode tree
+            // remains the editable source of truth.
+            foreach (Link topLevelLink in new List<Link>(worldLink.Children))
+            {
+                worldNode.Nodes.Add(new LinkNode(topLevelLink));
+            }
+            worldLink.Children.Clear();
+
+            return worldNode;
         }
 
         public static Link ToLegacyLink(LinkModel model, Link parent)
@@ -57,6 +247,7 @@ namespace SW2URDF.URDFExport
                 CollisionGroups = ToLegacyMeshGroups(model.CollisionGroups),
                 Sites = ToLegacySites(model.Sites),
                 InertialComponentPIDs = ToPersistentIds(model.InertialComponents),
+                WorldAttachment = model.WorldAttachment,
             };
 
             ApplyInertial(model.Inertial, link.Inertial);
@@ -96,7 +287,8 @@ namespace SW2URDF.URDFExport
                 isRoot ? null : ToCoreJoint(link.Joint),
                 link.Children?.Select(child => ToCore(child)).ToList() ?? new List<LinkModel>(),
                 link.isFixedFrame,
-                link.STLQualityFine);
+                link.STLQualityFine,
+                link.WorldAttachment);
         }
 
         private static void ApplyInertial(InertialModel source, Inertial target)

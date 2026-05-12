@@ -237,22 +237,38 @@ namespace SW2URDF.URDFExport
         }
 
         // Very-legacy XmlSerializer (SerialNode) deserialization for
-        // configurations saved before MinDataContractVersion.
+        // configurations saved before MinDataContractVersion. The result is
+        // migrated into the new WorldNode-rooted shape so the rest of the
+        // pipeline always sees a consistent tree (WorldNode on top, Welded
+        // top-level body inheriting the old base link's coord-sys as the
+        // world's global-origin coord-sys).
         private static LinkNode LoadConfigFromStringXML(string data)
         {
-            LinkNode baseNode = null;
-            if (!string.IsNullOrWhiteSpace(data))
+            if (string.IsNullOrWhiteSpace(data))
             {
-                XmlSerializer serializer = new XmlSerializer(typeof(SerialNode));
-                XmlTextReader textReader = new XmlTextReader(new StringReader(data));
-                // Not reading external files, so this can be set to prohibit. Resolves CA3075
-                textReader.DtdProcessing = DtdProcessing.Prohibit;
-                SerialNode sNode = (SerialNode)serializer.Deserialize(textReader);
-                textReader.Close();
-
-                baseNode = sNode.BuildLinkNodeFromSerialNode();
+                return null;
             }
-            return baseNode;
+
+            XmlSerializer serializer = new XmlSerializer(typeof(SerialNode));
+            XmlTextReader textReader = new XmlTextReader(new StringReader(data));
+            // Not reading external files, so this can be set to prohibit. Resolves CA3075
+            textReader.DtdProcessing = DtdProcessing.Prohibit;
+            SerialNode sNode = (SerialNode)serializer.Deserialize(textReader);
+            textReader.Close();
+
+            LinkNode legacyBaseNode = sNode.BuildLinkNodeFromSerialNode();
+            if (legacyBaseNode == null)
+            {
+                return null;
+            }
+
+            // Reuse the same migration helper as the v1.5 DataContract path.
+            // legacyBaseNode.Link already carries the legacy joint coord-sys
+            // (today's "global origin" placeholder), so the WorldNode wrapper
+            // inherits it as GlobalOriginCoordinateSystemName for byte-identical
+            // MJCF on welded single-tree configs.
+            legacyBaseNode.UpdateLinkTree(null);
+            return LegacyConfigV15DataContractReader.WrapLegacyBaseLinkInWorldNode(legacyBaseNode.Link);
         }
 
         private static SolidWorks.Interop.sldworks.Attribute CheckForOldAttributes(ModelDoc2 model)

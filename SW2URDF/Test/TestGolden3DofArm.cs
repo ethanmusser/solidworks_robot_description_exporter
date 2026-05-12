@@ -105,7 +105,10 @@ namespace SW2URDF.Test
                 null,
                 new[] { prox });
 
-            return new KinematicTree("3_DOF_ARM_description", baseLink);
+            return new KinematicTree(
+                "3_DOF_ARM_description",
+                "",
+                WorldBody(baseLink));
         }
 
         private static KinematicTree BuildMjcfGoldenTree()
@@ -160,7 +163,10 @@ namespace SW2URDF.Test
                 null,
                 new[] { prox });
 
-            return new KinematicTree("3_DOF_ARM - MJCF", baseLink);
+            return new KinematicTree(
+                "3_DOF_ARM - MJCF",
+                "",
+                WorldBody(baseLink));
         }
 
         private static LinkModel Link(
@@ -196,6 +202,22 @@ namespace SW2URDF.Test
                 Array.Empty<SiteModel>(),
                 joint,
                 children);
+        }
+
+        private static LinkModel WorldBody(params LinkModel[] topLevelBodies)
+        {
+            return new LinkModel(
+                "world",
+                null,
+                new MaterialModel("", new RgbaModel(1, 1, 1, 1), ""),
+                Array.Empty<MeshGroupModel>(),
+                Array.Empty<MeshGroupModel>(),
+                false,
+                InertialSourceModel.Visual,
+                Array.Empty<ComponentReferenceModel>(),
+                Array.Empty<SiteModel>(),
+                null,
+                topLevelBodies);
         }
 
         private static InertialModel Inertial(Vector3Model position, double mass, InertiaTensorModel inertia)

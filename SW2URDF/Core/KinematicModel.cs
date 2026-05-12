@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace SW2URDF.Core
 {
@@ -6,10 +8,38 @@ namespace SW2URDF.Core
     /// Format-neutral robot description extracted from SolidWorks and consumed
     /// by URDF / MJCF writers. This namespace intentionally has no dependency on
     /// SolidWorks.Interop.*, URDFElement, MJCF writer types, or DataContract.
+    ///
+    /// The tree root is an explicit world <see cref="LinkModel"/> that owns the
+    /// global frame and any worldbody-direct geometry (MJCF idiom: ground planes,
+    /// scene fiducials). Its children are the top-level bodies - each is the root
+    /// of an independent kinematic tree. URDF export takes the first top-level
+    /// body as <c>base_link</c> and warns when there is more than one, since URDF
+    /// describes a single robot in isolation; MJCF emits all of them as direct
+    /// children of <c>&lt;worldbody&gt;</c>.
     /// </summary>
     public sealed record KinematicTree(
         string Name,
-        LinkModel BaseLink);
+        string GlobalOriginCoordinateSystemName,
+        LinkModel WorldBody)
+    {
+        [JsonIgnore]
+        public IReadOnlyList<LinkModel> TopLevelBodies =>
+            WorldBody?.Children ?? Array.Empty<LinkModel>();
+    }
+
+    /// <summary>
+    /// How a top-level body attaches to the world. Only meaningful on the
+    /// immediate children of <see cref="KinematicTree.WorldBody"/>; ignored for nested
+    /// links (which carry an explicit <see cref="JointModel"/> instead).
+    /// </summary>
+    public enum WorldAttachmentModel
+    {
+        /// <summary>Body is rigidly fixed to world (no joint emitted).</summary>
+        Welded = 0,
+
+        /// <summary>Body has a 6-DoF freejoint attaching it to world (MJCF only).</summary>
+        Free = 1,
+    }
 
     public sealed record LinkModel(
         string Name,
@@ -24,7 +54,8 @@ namespace SW2URDF.Core
         JointModel Joint,
         IReadOnlyList<LinkModel> Children,
         bool IsFixedFrame = false,
-        bool StlQualityFine = false);
+        bool StlQualityFine = false,
+        WorldAttachmentModel WorldAttachment = WorldAttachmentModel.Welded);
 
     public sealed record JointModel(
         string Name,

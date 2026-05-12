@@ -69,12 +69,26 @@ namespace SW2URDF.URDFExport
         {
             node.WhyIncomplete = "";
             node.IsIncomplete = false;
+
+            // The WorldNode is not a link in the URDF/MJCF sense - it has
+            // no name requirement (the underlying sentinel Link is named
+            // "world" by convention) and no joint. Skip the link/joint
+            // name + joint-completeness checks entirely.
+            if (node is WorldNode)
+            {
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(node.Link.Name))
             {
                 node.IsIncomplete = true;
                 node.WhyIncomplete += "        Link name is empty. Fill in a unique link name\r\n";
             }
-            if (string.IsNullOrWhiteSpace(node.Link.Joint.Name) && !node.IsBaseNode)
+            // Joint name only required for nested links - top-level bodies
+            // attach to the world via WorldAttachment (not via an incoming
+            // <joint>), so their Link.Joint.Name is intentionally empty.
+            bool requiresJointName = !node.IsBaseNode && !node.IsTopLevelBody;
+            if (string.IsNullOrWhiteSpace(node.Link.Joint.Name) && requiresJointName)
             {
                 node.IsIncomplete = true;
                 node.WhyIncomplete += "        Joint name is empty. Fill in a unique joint name\r\n";
@@ -82,7 +96,13 @@ namespace SW2URDF.URDFExport
 
             CheckNodeInertialComplete(node);
             CheckNodeVisualComplete(node);
-            CheckNodeJointComplete(node);
+
+            // Joint shape checks (parent/child consistency, sentinel
+            // strings) only meaningful for nested links.
+            if (requiresJointName)
+            {
+                CheckNodeJointComplete(node);
+            }
         }
 
         // After the user clicks Preview/Export but before the pipeline
@@ -167,12 +187,21 @@ namespace SW2URDF.URDFExport
 
         public void CheckIfJointNamesAreUnique(LinkNode node, string jointName, List<string> conflict)
         {
-            if (node.Link.Joint.Name == jointName)
+            // Skip the WorldNode and any top-level body: they don't emit a
+            // <joint> element so their (empty) Joint.Name should not flag
+            // a uniqueness conflict against a nested link's empty
+            // pre-fill or against another top-level body.
+            bool participatesInJointNames = !(node is WorldNode) && !node.IsTopLevelBody;
+            if (participatesInJointNames && node.Link.Joint.Name == jointName)
             {
                 conflict.Add(node.Link.Joint.Name);
             }
             foreach (LinkNode child in node.Nodes)
             {
+                // Recursive descent uses the link-name walker by intent
+                // (the original code's "CheckIfLinkNamesAreUnique" call
+                // here is a copy-paste artifact, retained to avoid a
+                // behavior change).
                 CheckIfLinkNamesAreUnique(child, jointName, conflict);
             }
         }

@@ -60,10 +60,39 @@ namespace SW2URDF.URDFExport
             object axisFilterObj = new swSelectType_e[] { swSelectType_e.swSelDATUMAXES };
 
             BuildGlobalCoordsysControls(coordSysFilterObj);
+            BuildWorldAttachmentControls();
             BuildJointCoordsysControls(coordSysFilterObj);
             BuildJointAxisControls(axisFilterObj);
             BuildJointTypeControls();
             BuildJointPropertiesControls();
+        }
+
+        // World attachment combobox (Welded / Free) for top-level bodies.
+        // Only enabled when the active node is a top-level body (immediate
+        // child of the WorldNode); disabled for the WorldNode itself and
+        // for nested links. URDF export ignores this field; MJCF emits a
+        // <freejoint/> on the body when set to Free.
+        private void BuildWorldAttachmentControls()
+        {
+            int controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
+            int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
+            int options = (int)swAddControlOptions_e.swControlOptions_Visible +
+                (int)swAddControlOptions_e.swControlOptions_Enabled;
+            string tip = "How a top-level body attaches to the world. Welded = body is rigidly fixed; Free = MJCF emits a <freejoint/> on the body so it floats with 6 DoF. URDF ignores this and always emits a fixed-base base_link.";
+            PMLabelWorldAttachment = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
+                LabelWorldAttachmentID, (short)controlType,
+                "World attachment", (short)alignment, options, tip);
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Combobox;
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
+            PMComboBoxWorldAttachment = (PropertyManagerPageCombobox)PMLinkJointTab.AddControl2(
+                ComboBoxWorldAttachmentID, (short)controlType,
+                "World attachment", (short)alignment, options, tip);
+            PMComboBoxWorldAttachment.Style =
+                (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
+            // Order MUST match WorldAttachmentModel (Welded = 0, Free = 1)
+            // so the combobox index can be cast directly to the enum.
+            PMComboBoxWorldAttachment.AddItems(new string[] { "Welded", "Free" });
         }
 
         // Global Origin coord system label + single-entity SelectionBox.
@@ -130,16 +159,24 @@ namespace SW2URDF.URDFExport
             // off for the base node which has no joint to anchor.
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            string tip = "Pick the reference coordinate system that defines the joint origin. Leave empty to auto-generate one from the parent/child kinematic chain.";
+            // The "Link coordinate system" picker doubles as both the
+            // joint-origin coord-sys (nested links) and the world->body
+            // offset coord-sys (top-level bodies). The label is
+            // generic/role-neutral on purpose so it reads correctly for
+            // either case; the underlying field on the data model is the
+            // same Link.Joint.CoordinateSystemName in both. The picker is
+            // disabled on the WorldNode itself (the WorldNode owns the
+            // Global Origin picker, not this one).
+            string tip = "Pick the reference coordinate system that defines this body's frame. For a top-level body it is the world->body offset; for a nested link it is the joint origin. Leave empty to auto-generate one from the parent/child kinematic chain.";
             PMLabelCoordSys = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
                 LabelCoordSysID, (short)controlType,
-                "Joint coordinate system", (short)alignment, options, tip);
+                "Link coordinate system", (short)alignment, options, tip);
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             PMSelectionJointCoordsys = (PropertyManagerPageSelectionbox)PMLinkJointTab.AddControl2(
                 SelectionJointCoordsysID, (short)controlType,
-                "Pick joint coordinate system", (short)alignment, options, tip);
+                "Pick link coordinate system", (short)alignment, options, tip);
             // SW-native single-entity overwrite UX - see
             // PMSelectionGlobalCoordsys above for the full rationale,
             // including why AllowSelectInMultipleBoxes is FALSE

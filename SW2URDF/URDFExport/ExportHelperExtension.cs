@@ -156,21 +156,115 @@ namespace SW2URDF.URDFExport
             Link.Visual.Origin.SetRPY(MathOps.GetRPY(localVisualTransform));
         }
 
-        // The one used by the Assembly Exporter
-        public bool CreateRobotFromTreeView(LinkNode baseNode)
+        /// <summary>
+        /// Build the legacy <see cref="Robot"/> graph from the PMP's
+        /// <see cref="LinkNode"/> tree.
+        ///
+        /// The <paramref name="rootNode"/> may be:
+        /// 1. A <see cref="WorldNode"/> root (current shape). The world's
+        ///    <c>GlobalOriginCoordinateSystemName</c> drives the
+        ///    <c>Origin_global</c> auto-generation once per export, and
+        ///    each top-level body becomes a candidate URDF base link.
+        ///    Today's URDF/MJCF pipeline still flows through a single
+        ///    <see cref="Robot.BaseLink"/>, so we pick the FIRST top-level
+        ///    body as the base link and warn if there are more (matching
+        ///    the contract documented in
+        ///    <c>KinematicTreeAdapter.ToLegacyRobot</c>).
+        /// 2. A bare <see cref="LinkNode"/> (legacy shape). Built as
+        ///    today: that node IS the base link.
+        /// </summary>
+        public bool CreateRobotFromTreeView(LinkNode rootNode)
         {
             using (BeginFeatureLookupCache())
             {
                 ExportErrorWhy = "";
                 URDFRobot = new Robot();
 
-                progressBar.Start(0, CommonSwOperations.GetCount(baseNode.Nodes) + 1, "Building links");
+                progressBar.Start(0, CommonSwOperations.GetCount(rootNode.Nodes) + 1, "Building links");
                 int count = 0;
 
                 progressBar.UpdateProgress(count);
-                progressBar.UpdateTitle("Building link: " + baseNode.Name);
+                progressBar.UpdateTitle("Building link: " + rootNode.Name);
 
-                Link baseLink = CreateLink(baseNode, 1);
+                // The world's global-origin coord-sys is the single source of
+                // truth for "the assembly's global frame" - auto-generate
+                // Origin_global ONCE per export when it's empty / placeholder,
+                // then propagate the resolved name to every top-level body
+                // whose own coord-sys also wants the global default. This
+                // replaces the per-base CreateBaseRefOrigin call that used to
+                // live inside CreateBaseLinkFromComponents (which rendered an
+                // Origin_global per top-level body and silently overrode any
+                // user-set body coord-sys).
+                LinkNode topLevelBaseNode;
+                if (rootNode is WorldNode worldNode)
+                {
+                    // Stash the WorldNode so ExportRobot can pick up
+                    // world-level visual/collision/site geometry. This is
+                    // the only path from the PMP that carries world data;
+                    // legacy LinkNode-rooted callers leave ActiveWorldNode
+                    // null and the MJCF builder falls back to an empty
+                    // synthesised world.
+                    ActiveWorldNode = worldNode;
+
+                    string resolvedGlobalName = ResolveAndGenerateGlobalOrigin(worldNode);
+
+                    List<LinkNode> topLevels = new List<LinkNode>();
+                    foreach (LinkNode child in worldNode.Nodes)
+                    {
+                        topLevels.Add(child);
+                    }
+                    if (topLevels.Count == 0)
+                    {
+                        ExportErrorWhy = "World has no top-level body. Add at least one child to the World node before exporting.";
+                        MessageBox.Show(ExportErrorWhy);
+                        logger.Warn(ExportErrorWhy);
+                        progressBar.End();
+                        return false;
+                    }
+                    if (topLevels.Count > 1)
+                    {
+                        // URDF describes a single robot in isolation; the
+                        // Robot graph can only carry one BaseLink. Mirror the
+                        // KinematicTreeAdapter.ToLegacyRobot warning here so
+                        // the user sees the same message regardless of which
+                        // path produced the legacy Robot.
+                        System.Text.StringBuilder dropped = new System.Text.StringBuilder();
+                        for (int i = 1; i < topLevels.Count; i++)
+                        {
+                            if (dropped.Length > 0) dropped.Append(", ");
+                            dropped.Append(topLevels[i].Name ?? "<unnamed>");
+                        }
+                        logger.Warn("URDF/MJCF export: " + topLevels.Count +
+                            " top-level bodies under World; URDF can only describe a single robot. " +
+                            "First body '" + (topLevels[0].Name ?? "<unnamed>") + "' becomes base_link; " +
+                            "dropping additional top-level bodies: " + dropped + ".");
+                    }
+                    topLevelBaseNode = topLevels[0];
+
+                    // For each top-level body whose own coord-sys is empty or
+                    // the legacy "Automatically Generate" sentinel, inherit
+                    // the world's resolved global-origin so today's behavior
+                    // (welded-at-world: identity world->body offset) is
+                    // preserved through the legacy Robot path.
+                    foreach (LinkNode topLevel in topLevels)
+                    {
+                        if (topLevel?.Link?.Joint == null) continue;
+                        string body = topLevel.Link.Joint.CoordinateSystemName;
+                        if (string.IsNullOrEmpty(body) ||
+                            body == "Automatically Generate")
+                        {
+                            topLevel.Link.Joint.CoordinateSystemName = resolvedGlobalName;
+                        }
+                    }
+                }
+                else
+                {
+                    // Legacy: rootNode IS the base link.
+                    ActiveWorldNode = null;
+                    topLevelBaseNode = rootNode;
+                }
+
+                Link baseLink = CreateLink(topLevelBaseNode, 1);
                 if (baseLink == null || !string.IsNullOrWhiteSpace(ExportErrorWhy))
                 {
                     MessageBox.Show(ExportErrorWhy);
@@ -179,25 +273,43 @@ namespace SW2URDF.URDFExport
                     return false;
                 }
                 URDFRobot.SetBaseLink(baseLink);
-                baseNode.Link = baseLink;
+                topLevelBaseNode.Link = baseLink;
 
                 progressBar.End();
                 return true;
             }
         }
 
-        private Link CreateBaseLinkFromComponents(LinkNode node)
+        // Auto-generate Origin_global once per export when the world's
+        // configured global-origin coord-sys is empty or the legacy
+        // "Automatically Generate" sentinel. Returns the resolved name
+        // (always non-empty on success). Top-level bodies inheriting the
+        // global default get this same name in CreateRobotFromTreeView.
+        private string ResolveAndGenerateGlobalOrigin(WorldNode worldNode)
         {
-            // Build the link from the partdoc
-            Link link = CreateLinkFromComponents(null, node);
-            if (string.IsNullOrEmpty(node.Link.Joint.CoordinateSystemName) ||
-                node.Link.Joint.CoordinateSystemName == "Automatically Generate")
+            string globalName = worldNode?.GlobalOriginCoordinateSystemName ?? "";
+            if (string.IsNullOrEmpty(globalName) ||
+                globalName == "Automatically Generate")
             {
                 CreateBaseRefOrigin(true);
-                node.Link.Joint.CoordinateSystemName = "Origin_global";
-                link.Joint.CoordinateSystemName = node.Link.Joint.CoordinateSystemName;
+                globalName = "Origin_global";
+                if (worldNode != null)
+                {
+                    worldNode.GlobalOriginCoordinateSystemName = globalName;
+                }
             }
-            else
+            return globalName;
+        }
+
+        // Build a top-level body link from its components. The world's
+        // global-origin auto-generation has already happened (in
+        // CreateRobotFromTreeView), and the body's Link.Joint.CoordinateSystemName
+        // has already been populated with the world's resolved name when it
+        // was empty. This now just delegates to CreateLinkFromComponents.
+        private Link CreateTopLevelLinkFromComponents(LinkNode node)
+        {
+            Link link = CreateLinkFromComponents(null, node);
+            if (link != null)
             {
                 link.Joint.CoordinateSystemName = node.Link.Joint.CoordinateSystemName;
             }
@@ -205,14 +317,19 @@ namespace SW2URDF.URDFExport
         }
 
         //Method which builds an entire link and iterates through.
+        // Treats both legacy base-node nodes (IsBaseNode == true) and the
+        // new WorldNode-rooted top-level bodies (IsTopLevelBody == true) as
+        // "URDF base link" equivalents, since the legacy Robot graph carries
+        // exactly one BaseLink and either kind of node fills that role.
         private Link CreateLink(LinkNode node, int count)
         {
             progressBar.UpdateTitle("Building link: " + node.Name);
             progressBar.UpdateProgress(count);
             Link link;
-            if (node.IsBaseNode)
+            bool treatAsBase = node.IsBaseNode || node.IsTopLevelBody;
+            if (treatAsBase)
             {
-                link = CreateBaseLinkFromComponents(node);
+                link = CreateTopLevelLinkFromComponents(node);
                 URDFRobot.SetBaseLink(link);
             }
             else

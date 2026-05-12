@@ -275,6 +275,15 @@ namespace SW2URDF.URDFExport
         private PropertyManagerPageLabel PMLabelCollisionComponents;
         private PropertyManagerPageLabel PMLabelInertialComponents;
 
+        // World attachment combobox (Welded / Free) on the Link/Joint tab.
+        // Only enabled when the active node is a top-level body (immediate
+        // child of the WorldNode). Welded -> body is rigidly fixed to the
+        // world; Free -> MJCF emits a <freejoint/> on the body. URDF
+        // ignores this field (the first top-level body is always written
+        // as a fixed-base base_link, with a warning if Free was selected).
+        private PropertyManagerPageLabel PMLabelWorldAttachment;
+        private PropertyManagerPageCombobox PMComboBoxWorldAttachment;
+
         private PropertyManagerPageWindowFromHandle PMTree;
 
         public TreeView Tree
@@ -399,6 +408,8 @@ namespace SW2URDF.URDFExport
         private const int LabelCollisionComponentsHeaderID = 146;
         private const int LabelSiteCoordSysHeaderID = 147;
         private const int LabelActiveLinkTreeID = 148;
+        private const int LabelWorldAttachmentID = 149;
+        private const int ComboBoxWorldAttachmentID = 150;
 
         // Marks for every PMP SelectionBox so SOLIDWORKS can attribute the
         // user's selection to the right list. CRITICAL:

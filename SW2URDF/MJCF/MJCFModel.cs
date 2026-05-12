@@ -1,20 +1,50 @@
+using System.Collections.Generic;
 using System.Xml;
 
 namespace SW2URDF.MJCF
 {
     // Top-level <mujoco model="..."> document. Owns the compiler/asset declarations
     // and the worldbody hierarchy. Writing the model is straightforward XML emission;
-    // the heavy lifting (translating a SW2URDF Link tree into the MJCF tree) lives in
-    // MJCFBuilder.
+    // the heavy lifting (translating the SW2URDF KinematicTree into the MJCF tree)
+    // lives in MJCFBuilder.
+    //
+    // The worldbody contains:
+    //   * world-direct <geom>s (e.g. ground planes), siblings of the bodies
+    //   * world-direct <site>s (scene fiducials), also siblings
+    //   * one or more top-level <body>s (each an independent kinematic tree)
+    //
+    // For backwards compatibility with the original single-tree caller, the
+    // legacy <see cref="RootBody"/> setter pushes the body into TopLevelBodies
+    // (replacing any prior contents) so existing call sites keep working.
     internal class MJCFModel
     {
         public string Name { get; set; }
         public MJCFCompiler Compiler { get; set; }
         public Asset Asset { get; set; }
 
-        // The root body. Conventionally added directly under <worldbody>. Its
-        // SuppressTransform should be true so its origin coincides with the world.
-        public Body RootBody { get; set; }
+        public List<Body> TopLevelBodies { get; }
+        public List<Geom> WorldGeoms { get; }
+        public List<Site> WorldSites { get; }
+
+        /// <summary>
+        /// Legacy single-root accessor. Reads / writes the first entry of
+        /// <see cref="TopLevelBodies"/>; setting it replaces the entire
+        /// list with a one-element list so existing callers continue to
+        /// behave exactly as before. New multi-tree callers should append
+        /// to <see cref="TopLevelBodies"/> directly.
+        /// </summary>
+        public Body RootBody
+        {
+            get => TopLevelBodies.Count > 0 ? TopLevelBodies[0] : null;
+            set
+            {
+                TopLevelBodies.Clear();
+                if (value != null)
+                {
+                    TopLevelBodies.Add(value);
+                }
+            }
+        }
 
         // Whether to emit the standard visual/collision <default> classes. These give
         // visual geoms group=2 with no contact, and collision geoms group=3.
@@ -25,7 +55,12 @@ namespace SW2URDF.MJCF
             Name = name;
             Compiler = new MJCFCompiler();
             Asset = new Asset();
-            RootBody = new Body { Name = name, SuppressTransform = true };
+            TopLevelBodies = new List<Body>
+            {
+                new Body { Name = name, SuppressTransform = true },
+            };
+            WorldGeoms = new List<Geom>();
+            WorldSites = new List<Site>();
         }
 
         public void WriteMJCF(XmlWriter writer)
@@ -51,9 +86,32 @@ namespace SW2URDF.MJCF
             }
 
             writer.WriteStartElement("worldbody");
-            if (RootBody != null)
+            // World-direct <geom>s and <site>s are emitted as siblings of
+            // the top-level bodies. Order: <geom> first, then <site>, then
+            // <body>s (matching MJCF reference examples).
+            if (WorldGeoms != null)
             {
-                RootBody.WriteMJCF(writer);
+                foreach (Geom geom in WorldGeoms)
+                {
+                    geom.WriteMJCF(writer);
+                }
+            }
+            if (WorldSites != null)
+            {
+                foreach (Site site in WorldSites)
+                {
+                    site.WriteMJCF(writer);
+                }
+            }
+            if (TopLevelBodies != null)
+            {
+                foreach (Body body in TopLevelBodies)
+                {
+                    if (body != null)
+                    {
+                        body.WriteMJCF(writer);
+                    }
+                }
             }
             writer.WriteEndElement();
 

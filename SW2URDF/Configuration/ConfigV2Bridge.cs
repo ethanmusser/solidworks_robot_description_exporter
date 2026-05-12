@@ -41,18 +41,18 @@ namespace SW2URDF.Configuration
             // child) would not round-trip because Link.Children is the
             // shape DataContract / ConfigV2 walks.
             CopyLinkNodeNamesToLinks(baseNode);
-            Link rootLink = baseNode.UpdateLinkTree(null);
+            string treeName = robotName ?? (baseNode is WorldNode ? "" : baseNode.Link?.Name ?? "");
 
-            Robot robot = new Robot { Name = robotName ?? rootLink.Name ?? "" };
-            robot.SetBaseLink(rootLink);
-
-            KinematicTree tree = KinematicTreeAdapter.ToCore(robot);
+            // The new shape expects a WorldNode root; for compatibility the
+            // adapter also accepts a plain LinkNode and synthesizes a
+            // single-body World wrapper.
+            KinematicTree tree = KinematicTreeAdapter.ToCore(baseNode, treeName);
             return ConfigV2.Create(tree, GetExporterVersion());
         }
 
         /// <summary>
-        /// Reconstructs a LinkNode tree from a ConfigV2 record. The caller
-        /// must then run
+        /// Reconstructs a LinkNode tree (rooted at a <see cref="WorldNode"/>)
+        /// from a ConfigV2 record. The caller must then run
         /// <see cref="CommonSwOperations.LoadSWComponents(SolidWorks.Interop.sldworks.ModelDoc2, LinkNode, System.Collections.Generic.List{string})"/>
         /// to resolve the persistent IDs back into live Component2 objects.
         /// </summary>
@@ -67,8 +67,7 @@ namespace SW2URDF.Configuration
                 throw new InvalidOperationException("ConfigV2 has no kinematic tree.");
             }
 
-            Robot robot = KinematicTreeAdapter.ToLegacyRobot(config.Tree);
-            return new LinkNode(robot.BaseLink);
+            return KinematicTreeAdapter.ToWorldNode(config.Tree);
         }
 
         // Recursively pushes LinkNode.Name onto Link.Name. Mirrors the

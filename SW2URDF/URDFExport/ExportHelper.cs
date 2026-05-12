@@ -77,6 +77,22 @@ namespace SW2URDF.URDFExport
         public Robot URDFRobot
         { get; set; }
 
+        /// <summary>
+        /// The PMP-side <see cref="WorldNode"/> root used for the most recent
+        /// <see cref="CreateRobotFromTreeView"/> call. Carries world-level
+        /// metadata (global-origin coord-sys, world-direct visual / collision
+        /// groups, world sites) that is NOT representable in the legacy
+        /// <see cref="Robot"/> graph.
+        ///
+        /// Null when an export is constructed via the legacy
+        /// non-WorldNode-rooted path (e.g. a unit test that hand-builds a
+        /// LinkNode tree without a WorldNode parent), in which case the
+        /// MJCF builder synthesises an empty world from
+        /// <see cref="Robot.BaseLink.Joint.CoordinateSystemName"/> via
+        /// <see cref="KinematicTreeAdapter.ToCore(Robot)"/>.
+        /// </summary>
+        public WorldNode ActiveWorldNode { get; set; }
+
         public Action AxisOverlayDirectionFlipped
         { get; set; }
 
@@ -238,6 +254,27 @@ namespace SW2URDF.URDFExport
             {
                 logger.Info("Beginning individual files export");
                 ExportFiles(URDFRobot.BaseLink, package, 0, exportSTL, meshFormat, mjcfAux);
+
+                // World-level geometry / sites: MJCF only. Walks the
+                // WorldNode's visual / collision / site groups through
+                // the same SaveSTL / ComputeSiteTransforms paths used
+                // for body geometry, anchored to the world's global-
+                // origin coord-sys. URDF ignores world geometry by
+                // construction (already warned in
+                // KinematicTreeAdapter.ToLegacyRobot), and an empty
+                // / null ActiveWorldNode produces no aux entry, so
+                // legacy LinkNode-rooted callers see today's exact
+                // output.
+                if (mjcfAux != null && ActiveWorldNode != null)
+                {
+                    ProcessLinkMeshes(
+                        ActiveWorldNode.Link,
+                        MJCFBuilder.WorldAuxKey,
+                        package,
+                        exportSTL,
+                        meshFormat,
+                        mjcfAux);
+                }
                 success = true;
             }
             catch (Exception e)
@@ -263,7 +300,21 @@ namespace SW2URDF.URDFExport
             if (outputFormat == ExportFormat.MJCF)
             {
                 logger.Info("Writing MJCF file to " + windowsModelFileName);
-                MJCFModel mjcfModel = MJCFBuilder.Build(URDFRobot, package.MJCFMeshDir, mjcfAux);
+                // Prefer the WorldNode-rooted KinematicTree path so
+                // world-level <geom> / <site> / <freejoint/> support flows
+                // through. Falls back to the Robot path for legacy
+                // callers that didn't populate ActiveWorldNode (e.g.
+                // SW-less unit tests that hand-build a Robot).
+                KinematicTree mjcfTree;
+                if (ActiveWorldNode != null)
+                {
+                    mjcfTree = KinematicTreeAdapter.ToCore(ActiveWorldNode, URDFRobot.Name);
+                }
+                else
+                {
+                    mjcfTree = KinematicTreeAdapter.ToCore(URDFRobot);
+                }
+                MJCFModel mjcfModel = MJCFBuilder.Build(mjcfTree, package.MJCFMeshDir, mjcfAux);
                 MJCFWriter mjcfWriter = new MJCFWriter(windowsModelFileName);
                 try
                 {
@@ -368,12 +419,28 @@ namespace SW2URDF.URDFExport
                 }
             }
 
+            if (!link.isFixedFrame)
+            {
+                ProcessLinkMeshes(link, link.Name, package, exportSTL, meshFormat, mjcfAux);
+            }
+        }
+
+        // Mesh-export work for one Link. Body links are keyed by link.Name in
+        // mjcfAux; the WorldNode's pseudo-link is keyed by MJCFBuilder.WorldAuxKey
+        // so the MJCF builder can lift its geoms/sites directly under <worldbody>.
+        private void ProcessLinkMeshes(Link link, string assetKey, ExportPackage package,
+            bool exportSTL, MeshExportFormat meshFormat, Dictionary<string, LinkAuxiliary> mjcfAux)
+        {
+            if (link == null)
+            {
+                return;
+            }
+
             // Copy the texture file (if it was specified) to the textures directory.
             // Both URDF and MJCF use the same on-disk layout (<package>/textures/);
             // URDF references it via package://, MJCF references the basename via
             // <compiler texturedir="../textures/"> in the emitted XML.
-            if (!link.isFixedFrame &&
-                !String.IsNullOrWhiteSpace(link.Visual.Material.Texture.wFilename))
+            if (!String.IsNullOrWhiteSpace(link.Visual.Material.Texture.wFilename))
             {
                 if (File.Exists(link.Visual.Material.Texture.wFilename))
                 {
@@ -396,7 +463,9 @@ namespace SW2URDF.URDFExport
 
             // SolidWorks names occasionally contain "/" which would create unwanted
             // sub-directories in mesh filenames. Replace them with "_".
-            string linkName = link.Name.Replace('/', '_');
+            string linkName = string.Equals(assetKey, MJCFBuilder.WorldAuxKey, StringComparison.Ordinal)
+                ? WorldNode.DefaultName
+                : (link.Name ?? "").Replace('/', '_');
             string extension = (meshFormat == MeshExportFormat.THREEDXML) ? ".3dxml" : ".STL";
 
             // Make sure VisualGroups / CollisionGroups are populated. For brand-
@@ -438,7 +507,7 @@ namespace SW2URDF.URDFExport
 
             // Per-link MJCF auxiliary, populated as we walk the groups below.
             LinkAuxiliary aux = null;
-            if (mjcfAux != null && !link.isFixedFrame)
+            if (mjcfAux != null)
             {
                 aux = new LinkAuxiliary();
             }
@@ -537,7 +606,7 @@ namespace SW2URDF.URDFExport
             if (aux != null)
             {
                 aux.Sites = ComputeSiteTransforms(link);
-                mjcfAux[link.Name] = aux;
+                mjcfAux[assetKey ?? link.Name] = aux;
             }
         }
 
