@@ -19,6 +19,13 @@ on:
         description: "Tag name to fold into the installer filename (workflow_dispatch only)"
         required: false
         default: "manual"
+  pull_request:
+    paths:
+      - 'SW2URDF/**'
+      - 'INSTALL/**'
+      - 'scripts/**'
+      - 'SW2URDF.sln'
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: write
