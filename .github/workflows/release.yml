@@ -1,0 +1,106 @@
+name: Build installer and attach to release
+
+# Fires whenever a Release is created in the GitHub UI (the user picks/creates
+# the tag, writes release notes, and clicks "Publish release"). The workflow
+# builds SW2URDF.dll in Release configuration against the SOLIDWORKS API DLLs
+# vendored under SW2URDF/lib/sw-api/, compiles the Inno Setup installer, and
+# uploads the resulting .exe as an asset on the triggering release.
+#
+# Also exposes a workflow_dispatch entry so the pipeline can be smoke-tested
+# from the Actions tab without cutting a real release; in that mode the
+# installer is only uploaded as a workflow artifact, not attached to a release.
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag name to fold into the installer filename (workflow_dispatch only)"
+        required: false
+        default: "manual"
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout (with full history for git describe)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # actions/checkout fetches tags as part of fetch-depth: 0, but force-refresh
+      # to be defensive: scripts/UpdateVersionInfo.ps1 runs `git describe --tags`
+      # at MSBuild BeforeBuild and embeds the result as
+      # [assembly: AssemblyInformationalVersion(...)]. Without the tag pointing
+      # at the release commit, the embedded version would fall back to a bare
+      # short SHA.
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore SW2URDF.sln
+
+      # Build only the SW2URDF project. The sibling TestRunner project in the
+      # solution is a developer test harness that references the SOLIDWORKS
+      # interop DLLs without EmbedInteropTypes and is not part of the
+      # installer payload, so we deliberately skip it.
+      #
+      # /p:SolidWorksPath redirects the HintPaths in SW2URDF.csproj to the
+      # vendored SOLIDWORKS DLLs under SW2URDF/lib/sw-api/api/redist/.
+      - name: Build SW2URDF (Release, x64)
+        run: msbuild SW2URDF\SW2URDF.csproj /t:Build /p:Configuration=Release /p:Platform=x64 "/p:SolidWorksPath=$env:GITHUB_WORKSPACE\SW2URDF\lib\sw-api" /verbosity:minimal /nologo
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      # Compute the installer filename suffix from the release tag (or the
+      # workflow_dispatch input). AssemblyVersion in the DLL is deliberately
+      # pinned (see AssemblyInfo.cs) so the .iss-default OutputBaseFilename
+      # (derived from the DLL's FileVersion) would collide across releases.
+      # Override explicitly with the release tag instead.
+      - name: Compute installer filename
+        id: filename
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'release') {
+            $tag = '${{ github.event.release.tag_name }}'
+          } else {
+            $tag = '${{ github.event.inputs.tag_name }}'
+          }
+          if ([string]::IsNullOrWhiteSpace($tag)) { $tag = 'manual' }
+          $safe = ($tag -replace '[^A-Za-z0-9._-]', '_')
+          $name = "sw2urdfSetup_$safe"
+          Write-Host "Installer base filename: $name"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "name=$name"
+
+      - name: Build installer
+        run: iscc /DBuildConfig=Release "/DOutputBaseFilename=${{ steps.filename.outputs.name }}" INSTALL\Install.iss
+
+      - name: List built installer
+        run: Get-ChildItem INSTALL\OUTPUT
+
+      - name: Upload installer as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.filename.outputs.name }}
+          path: INSTALL/OUTPUT/${{ steps.filename.outputs.name }}.exe
+          if-no-files-found: error
+
+      - name: Attach installer to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "INSTALL\OUTPUT\${{ steps.filename.outputs.name }}.exe" --clobber

@@ -40,6 +40,26 @@ See the [ROS Wiki](http://wiki.ros.org/sw_urdf_exporter) and associated [tutoria
     1. Ensure `Configuration:` is set to `Debug`
     1. Ensure `Start external program:` is pointing to the SolidWorks executable. For example `C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\SLDWORKS.exe`
 
+Local development continues to use the SolidWorks API DLLs from the developer's SolidWorks install (`$(SolidWorksPath)` in[SW2URDF.csproj](SW2URDF/SW2URDF.csproj)). The vendored copies under [SW2URDF/lib/sw-api/](SW2URDF/lib/sw-api/) are only consulted by CI; see that folder's README for details.
+
+## Releasing
+
+The Inno Setup installer is built automatically by
+[.github/workflows/release.yml](.github/workflows/release.yml):
+
+1. Publish a Release on GitHub (Releases tab -> Draft a new release). Pick or
+   create the tag you want the release to point at and write release notes.
+1. The workflow builds `SW2URDF.dll` in `Release` configuration against the
+   vendored SolidWorks API DLLs under
+   [SW2URDF/lib/sw-api/](SW2URDF/lib/sw-api/), compiles
+   [INSTALL/Install.iss](INSTALL/Install.iss) with Inno Setup, and attaches
+   the resulting `sw2urdfSetup_<tag>.exe` to the triggering release as an
+   asset.
+1. The pipeline can also be invoked manually from the Actions tab
+   (`workflow_dispatch`) to smoke-test changes without cutting a real
+   release; in that mode the installer is uploaded only as a workflow
+   artifact, not attached to a release.
+
 ## Converting mesh format from 3dxml to dae
 
 Executing the following command will convert the format of the exported mesh from 3DXML to DAE, and rewrite the URDF, allowing you to display colored meshes in visualization tools like RViz:

@@ -2,14 +2,20 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "SolidWorks To URDF"
-#define MyAppVersion "2018 v1.6"
-#define MyAppPublisher "Stephen Brawner"
-#define MyAppURL "http://wiki.ros.org/sw_urdf_exporter"
+#define MyAppVersion "2026 v2.0"
+#define MyAppPublisher "Ethan J. Musser"
+#define MyAppURL "https://github.com/ethanmusser/solidworks_urdf_exporter"
 
 #define MainBinaryName  "SW2URDF.dll"
 #define SetupBaseName   "sw2urdfSetup_"
-#define DllLocation     AddBackslash(SourcePath + "..\SW2URDF\bin\x64\Debug") + MainBinaryName
-#define BuildVersion    GetFileVersion(DllLocation)
+; BuildConfig can be overridden on the ISCC command line via /DBuildConfig=Release.
+; Local Inno Setup compilation continues to use the Debug build by default so the
+; existing developer workflow is unchanged; CI passes /DBuildConfig=Release.
+#ifndef BuildConfig
+  #define BuildConfig "Debug"
+#endif
+#define DllLocation     AddBackslash(SourcePath + "..\SW2URDF\bin\x64\" + BuildConfig) + MainBinaryName
+#define BuildVersion    GetVersionNumbersString(DllLocation)
 #define CommitVersion   GetFileProductVersion(DllLocation)
 #define AVF1            Copy(BuildVersion, 1, Pos(".", BuildVersion) - 1) + "_" + Copy(BuildVersion, Pos(".", BuildVersion) + 1)
 #define AVF2            Copy(AVF1,       1, Pos(".", AVF1      ) - 1) + "_" + Copy(AVF1      , Pos(".", AVF1      ) + 1)
@@ -23,7 +29,7 @@ AppId={{E43E85A9-071D-430A-91B2-84B7AB923170}
 AppName={#MyAppName}
 AppVersion={#CommitVersion}
 VersionInfoVersion={#BuildVersion}
-VersionInfoCopyright=2019
+VersionInfoCopyright=2026
 VersionInfoProductName={#MyAppName}
 ;AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -31,23 +37,29 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 CreateAppDir=yes
-OutputBaseFilename=sw2urdfSetup
-;OutputBaseFilename={#SetupBaseName + AppVersionFile}
+; Version-suffix the installer filename so each release produces a uniquely
+; named asset (e.g. sw2urdfSetup_1_6_0_0.exe). Override on the ISCC command
+; line via /DOutputBaseFilename=sw2urdfSetup if the legacy fixed name is
+; needed.
+#ifndef OutputBaseFilename
+  #define OutputBaseFilename SetupBaseName + AppVersionFile
+#endif
+OutputBaseFilename={#OutputBaseFilename}
 Compression=lzma                                                        
 DefaultDirName="C:\Program Files\SolidWorks Corp\SolidWorks\URDFExporter"
 SolidCompression=no
 PrivilegesRequired=admin
 OutputDir=..\..\INSTALL\OUTPUT
 SourceDir=..\SW2URDF\bin\
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: x64\Debug\*;  DestDir: {app}; Flags: ignoreversion; Check: IsWin64;
-;Source: x86\Debug\*;  DestDir: {app}; Flags: regserver ignoreversion; Check: not IsWin64
+Source: x64\{#BuildConfig}\*;  DestDir: {app}; Flags: ignoreversion recursesubdirs createallsubdirs; Check: IsWin64;
+;Source: x86\Debug\*;  DestDir: {app}; Flags: regserver ignoreversion recursesubdirs createallsubdirs; Check: not IsWin64
 
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 

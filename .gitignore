@@ -332,3 +332,7 @@ ASALocalRun/
 *.zip
 
 SW2URDF/Versioning/VersionInfo.cs
+
+# Inno Setup installer output (produced by INSTALL/Install.iss and the
+# .github/workflows/release.yml CI pipeline).
+INSTALL/OUTPUT/
