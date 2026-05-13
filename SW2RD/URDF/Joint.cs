@@ -21,8 +21,10 @@ THE SOFTWARE.
 */
 
 using System.Collections.Generic;
+using System;
 using System.Runtime.Serialization;
 using System.Windows.Forms;
+using System.Xml;
 
 namespace SW2RD.URDF
 {
@@ -34,6 +36,26 @@ namespace SW2RD.URDF
         {
             "revolute", "continuous", "prismatic", "fixed", "floating", "planar"
         };
+
+        public static bool UsesAngularUnits(string jointType)
+        {
+            return jointType == "revolute" || jointType == "continuous";
+        }
+
+        public static double DegreesToRadians(double degrees)
+        {
+            return degrees * Math.PI / 180.0;
+        }
+
+        public static double RadiansToDegrees(double radians)
+        {
+            return radians * 180.0 / Math.PI;
+        }
+
+        public static double AngularDampingPerDegreeToPerRadian(double dampingPerDegree)
+        {
+            return dampingPerDegree * 180.0 / Math.PI;
+        }
 
         [DataMember]
         private readonly URDFAttribute NameAttribute;
@@ -199,6 +221,47 @@ namespace SW2RD.URDF
         {
             Name = boxName.Text;
             Type = boxType.Text;
+        }
+
+        public override void WriteURDF(XmlWriter writer)
+        {
+            if (!UsesAngularUnits(Type))
+            {
+                base.WriteURDF(writer);
+                return;
+            }
+
+            double? lower = Limit.LowerOrNull;
+            double? upper = Limit.UpperOrNull;
+            double? velocity = Limit.VelocityOrNull;
+            double? damping = Dynamics.DampingOrNull;
+            try
+            {
+                if (lower.HasValue)
+                {
+                    Limit.SetLower(DegreesToRadians(lower.Value));
+                }
+                if (upper.HasValue)
+                {
+                    Limit.SetUpper(DegreesToRadians(upper.Value));
+                }
+                if (velocity.HasValue)
+                {
+                    Limit.SetVelocity(DegreesToRadians(velocity.Value));
+                }
+                if (damping.HasValue)
+                {
+                    Dynamics.SetDamping(AngularDampingPerDegreeToPerRadian(damping.Value));
+                }
+                base.WriteURDF(writer);
+            }
+            finally
+            {
+                Limit.SetLower(lower);
+                Limit.SetUpper(upper);
+                Limit.SetVelocity(velocity);
+                Dynamics.SetDamping(damping);
+            }
         }
 
         public override bool ElementContainsData()

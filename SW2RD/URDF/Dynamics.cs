@@ -87,6 +87,16 @@ namespace SW2RD.URDF
             }
         }
 
+        public void SetDamping(double? value)
+        {
+            DampingAttribute.Value = value.HasValue ? (object)value.Value : null;
+        }
+
+        public void SetFriction(double? value)
+        {
+            FrictionAttribute.Value = value.HasValue ? (object)value.Value : null;
+        }
+
         public Dynamics() : base("dynamics", false)
         {
             DampingAttribute = new URDFAttribute("damping", false, null);

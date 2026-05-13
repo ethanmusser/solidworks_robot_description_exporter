@@ -24,9 +24,9 @@ using System.Xml;
 
 namespace SW2RD.MJCF
 {
-    // Emits the <compiler ...> element. The compiler tag governs how MuJoCo parses
-    // the rest of the document. We default to settings that match how URDF is exported:
-    // angles in radians (matching URDF), automatic limits, and balanced inertia.
+    // Emits the <compiler ...> element. We deliberately do not write an `angle`
+    // attribute, so MuJoCo's default degree units apply to angular XML attributes
+    // such as joint range/ref. The Link/Joint tab mirrors that convention.
     //
     // Named MJCFCompiler rather than Compiler so the unqualified type does not
     // collide with the System.CodeDom.Compiler namespace (CA1724).

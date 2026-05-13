@@ -72,6 +72,14 @@ namespace SW2RD.URDF
 
         public void SetVelocityOrClear(string text) => SetOrClear(VelocityAttribute, text);
 
+        public void SetLower(double? value) => SetOptional(LowerAttribute, value);
+
+        public void SetUpper(double? value) => SetOptional(UpperAttribute, value);
+
+        public void SetEffort(double? value) => SetOptional(EffortAttribute, value);
+
+        public void SetVelocity(double? value) => SetOptional(VelocityAttribute, value);
+
         private static void SetOrClear(URDFAttribute attr, string text)
         {
             if (string.IsNullOrWhiteSpace(text))
@@ -82,6 +90,11 @@ namespace SW2RD.URDF
             {
                 attr.SetDoubleValueFromString(text);
             }
+        }
+
+        private static void SetOptional(URDFAttribute attr, double? value)
+        {
+            attr.Value = value.HasValue ? (object)value.Value : null;
         }
 
         public Limit() : base("limit", false)

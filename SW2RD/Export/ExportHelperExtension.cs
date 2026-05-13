@@ -2240,20 +2240,27 @@ namespace SW2RD.Export
                         (Joint.Type == "prismatic" && swMate.Type ==
                             (int)swMateType_e.swMateDISTANCE))
                     {
+                        bool angularLimit = swMate.Type == (int)swMateType_e.swMateANGLE;
+                        double minimumVariation = angularLimit
+                            ? SW2RD.URDF.Joint.RadiansToDegrees(swMate.MinimumVariation)
+                            : swMate.MinimumVariation;
+                        double maximumVariation = angularLimit
+                            ? SW2RD.URDF.Joint.RadiansToDegrees(swMate.MaximumVariation)
+                            : swMate.MaximumVariation;
+
                         // Unclear if flipped is the right thing we want to be checking here.
                         // From a sample size of 1, in SolidWorks it appears that an aligned and
                         // anti-aligned mates are NOT flipped...
                         if (!swMate.Flipped)
                         {
                             // Reverse mate directions, for some reason
-                            Joint.Limit.Upper = -swMate.MinimumVariation;
-                            Joint.Limit.Lower = -swMate.MaximumVariation;
+                            Joint.Limit.Upper = -minimumVariation;
+                            Joint.Limit.Lower = -maximumVariation;
                         }
                         else
                         {
-                            // Lucky me that no conversion is necessary
-                            Joint.Limit.Upper = swMate.MaximumVariation;
-                            Joint.Limit.Lower = swMate.MinimumVariation;
+                            Joint.Limit.Upper = maximumVariation;
+                            Joint.Limit.Lower = minimumVariation;
                         }
                         if (Joint.Type == "continuous")
                         {

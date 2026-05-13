@@ -335,7 +335,7 @@ namespace SW2RD.MJCF
                 mjJoint.Type = MJCFJointType.Hinge;
             }
 
-            if (urdfJoint.Type == "revolute" || urdfJoint.Type == "prismatic")
+            if (mjJoint.Type == MJCFJointType.Hinge || mjJoint.Type == MJCFJointType.Slide)
             {
                 if (urdfJoint.Limit != null && urdfJoint.Limit.Lower.HasValue && urdfJoint.Limit.Upper.HasValue)
                 {
@@ -369,7 +369,9 @@ namespace SW2RD.MJCF
             if (urdfJoint.Damping.HasValue)
             {
                 mjJoint.HasDamping = true;
-                mjJoint.Damping = urdfJoint.Damping.Value;
+                mjJoint.Damping = mjJoint.Type == MJCFJointType.Hinge
+                    ? urdfJoint.Damping.Value * 180.0 / Math.PI
+                    : urdfJoint.Damping.Value;
             }
             if (urdfJoint.Friction.HasValue)
             {

@@ -297,14 +297,14 @@ namespace SW2RD.Export
             PMCheckAutoComputeLimits.Checked = true;
 
             PMLabelJointLower = AddJointPropertyLabel(LabelJointLowerID,
-                "Lower [rad or m]",
-                "Lower limit of the joint range. Radians for revolute, meters for prismatic.");
+                "Lower [deg or m]",
+                "Lower limit of the joint range. Degrees for revolute/continuous, meters for prismatic.");
             PMTextBoxJointLower = AddJointPropertyTextbox(TextBoxJointLowerID,
                 "Lower limit (blank = none)");
 
             PMLabelJointUpper = AddJointPropertyLabel(LabelJointUpperID,
-                "Upper [rad or m]",
-                "Upper limit of the joint range.");
+                "Upper [deg or m]",
+                "Upper limit of the joint range. Degrees for revolute/continuous, meters for prismatic.");
             PMTextBoxJointUpper = AddJointPropertyTextbox(TextBoxJointUpperID,
                 "Upper limit (blank = none)");
 
@@ -315,14 +315,14 @@ namespace SW2RD.Export
                 "Effort limit (blank = none)");
 
             PMLabelJointVelocity = AddJointPropertyLabel(LabelJointVelocityID,
-                "Velocity [rad/s or m/s] (URDF)",
-                "Maximum joint velocity. URDF <limit velocity>; ignored on MJCF export.");
+                "Velocity [deg/s or m/s] (URDF)",
+                "Maximum joint velocity. Degrees/second for revolute/continuous, meters/second for prismatic. URDF <limit velocity>; ignored on MJCF export.");
             PMTextBoxJointVelocity = AddJointPropertyTextbox(TextBoxJointVelocityID,
                 "Velocity limit (blank = none, URDF only)");
 
             PMLabelJointDamping = AddJointPropertyLabel(LabelJointDampingID,
-                "Damping [N*m*s/rad or N*s/m]",
-                "Viscous damping coefficient. Maps to URDF <dynamics damping> and MJCF <joint damping>.");
+                "Damping [N*m*s/deg or N*s/m]",
+                "Viscous damping coefficient. Enter N*m*s/deg for revolute/continuous or N*s/m for prismatic. Export converts angular damping to the per-radian coefficient used by URDF/MJCF.");
             PMTextBoxJointDamping = AddJointPropertyTextbox(TextBoxJointDampingID,
                 "Damping (blank = none)");
 
@@ -339,8 +339,8 @@ namespace SW2RD.Export
                 "Armature (blank = none, MJCF only)");
 
             PMLabelJointReference = AddJointPropertyLabel(LabelJointReferenceID,
-                "Reference [rad or m] (MJCF)",
-                "Joint position assumed by the model when MuJoCo loads it. MJCF <joint ref>; ignored on URDF export.");
+                "Reference [deg or m] (MJCF)",
+                "Joint position assumed by the model when MuJoCo loads it. Degrees for hinge joints, meters for slide joints. MJCF <joint ref>; ignored on URDF export.");
             PMTextBoxJointReference = AddJointPropertyTextbox(TextBoxJointReferenceID,
                 "Reference position (blank = 0, MJCF only)");
         }

@@ -531,6 +531,19 @@ namespace SW2RD.Export
                 return;
             }
 
+            if (Id == CheckAutoComputeLimitsID)
+            {
+                LinkNode active = (LinkNode)Tree?.SelectedNode;
+                bool isNestedLink = active != null
+                    && ResolveNodeRole(active) == NodeRole.NestedLink;
+                if (isNestedLink && active.Link?.Joint != null)
+                {
+                    active.Link.Joint.AutoComputeLimits = Checked;
+                }
+                SetAutoComputeLimitEditorEnabled(isNestedLink && !Checked);
+                return;
+            }
+
             logger.Info("OnCheckboxCheck called for Id=" + Id + ". No special handler registered.");
         }
 

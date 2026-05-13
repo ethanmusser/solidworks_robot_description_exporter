@@ -22,6 +22,7 @@ THE SOFTWARE.
 
 using SW2RD.Configuration;
 using SW2RD.Core;
+using SW2RD.Export;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -109,6 +110,48 @@ namespace SW2RD.Test
             Assert.Equal(originalJoint.Friction, readJoint.Friction);
             Assert.Equal(originalJoint.Armature, readJoint.Armature);
             Assert.Equal(originalJoint.Reference, readJoint.Reference);
+        }
+
+        [Fact]
+        public void TestAdapterPreservesUnsetJointLimitFields()
+        {
+            JointModel childJoint = new JointModel(
+                "joint1", "revolute", "base_link", "child_link",
+                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
+                new Vector3Model(0, 0, 1),
+                new JointLimitModel(null, 1.25, null, 2.5),
+                "joint_coordsys", "joint_axis", false,
+                AutoComputeLimits: false);
+
+            LinkModel child = new LinkModel(
+                "child_link", null, null,
+                Array.Empty<MeshGroupModel>(), Array.Empty<MeshGroupModel>(),
+                false, InertialSourceModel.Visual,
+                Array.Empty<ComponentReferenceModel>(),
+                Array.Empty<SiteModel>(),
+                childJoint, Array.Empty<LinkModel>());
+
+            LinkModel root = new LinkModel(
+                "base_link", null, null,
+                Array.Empty<MeshGroupModel>(), Array.Empty<MeshGroupModel>(),
+                false, InertialSourceModel.Visual,
+                Array.Empty<ComponentReferenceModel>(),
+                Array.Empty<SiteModel>(),
+                null, new[] { child });
+
+            SW2RD.URDF.Link legacyRoot = KinematicTreeAdapter.ToLegacyLink(root, null);
+            SW2RD.URDF.Joint legacyJoint = legacyRoot.Children[0].Joint;
+
+            Assert.Null(legacyJoint.Limit.LowerOrNull);
+            Assert.Equal(1.25, legacyJoint.Limit.UpperOrNull);
+            Assert.Null(legacyJoint.Limit.EffortOrNull);
+            Assert.Equal(2.5, legacyJoint.Limit.VelocityOrNull);
+
+            JointModel roundTrippedJoint = KinematicTreeAdapter.ToCore(legacyRoot).Children[0].Joint;
+            Assert.Null(roundTrippedJoint.Limit.Lower);
+            Assert.Equal(1.25, roundTrippedJoint.Limit.Upper);
+            Assert.Null(roundTrippedJoint.Limit.Effort);
+            Assert.Equal(2.5, roundTrippedJoint.Limit.Velocity);
         }
 
         [Fact]

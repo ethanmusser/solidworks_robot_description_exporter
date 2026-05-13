@@ -695,6 +695,7 @@ namespace SW2RD.Export
             PMTextBoxJointFriction.Text = FormatJointDouble(joint.Dynamics?.FrictionOrNull);
             PMTextBoxJointArmature.Text = FormatJointDouble(joint.Armature);
             PMTextBoxJointReference.Text = FormatJointDouble(joint.Reference);
+            SetAutoComputeLimitEditorEnabled(!joint.AutoComputeLimits);
         }
 
         // Reads the eight Joint Properties textboxes back onto the data
@@ -709,14 +710,38 @@ namespace SW2RD.Export
                 return;
             }
             joint.AutoComputeLimits = PMCheckAutoComputeLimits.Checked;
-            joint.Limit?.SetLowerOrClear(PMTextBoxJointLower.Text);
-            joint.Limit?.SetUpperOrClear(PMTextBoxJointUpper.Text);
-            joint.Limit?.SetEffortOrClear(PMTextBoxJointEffort.Text);
-            joint.Limit?.SetVelocityOrClear(PMTextBoxJointVelocity.Text);
-            joint.Dynamics?.SetDampingOrClear(PMTextBoxJointDamping.Text);
-            joint.Dynamics?.SetFrictionOrClear(PMTextBoxJointFriction.Text);
-            joint.Armature = ParseJointDouble(PMTextBoxJointArmature.Text);
-            joint.Reference = ParseJointDouble(PMTextBoxJointReference.Text);
+            if (TryParseJointDouble(PMTextBoxJointLower.Text, "Lower", out double? lower))
+            {
+                joint.Limit?.SetLower(lower);
+            }
+            if (TryParseJointDouble(PMTextBoxJointUpper.Text, "Upper", out double? upper))
+            {
+                joint.Limit?.SetUpper(upper);
+            }
+            if (TryParseJointDouble(PMTextBoxJointEffort.Text, "Effort", out double? effort))
+            {
+                joint.Limit?.SetEffort(effort);
+            }
+            if (TryParseJointDouble(PMTextBoxJointVelocity.Text, "Velocity", out double? velocity))
+            {
+                joint.Limit?.SetVelocity(velocity);
+            }
+            if (TryParseJointDouble(PMTextBoxJointDamping.Text, "Damping", out double? damping))
+            {
+                joint.Dynamics?.SetDamping(damping);
+            }
+            if (TryParseJointDouble(PMTextBoxJointFriction.Text, "Friction", out double? friction))
+            {
+                joint.Dynamics?.SetFriction(friction);
+            }
+            if (TryParseJointDouble(PMTextBoxJointArmature.Text, "Armature", out double? armature))
+            {
+                joint.Armature = armature;
+            }
+            if (TryParseJointDouble(PMTextBoxJointReference.Text, "Reference", out double? reference))
+            {
+                joint.Reference = reference;
+            }
         }
 
         private void ClearJointPropertyTextboxes()
@@ -733,6 +758,7 @@ namespace SW2RD.Export
             if (PMTextBoxJointFriction != null) PMTextBoxJointFriction.Text = "";
             if (PMTextBoxJointArmature != null) PMTextBoxJointArmature.Text = "";
             if (PMTextBoxJointReference != null) PMTextBoxJointReference.Text = "";
+            SetAutoComputeLimitEditorEnabled(false);
         }
 
         private static string FormatJointDouble(double? value)
@@ -742,20 +768,42 @@ namespace SW2RD.Export
                 : "";
         }
 
-        private static double? ParseJointDouble(string text)
+        private bool TryParseJointDouble(string text, string fieldName, out double? value)
         {
+            value = null;
             if (string.IsNullOrWhiteSpace(text))
             {
-                return null;
+                return true;
             }
             if (double.TryParse(text,
                 System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture,
                 out double result))
             {
-                return result;
+                value = result;
+                return true;
             }
-            return null;
+            logger.Warn("Ignoring invalid Joint Properties value for " + fieldName + ": '" + text + "'.");
+            return false;
+        }
+
+        private void SetAutoComputeLimitEditorEnabled(bool enabled)
+        {
+            object[] controls = new object[]
+            {
+                PMLabelJointLower,
+                PMTextBoxJointLower,
+                PMLabelJointUpper,
+                PMTextBoxJointUpper,
+            };
+            foreach (object ctl in controls)
+            {
+                IPropertyManagerPageControl pageControl = ctl as IPropertyManagerPageControl;
+                if (pageControl != null)
+                {
+                    pageControl.Enabled = enabled;
+                }
+            }
         }
 
         // Three-way enable/disable layout driven by the active node's role
@@ -866,6 +914,7 @@ namespace SW2RD.Export
             {
                 control.Enabled = enableJointInputs;
             }
+            SetAutoComputeLimitEditorEnabled(enableJointInputs && !(PMCheckAutoComputeLimits?.Checked ?? true));
             if (worldAttachmentLabel != null)
             {
                 worldAttachmentLabel.Enabled = enableWorldAttachment;

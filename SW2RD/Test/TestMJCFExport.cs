@@ -26,8 +26,11 @@ using SW2RD.Export;
 using SW2RD.Utilities;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Xml;
+using System.Xml.Linq;
 using Xunit;
 
 namespace SW2RD.Test
@@ -235,6 +238,116 @@ namespace SW2RD.Test
             Body sliderBody = model.RootBody.Children[0];
             Assert.NotNull(sliderBody.Joint);
             Assert.Equal(MJCFJointType.Slide, sliderBody.Joint.Type);
+        }
+
+        [Fact]
+        public void TestContinuousJointManualLimitsEmitAsHingeRange()
+        {
+            Link baseLink = new Link(null) { Name = "base_link" };
+            Link child = new Link(baseLink) { Name = "child" };
+            child.Joint.Name = "continuous_joint";
+            child.Joint.Type = "continuous";
+            child.Joint.Axis.SetXYZ(new double[] { 0, 0, 1 });
+            child.Joint.Limit.Lower = -0.25;
+            child.Joint.Limit.Upper = 0.75;
+            baseLink.Children.Add(child);
+
+            Robot robot = new Robot { Name = "test_continuous_limits" };
+            robot.SetBaseLink(baseLink);
+
+            MJCFModel model = MJCFBuilder.Build(robot, "meshes/", null);
+            Body childBody = model.RootBody.Children[0];
+
+            Assert.NotNull(childBody.Joint);
+            Assert.Equal(MJCFJointType.Hinge, childBody.Joint.Type);
+            Assert.True(childBody.Joint.HasLimits);
+            Assert.Equal(-0.25, childBody.Joint.LowerLimit, 9);
+            Assert.Equal(0.75, childBody.Joint.UpperLimit, 9);
+        }
+
+        [Fact]
+        public void TestJointPropertyFieldsMapToMJCFJointAttributes()
+        {
+            Link baseLink = new Link(null) { Name = "base_link" };
+            Link child = new Link(baseLink) { Name = "child" };
+            child.Joint.Name = "joint_props";
+            child.Joint.Type = "revolute";
+            child.Joint.Axis.SetXYZ(new double[] { 0, 0, 1 });
+            child.Joint.Limit.Lower = -90.0;
+            child.Joint.Limit.Upper = 90.0;
+            child.Joint.Limit.Effort = 12.0;
+            child.Joint.Limit.Velocity = 180.0;
+            child.Joint.Dynamics.Damping = 0.4;
+            child.Joint.Dynamics.Friction = 0.2;
+            child.Joint.Armature = 0.01;
+            child.Joint.Reference = 15.0;
+            baseLink.Children.Add(child);
+
+            Robot robot = new Robot { Name = "test_joint_props" };
+            robot.SetBaseLink(baseLink);
+
+            MJCFModel model = MJCFBuilder.Build(robot, "meshes/", null);
+            Body childBody = model.RootBody.Children[0];
+
+            Assert.NotNull(childBody.Joint);
+            Assert.True(childBody.Joint.HasLimits);
+            Assert.Equal(-90.0, childBody.Joint.LowerLimit, 9);
+            Assert.Equal(90.0, childBody.Joint.UpperLimit, 9);
+            Assert.True(childBody.Joint.HasEffort);
+            Assert.Equal(12.0, childBody.Joint.Effort, 9);
+            Assert.True(childBody.Joint.HasDamping);
+            Assert.Equal(0.4 * 180.0 / Math.PI, childBody.Joint.Damping, 9);
+            Assert.True(childBody.Joint.HasFriction);
+            Assert.Equal(0.2, childBody.Joint.Friction, 9);
+            Assert.True(childBody.Joint.HasArmature);
+            Assert.Equal(0.01, childBody.Joint.Armature, 9);
+            Assert.True(childBody.Joint.HasRef);
+            Assert.Equal(15.0, childBody.Joint.Ref, 9);
+
+            string xml = WriteMJCFToString(model);
+            Assert.Contains("range=\"-90 90\"", xml);
+            Assert.Contains("actuatorfrcrange=\"-12 12\"", xml);
+            Assert.Contains("frictionloss=\"0.2\"", xml);
+            Assert.Contains("armature=\"0.01\"", xml);
+            Assert.Contains("ref=\"15\"", xml);
+            Assert.DoesNotContain("velocity=", xml);
+        }
+
+        [Fact]
+        public void TestURDFConvertsAngularJointPropertiesFromDegreesToRadians()
+        {
+            Link baseLink = new Link(null) { Name = "base_link" };
+            Link child = new Link(baseLink) { Name = "child" };
+            child.Joint.Name = "joint_props";
+            child.Joint.Type = "revolute";
+            child.Joint.Axis.SetXYZ(new double[] { 0, 0, 1 });
+            child.Joint.Limit.Lower = -90.0;
+            child.Joint.Limit.Upper = 90.0;
+            child.Joint.Limit.Effort = 12.0;
+            child.Joint.Limit.Velocity = 180.0;
+            child.Joint.Dynamics.Damping = 0.4;
+            child.Joint.Dynamics.Friction = 0.2;
+            baseLink.Children.Add(child);
+
+            Robot robot = new Robot { Name = "test_urdf_degrees" };
+            robot.SetBaseLink(baseLink);
+
+            string xml = WriteURDFToString(robot);
+            XElement joint = XDocument.Parse(xml).Descendants("joint").Single();
+            XElement limit = joint.Element("limit");
+            XElement dynamics = joint.Element("dynamics");
+
+            Assert.Equal(-Math.PI / 2.0, ReadDouble(limit, "lower"), 12);
+            Assert.Equal(Math.PI / 2.0, ReadDouble(limit, "upper"), 12);
+            Assert.Equal(Math.PI, ReadDouble(limit, "velocity"), 12);
+            Assert.Equal(12.0, ReadDouble(limit, "effort"), 12);
+            Assert.Equal(0.4 * 180.0 / Math.PI, ReadDouble(dynamics, "damping"), 12);
+            Assert.Equal(0.2, ReadDouble(dynamics, "friction"), 12);
+
+            Assert.Equal(-90.0, child.Joint.Limit.LowerOrNull);
+            Assert.Equal(90.0, child.Joint.Limit.UpperOrNull);
+            Assert.Equal(180.0, child.Joint.Limit.VelocityOrNull);
+            Assert.Equal(0.4, child.Joint.Dynamics.DampingOrNull);
         }
 
         [Fact]
@@ -820,6 +933,39 @@ namespace SW2RD.Test
                 idx += needle.Length;
             }
             return count;
+        }
+
+        private static string WriteMJCFToString(MJCFModel model)
+        {
+            using (StringWriter sw = new StringWriter())
+            {
+                XmlWriterSettings settings = new XmlWriterSettings { Indent = true };
+                using (XmlWriter writer = XmlWriter.Create(sw, settings))
+                {
+                    model.WriteMJCF(writer);
+                }
+                return sw.ToString();
+            }
+        }
+
+        private static string WriteURDFToString(Robot robot)
+        {
+            using (StringWriter sw = new StringWriter())
+            {
+                XmlWriterSettings settings = new XmlWriterSettings { Indent = true };
+                using (XmlWriter writer = XmlWriter.Create(sw, settings))
+                {
+                    robot.WriteURDF(writer);
+                }
+                return sw.ToString();
+            }
+        }
+
+        private static double ReadDouble(XElement element, string attributeName)
+        {
+            return double.Parse(
+                element.Attribute(attributeName).Value,
+                CultureInfo.CreateSpecificCulture("en-US"));
         }
 
         [Fact]

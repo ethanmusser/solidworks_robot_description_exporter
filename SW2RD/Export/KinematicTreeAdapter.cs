@@ -390,10 +390,10 @@ namespace SW2RD.Export
             }
             if (source.Limit != null)
             {
-                target.Limit.Lower = source.Limit.Lower ?? 0.0;
-                target.Limit.Upper = source.Limit.Upper ?? 0.0;
-                target.Limit.Effort = source.Limit.Effort ?? 0.0;
-                target.Limit.Velocity = source.Limit.Velocity ?? 0.0;
+                target.Limit.SetLower(source.Limit.Lower);
+                target.Limit.SetUpper(source.Limit.Upper);
+                target.Limit.SetEffort(source.Limit.Effort);
+                target.Limit.SetVelocity(source.Limit.Velocity);
             }
             // Damping / Friction live on Joint.Dynamics in the legacy
             // graph; null on the source means the writer should omit the
@@ -562,7 +562,7 @@ namespace SW2RD.Export
             {
                 return null;
             }
-            return new JointLimitModel(lower, upper, effort ?? 0.0, velocity ?? 0.0);
+            return new JointLimitModel(lower, upper, effort, velocity);
         }
 
         private static List<MeshGroupModel> ToCoreMeshGroups(List<MeshGroup> groups)
