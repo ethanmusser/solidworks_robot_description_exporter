@@ -447,6 +447,7 @@ namespace SW2RD.Export
                     // own path relative to <compiler texturedir>).
                     link.Visual.Material.Texture.Filename =
                         package.TexturesDirectory + Path.GetFileName(link.Visual.Material.Texture.wFilename);
+                    package.EnsureTexturesDirectory();
                     string textureSavePath =
                         package.WindowsTexturesDirectory + Path.GetFileName(link.Visual.Material.Texture.wFilename);
                     File.Copy(link.Visual.Material.Texture.wFilename, textureSavePath, true);
@@ -969,6 +970,7 @@ namespace SW2RD.Export
                 package.WindowsTexturesDirectory + Path.GetFileName(URDFRobot.BaseLink.Visual.Material.Texture.wFilename);
             if (!String.IsNullOrWhiteSpace(URDFRobot.BaseLink.Visual.Material.Texture.wFilename))
             {
+                package.EnsureTexturesDirectory();
                 File.Copy(URDFRobot.BaseLink.Visual.Material.Texture.wFilename, textureSavePath, true);
             }
 

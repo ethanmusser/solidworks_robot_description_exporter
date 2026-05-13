@@ -20,15 +20,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+using Moq;
 using SW2RD.MJCF;
 using SW2RD.URDF;
 using SW2RD.Export;
+using SW2RD.UI;
 using SW2RD.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Windows;
 using System.Xml;
 using System.Xml.Linq;
 using Xunit;
@@ -441,6 +444,42 @@ namespace SW2RD.Test
                 // The MJCF compiler meshdir must be relative to the model file
                 // location (mjcf/<name>.xml), not a package:// URI.
                 Assert.Equal("../meshes/", pkg.MJCFMeshDir);
+
+                Mock<IMessageBox> messageBoxMock = new Mock<IMessageBox>();
+                messageBoxMock.Setup(m => m.Show(It.IsAny<string>()))
+                    .Returns(MessageBoxResult.OK);
+                ExportPackage.MessageBox = messageBoxMock.Object;
+
+                pkg.CreateDirectories();
+                Assert.True(Directory.Exists(pkg.WindowsPackageDirectory));
+                Assert.True(Directory.Exists(pkg.WindowsMeshesDirectory));
+                Assert.True(Directory.Exists(pkg.WindowsModelsDirectory));
+                Assert.False(Directory.Exists(pkg.WindowsTexturesDirectory));
+            }
+            finally
+            {
+                Directory.Delete(tempDir, true);
+            }
+        }
+
+        [Fact]
+        public void TestExportPackageCreatesTexturesDirectoryOnDemand()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                ExportPackage pkg = new ExportPackage("test_mjcf", tempDir, ExportFormat.MJCF);
+                Mock<IMessageBox> messageBoxMock = new Mock<IMessageBox>();
+                messageBoxMock.Setup(m => m.Show(It.IsAny<string>()))
+                    .Returns(MessageBoxResult.OK);
+                ExportPackage.MessageBox = messageBoxMock.Object;
+
+                pkg.CreateDirectories();
+                Assert.False(Directory.Exists(pkg.WindowsTexturesDirectory));
+
+                pkg.EnsureTexturesDirectory();
+                Assert.True(Directory.Exists(pkg.WindowsTexturesDirectory));
             }
             finally
             {
@@ -815,6 +854,7 @@ namespace SW2RD.Test
             Assert.Empty(model.Asset.Textures);
             Assert.Single(model.Asset.Materials);
             Assert.Null(model.Asset.Materials[0].Texture);
+            Assert.Null(model.Compiler.TextureDir);
 
             string xml;
             using (StringWriter sw = new StringWriter())
@@ -827,8 +867,7 @@ namespace SW2RD.Test
                 xml = sw.ToString();
             }
             Assert.DoesNotContain("<texture", xml);
-            // texturedir is still emitted (cheap; harmless).
-            Assert.Contains("texturedir=\"../textures/\"", xml);
+            Assert.DoesNotContain("texturedir=", xml);
         }
 
         [Fact]

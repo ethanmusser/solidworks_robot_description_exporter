@@ -52,9 +52,9 @@ namespace SW2RD.MJCF
     {
         private static readonly log4net.ILog logger = Logger.GetLogger();
 
-        // Path written into <compiler texturedir="..."> for MJCF packages.
-        // Mirrors the meshdir convention: relative to the model XML which
-        // lives in mjcf/.
+        // Path written into <compiler texturedir="..."> for MJCF packages that
+        // actually contain texture assets. Mirrors the meshdir convention:
+        // relative to the model XML which lives in mjcf/.
         public const string DefaultTextureDir = "../textures/";
 
         /// <summary>
@@ -82,7 +82,6 @@ namespace SW2RD.MJCF
 
             MJCFModel model = new MJCFModel(tree.Name ?? "");
             model.Compiler.MeshDir = string.IsNullOrEmpty(meshDir) ? "meshes/" : meshDir;
-            model.Compiler.TextureDir = DefaultTextureDir;
 
             // Reset the default RootBody seed so we can build TopLevelBodies
             // from scratch via the multi-tree walk below.
@@ -134,6 +133,11 @@ namespace SW2RD.MJCF
             // pre-computed. Empty world collections produce no <geom> /
             // <site> elements at all, preserving today's single-tree output.
             EmitWorldGeometry(worldBody, model, auxByLinkName);
+
+            if (model.Asset.Textures.Count > 0)
+            {
+                model.Compiler.TextureDir = DefaultTextureDir;
+            }
 
             return model;
         }

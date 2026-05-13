@@ -35,8 +35,8 @@ namespace SW2RD.MJCF
         public string MeshDir { get; set; } = "meshes/";
 
         // Path written into <compiler texturedir="..."> -- analogous to MeshDir.
-        // Null/empty omits the attribute. MJCFBuilder sets this to "../textures/"
-        // so it sits next to the model XML in the package layout.
+        // Null/empty omits the attribute. MJCFBuilder sets this only when the
+        // model declares texture assets.
         public string TextureDir { get; set; }
 
         public void WriteMJCF(XmlWriter writer)

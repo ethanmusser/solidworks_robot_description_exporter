@@ -124,13 +124,6 @@ namespace SW2RD.Export
             {
                 Directory.CreateDirectory(WindowsModelsDirectory);
             }
-            // textures/ is created for both URDF and MJCF so per-link <texture>
-            // declarations have somewhere to write their copied files. Empty when
-            // no link has a texture configured -- harmless extra directory.
-            if (!Directory.Exists(WindowsTexturesDirectory))
-            {
-                Directory.CreateDirectory(WindowsTexturesDirectory);
-            }
             if (Format == ExportFormat.URDF)
             {
                 if (!Directory.Exists(WindowsLaunchDirectory))
@@ -141,6 +134,14 @@ namespace SW2RD.Export
                 {
                     Directory.CreateDirectory(WindowsConfigDirectory);
                 }
+            }
+        }
+
+        public void EnsureTexturesDirectory()
+        {
+            if (!Directory.Exists(WindowsTexturesDirectory))
+            {
+                Directory.CreateDirectory(WindowsTexturesDirectory);
             }
         }
 
