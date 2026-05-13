@@ -58,12 +58,10 @@ namespace SW2RD.URDF
 
         public double? VelocityOrNull => VelocityAttribute.IsSet() ? (double?)VelocityAttribute.Value : null;
 
-        // Setters used by the Joint Properties UI on link save. Empty
-        // textbox -> Value = null (the writer omits the attribute);
-        // populated -> Value = parsed double. Centralizing the
-        // empty-string handling here keeps the PMPage round-trip simple
-        // and matches the omit-on-blank semantics the URDF / MJCF
-        // writers implement for limits.
+        // Setters used by all limit write paths. Empty textbox / null
+        // value -> Value = null (the writer omits the attribute);
+        // populated -> Value = parsed double. Centralizing this keeps
+        // the PMPage, adapter, and any older helper callers consistent.
         public void SetLowerOrClear(string text) => SetOrClear(LowerAttribute, text);
 
         public void SetUpperOrClear(string text) => SetOrClear(UpperAttribute, text);
@@ -80,15 +78,23 @@ namespace SW2RD.URDF
 
         public void SetVelocity(double? value) => SetOptional(VelocityAttribute, value);
 
-        private static void SetOrClear(URDFAttribute attr, string text)
+        private void SetOrClear(URDFAttribute attr, string text)
         {
             if (string.IsNullOrWhiteSpace(text))
             {
-                attr.Value = null;
+                SetOptional(attr, null);
+            }
+            else if (double.TryParse(
+                text,
+                URDFAttribute.URDFNumberStyle,
+                URDFAttribute.URDFNumberFormat,
+                out double result))
+            {
+                SetOptional(attr, result);
             }
             else
             {
-                attr.SetDoubleValueFromString(text);
+                logger.Warn("Ignoring invalid limit value '" + text + "'.");
             }
         }
 
@@ -99,8 +105,8 @@ namespace SW2RD.URDF
 
         public Limit() : base("limit", false)
         {
-            EffortAttribute = new URDFAttribute("effort", true, null);
-            VelocityAttribute = new URDFAttribute("velocity", true, null);
+            EffortAttribute = new URDFAttribute("effort", false, null);
+            VelocityAttribute = new URDFAttribute("velocity", false, null);
             LowerAttribute = new URDFAttribute("lower", false, null);
             UpperAttribute = new URDFAttribute("upper", false, null);
 
@@ -122,19 +128,10 @@ namespace SW2RD.URDF
         public void SetValues(TextBox boxLower, TextBox boxUpper,
             TextBox boxEffort, TextBox boxVelocity)
         {
-            if (string.IsNullOrWhiteSpace(boxLower.Text) &&
-                string.IsNullOrWhiteSpace(boxUpper.Text) &&
-                string.IsNullOrWhiteSpace(boxEffort.Text) &&
-                string.IsNullOrWhiteSpace(boxVelocity.Text) &&
-                !IsRequired())
-            {
-                // If all text boxes are empty and this element isn't required, then leave blank
-                return;
-            }
-            LowerAttribute.SetDoubleValueFromString(boxLower.Text);
-            UpperAttribute.SetDoubleValueFromString(boxUpper.Text);
-            EffortAttribute.SetDoubleValueFromString(boxEffort.Text);
-            VelocityAttribute.SetDoubleValueFromString(boxVelocity.Text);
+            SetLowerOrClear(boxLower.Text);
+            SetUpperOrClear(boxUpper.Text);
+            SetEffortOrClear(boxEffort.Text);
+            SetVelocityOrClear(boxVelocity.Text);
         }
 
         public override void SetRequired(bool required)

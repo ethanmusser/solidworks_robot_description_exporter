@@ -266,6 +266,11 @@ namespace SW2RD.Test
             Assert.True(childBody.Joint.HasLimits);
             Assert.Equal(-0.25, childBody.Joint.LowerLimit, 9);
             Assert.Equal(0.75, childBody.Joint.UpperLimit, 9);
+            Assert.False(childBody.Joint.HasEffort);
+
+            string xml = WriteMJCFToString(model);
+            Assert.DoesNotContain("actuatorfrcrange", xml);
+            Assert.DoesNotContain("velocity=", xml);
         }
 
         [Fact]
@@ -351,6 +356,34 @@ namespace SW2RD.Test
             Assert.Equal(90.0, child.Joint.Limit.UpperOrNull);
             Assert.Equal(180.0, child.Joint.Limit.VelocityOrNull);
             Assert.Equal(0.4, child.Joint.Dynamics.DampingOrNull);
+        }
+
+        [Fact]
+        public void TestURDFOmitsBlankEffortAndVelocity()
+        {
+            Link baseLink = new Link(null) { Name = "base_link" };
+            Link child = new Link(baseLink) { Name = "child" };
+            child.Joint.Name = "joint_props";
+            child.Joint.Type = "revolute";
+            child.Joint.Axis.SetXYZ(new double[] { 0, 0, 1 });
+            child.Joint.Limit.SetLower(-90.0);
+            child.Joint.Limit.SetUpper(90.0);
+            child.Joint.Limit.SetEffort(null);
+            child.Joint.Limit.SetVelocity(null);
+            baseLink.Children.Add(child);
+
+            Robot robot = new Robot { Name = "test_urdf_blank_limits" };
+            robot.SetBaseLink(baseLink);
+
+            string xml = WriteURDFToString(robot);
+            XElement joint = XDocument.Parse(xml).Descendants("joint").Single();
+            XElement limit = joint.Element("limit");
+
+            Assert.NotNull(limit);
+            Assert.Equal(-Math.PI / 2.0, ReadDouble(limit, "lower"), 12);
+            Assert.Equal(Math.PI / 2.0, ReadDouble(limit, "upper"), 12);
+            Assert.Null(limit.Attribute("effort"));
+            Assert.Null(limit.Attribute("velocity"));
         }
 
         [Fact]

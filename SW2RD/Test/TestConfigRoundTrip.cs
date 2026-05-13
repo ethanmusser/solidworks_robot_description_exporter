@@ -23,9 +23,11 @@ THE SOFTWARE.
 using SW2RD.Configuration;
 using SW2RD.Core;
 using SW2RD.Export;
+using SW2RD.URDF;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Windows.Forms;
 using Xunit;
 
 namespace SW2RD.Test
@@ -152,6 +154,96 @@ namespace SW2RD.Test
             Assert.Equal(1.25, roundTrippedJoint.Limit.Upper);
             Assert.Null(roundTrippedJoint.Limit.Effort);
             Assert.Equal(2.5, roundTrippedJoint.Limit.Velocity);
+        }
+
+        [Fact]
+        public void TestLimitSetValuesKeepsBlankEffortAndVelocityUnset()
+        {
+            Limit limit = new Limit();
+
+            limit.SetValues(
+                new TextBox { Text = "-90" },
+                new TextBox { Text = "90" },
+                new TextBox { Text = "" },
+                new TextBox { Text = "" });
+
+            Assert.Equal(-90.0, limit.LowerOrNull);
+            Assert.Equal(90.0, limit.UpperOrNull);
+            Assert.Null(limit.EffortOrNull);
+            Assert.Null(limit.VelocityOrNull);
+
+            limit.SetValues(
+                new TextBox { Text = "-45" },
+                new TextBox { Text = "45" },
+                new TextBox { Text = "12" },
+                new TextBox { Text = "180" });
+
+            Assert.Equal(-45.0, limit.LowerOrNull);
+            Assert.Equal(45.0, limit.UpperOrNull);
+            Assert.Equal(12.0, limit.EffortOrNull);
+            Assert.Equal(180.0, limit.VelocityOrNull);
+        }
+
+        [Fact]
+        public void TestLinkNodeConfigRoundTripPreservesJointProperties()
+        {
+            SW2RD.URDF.Link baseLink = new SW2RD.URDF.Link(null) { Name = "base_link" };
+            SW2RD.URDF.Link child = new SW2RD.URDF.Link(baseLink) { Name = "child_link" };
+            child.Joint.Name = "joint1";
+            child.Joint.Type = "revolute";
+            child.Joint.Limit.SetLower(-90.0);
+            child.Joint.Limit.SetUpper(90.0);
+            child.Joint.Limit.SetEffort(12.0);
+            child.Joint.Limit.SetVelocity(180.0);
+            child.Joint.Dynamics.SetDamping(0.4);
+            child.Joint.Dynamics.SetFriction(0.2);
+            child.Joint.Armature = 0.01;
+            child.Joint.Reference = 15.0;
+            child.Joint.AutoComputeLimits = false;
+            baseLink.Children.Add(child);
+
+            LinkNode node = new LinkNode(baseLink);
+            Config config = ConfigBridge.CreateFromLinkNode(node, "test_robot");
+            LinkNode read = ConfigBridge.CreateLinkNode(config);
+            LinkNode readBase = (LinkNode)read.Nodes[0];
+            LinkNode readChild = (LinkNode)readBase.Nodes[0];
+            Joint joint = readChild.Link.Joint;
+
+            Assert.Equal(-90.0, joint.Limit.LowerOrNull);
+            Assert.Equal(90.0, joint.Limit.UpperOrNull);
+            Assert.Equal(12.0, joint.Limit.EffortOrNull);
+            Assert.Equal(180.0, joint.Limit.VelocityOrNull);
+            Assert.Equal(0.4, joint.Dynamics.DampingOrNull);
+            Assert.Equal(0.2, joint.Dynamics.FrictionOrNull);
+            Assert.Equal(0.01, joint.Armature);
+            Assert.Equal(15.0, joint.Reference);
+            Assert.False(joint.AutoComputeLimits);
+        }
+
+        [Fact]
+        public void TestLinkNodeConfigRoundTripPreservesBlankEffortAndVelocity()
+        {
+            SW2RD.URDF.Link baseLink = new SW2RD.URDF.Link(null) { Name = "base_link" };
+            SW2RD.URDF.Link child = new SW2RD.URDF.Link(baseLink) { Name = "child_link" };
+            child.Joint.Name = "joint1";
+            child.Joint.Type = "revolute";
+            child.Joint.Limit.SetLower(-90.0);
+            child.Joint.Limit.SetUpper(90.0);
+            child.Joint.Limit.SetEffort(null);
+            child.Joint.Limit.SetVelocity(null);
+            baseLink.Children.Add(child);
+
+            LinkNode node = new LinkNode(baseLink);
+            Config config = ConfigBridge.CreateFromLinkNode(node, "test_robot");
+            LinkNode read = ConfigBridge.CreateLinkNode(config);
+            LinkNode readBase = (LinkNode)read.Nodes[0];
+            LinkNode readChild = (LinkNode)readBase.Nodes[0];
+            Joint joint = readChild.Link.Joint;
+
+            Assert.Equal(-90.0, joint.Limit.LowerOrNull);
+            Assert.Equal(90.0, joint.Limit.UpperOrNull);
+            Assert.Null(joint.Limit.EffortOrNull);
+            Assert.Null(joint.Limit.VelocityOrNull);
         }
 
         [Fact]
