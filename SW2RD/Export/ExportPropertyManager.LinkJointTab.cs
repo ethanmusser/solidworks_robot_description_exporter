@@ -1,3 +1,25 @@
+/*
+Copyright (c) 2026 Ethan J. Musser
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
@@ -24,10 +46,8 @@ namespace SW2RD.Export
             PMLabelParentLink = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
                 LabelLinkNameID, (short)controlType, "", (short)alignment, options, "");
 
-            // Static "Link name" header above the link-name textbox so
-            // a new user can tell what the textbox does. The legacy
-            // layout relied on context from the WinForms popup that's
-            // no longer here.
+            // Static "Link name" header above the textbox so the
+            // tab remains self-describing.
             int leftAlign = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             PMLinkJointTab.AddControl2(LabelLinkNameStaticID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Label,
@@ -40,9 +60,8 @@ namespace SW2RD.Export
                 TextBoxLinkNameID, (short)controlType, "base_link", (short)alignment, options,
                 "Enter the name of the link");
 
-            // Joint Name label + textbox. Distinct ID per control so
-            // SolidWorks doesn't leak the textbox onto a different tab
-            // (see AGENTS.md "unique IDs per PMPage").
+            // Joint Name label + textbox. SolidWorks requires distinct
+            // control IDs or controls can leak onto unrelated tabs.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             options = (int)swAddControlOptions_e.swControlOptions_Visible;
             PMLabelJointName = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
@@ -117,32 +136,14 @@ namespace SW2RD.Export
             PMSelectionGlobalCoordsys = (PropertyManagerPageSelectionbox)PMLinkJointTab.AddControl2(
                 SelectionGlobalCoordsysID, (short)controlType,
                 "Pick global origin coordinate system", (short)alignment, options, tip);
-            // SingleEntityOnly = true matches SW's own coord-system /
-            // mate creation PMP single-entity pickers: a new pick
-            // OVERWRITES the prior contents in place. Height = 18 is
-            // the SW-native single-row selectionbox height. The
-            // earlier multi-entity (Height=30, SingleEntityOnly=false)
-            // configuration was tried because rendering looked
-            // unreliable, but that turned out to be symptomatic of the
-            // EnableControls.Visible-toggle leak (fixed) and the
-            // GetRefAxis SelectionMgr clobber (fixed) - not anything
-            // intrinsic to SingleEntityOnly.
+            // SingleEntityOnly = true matches SW's coord-system and mate
+            // pickers: a new pick overwrites the prior contents in place.
+            // Height = 18 is the SW-native single-row selectionbox height.
             //
-            // AllowSelectInMultipleBoxes = FALSE: each feature picker
-            // represents a SEMANTICALLY DISTINCT logical role - global
-            // origin coord-sys, joint coord-sys, joint axis, site
-            // coord-sys - and the same entity must never occupy two of
-            // them at once. With it set to true, picking the same
-            // coord-sys in box B (e.g. Joint) would DUPLICATE it into
-            // both A (Global) and B; with it set to false, picking it
-            // in B MOVES it out of A, so the user's last action wins
-            // and the data model never has the same feature filling
-            // two distinct roles. (Note: the previously-observed
-            // cross-tab bleed where one pick rendered in every sibling
-            // SelectionBox was NOT caused by this setting; it was a
-            // mark bitmask collision and is fixed at the
-            // *SelectionMark constants in ExportPropertyManager.cs.
-            // See AGENTS.md for the marks-must-be-powers-of-two rule.)
+            // AllowSelectInMultipleBoxes = false keeps each feature picker
+            // bound to one semantic role. The *SelectionMark constants in
+            // ExportPropertyManager.cs are unique bitmasks, so each picker
+            // also receives only selections made for its own mark.
             PMSelectionGlobalCoordsys.AllowSelectInMultipleBoxes = false;
             PMSelectionGlobalCoordsys.SingleEntityOnly = true;
             PMSelectionGlobalCoordsys.AllowMultipleSelectOfSameEntity = false;
@@ -231,11 +232,9 @@ namespace SW2RD.Export
             PMSelectionJointAxis.Mark = JointAxisSelectionMark;
 
             // "Reverse Direction" bitmap button - same standard icon SW
-            // uses on its own coord-system / extrude PMs. Stacked on the
-            // row below the axis selectionbox; SW does not reliably honor
-            // side-by-side layout hints for PM controls (see AGENTS.md
-            // "PropertyManagerPage layout quirks"). The icon makes the
-            // intent clear regardless of position.
+            // uses on its own coord-system / extrude PMs. SW renders text
+            // buttons as full-width rows, so this control is stacked below
+            // the axis selectionbox.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_BitmapButton;
             PMBitmapAxisFlip = (PropertyManagerPageBitmapButton)PMLinkJointTab.AddControl2(
                 BitmapAxisFlipID, (short)controlType, "Reverse Direction",

@@ -19,10 +19,9 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 
     <!--
-      Preserve the legacy output layout (bin\x64\Debug\, bin\x64\Release\) so
-      existing COM-registration entries continue to point at the same DLL path.
-      AGENTS.md notes that SOLIDWORKS must be fully restarted after a rebuild;
-      changing the path would also force re-registration on every developer
+      Preserve the output layout (bin\x64\Debug\, bin\x64\Release\) so
+      COM-registration entries continue to point at the expected DLL path.
+      Changing the path would force re-registration on every developer
       workstation.
     -->
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -152,10 +151,9 @@
     MSBuild (it fails under `dotnet build` with MSB4803), so we shell out to
     the framework's RegAsm.exe directly to keep both build paths working.
 
-    AGENTS.md notes that "MSB3392: Cannot unregister assembly - access denied"
-    is benign when MSBuild is not running as administrator; this Target
-    swallows non-zero exit codes from RegAsm via ContinueOnError so a failed
-    re-registration does not fail the build.
+    RegAsm can report access-denied failures when MSBuild is not running as
+    administrator. ContinueOnError keeps those registration warnings from
+    failing an otherwise successful build.
   -->
   <Target Name="RegisterForComInterop" AfterTargets="Build">
     <PropertyGroup>

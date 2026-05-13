@@ -1,3 +1,25 @@
+/*
+Copyright (c) 2026 Ethan J. Musser
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
 using SolidWorks.Interop.sldworks;
 using SW2RD.URDF;
 using SW2RD.Export;
@@ -6,13 +28,10 @@ using Xunit;
 namespace SW2RD.Test
 {
     /// <summary>
-    /// Unit tests for the persisted Joint.AxisFlipped field added with the
-    /// PropertyManager "Reverse Direction" toggle. Covers the in-memory
-    /// SetElement and SetJointKinematics paths from the four-paths landmine
-    /// for new Joint-scope fields described in AGENTS.md, plus the actual
-    /// sign-negation behavior at SW resolution time via the public
-    /// PreviewAxisDirection helper. The CSV round-trip and ContextToColumns
-    /// cases were retired with the CSV import / merge subsystem.
+    /// Unit tests for the persisted Joint.AxisFlipped field used by the
+    /// PropertyManager "Reverse Direction" toggle. Covers clone/copy,
+    /// export-time kinematics transfer, Config round-trip, and sign-negation
+    /// behavior through the public PreviewAxisDirection helper.
     /// </summary>
     public class TestJointAxisFlipped : SW2RDTest
     {

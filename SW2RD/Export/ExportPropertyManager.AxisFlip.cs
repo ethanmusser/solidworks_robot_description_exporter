@@ -56,10 +56,9 @@ namespace SW2RD.Export
         }
 
         // Manipulator-callback variant of ToggleAxisFlip. The SW arrow
-        // manipulator fires OnDirectionFlipped while the manipulator is
-        // still mid-update on SW's render thread; calling DrawAxisOverlay
-        // synchronously here would re-enter Manipulator.Remove() on that
-        // very manipulator (the AGENTS.md "unaudited reentrancy" landmine).
+        // manipulator fires OnDirectionFlipped while it is still mid-update
+        // on SW's render thread, so redraw work must be deferred to avoid
+        // re-entering Manipulator.Remove() on the same manipulator.
         // We split the work in two:
         //   * Synchronously update the persisted flip state. SW has already
         //     visually flipped the arrow before this callback fires (with
@@ -154,9 +153,8 @@ namespace SW2RD.Export
         // Joint.AutoDeriveAxis and is persisted by the per-event handlers
         // and SaveActiveNode.
         //
-        // Reads coord-sys / axis names directly off the active node now
-        // that the SelectionBox-only redesign retired the read-only echo
-        // comboboxes. With AutoDeriveAxis = true the axis name is
+        // Reads coord-sys / axis names directly off the active node.
+        // With AutoDeriveAxis = true the axis name is
         // intentionally empty and PreviewAxisDirection short-circuits to
         // IsValid = false so no overlay is drawn (the export-time path
         // resolves the axis from the SW kinematic chain at that point).
@@ -193,15 +191,11 @@ namespace SW2RD.Export
                             "' coordSys='" + coordSysName + "' axis='" + axisName +
                             "' flipped=" + currentAxisFlipped);
 
-                // NO Extension.SelectByID2 axis-highlight here. We previously
-                // tried to color the picked axis line in the viewport via
-                // ActiveSWModel.Extension.SelectByID2(axisName, "AXIS",
-                // 0,0,0, append=true, mark=-1, null, 0). With the four
-                // feature-picker SelectionBoxes now SingleEntityOnly = true,
-                // a SelectionBox that has focus (e.g. the joint coord-sys
-                // box right after the user picked a coord-sys, before the
-                // deferred refresh fires) appears to interpret the
-                // append=true / mark=-1 SelectByID2 as a candidate pick
+                // Do not call Extension.SelectByID2 here to color the picked
+                // axis line. With SingleEntityOnly feature pickers, a focused
+                // SelectionBox can route append=true / mark=-1 SelectByID2
+                // calls through its active filter and block waiting for a
+                // compatible pick
                 // routed through its own filter, then enters a nested
                 // modal message-pump (SW's RootHwndWatch shows
                 // GetMessageW + Dispatcher.PushFrameImpl) waiting on a

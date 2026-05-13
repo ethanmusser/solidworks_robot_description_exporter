@@ -37,9 +37,8 @@ namespace SW2RD.Export
         private const string MeshFormatValueName = "MeshFormat";
         private const string ExportMeshesValueName = "ExportMeshes";
 
-        // Defaults match the hard-coded values previously baked into
-        // BuildSetupTab so a fresh user with no registry entry sees
-        // exactly the same UI as before.
+        // Defaults used when the user has not saved export preferences.
+        // These match the Setup tab's standard initial state.
         private const int DefaultOutputFormat = 0; // 0 = URDF, 1 = MJCF
         private const int DefaultMeshFormat = 0;   // 0 = STL, 1 = 3DXML
         private const bool DefaultExportMeshes = true;

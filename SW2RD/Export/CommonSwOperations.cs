@@ -233,9 +233,8 @@ namespace SW2RD.Export
                 }
             }
 
-            // Mirror the flattened component lists into the legacy single-list
-            // PID fields so previous versions of this addin (which don't know
-            // about VisualGroups) still see the components on a re-read.
+            // Mirror the flattened component lists into the single-list PID
+            // fields used by the fallback component storage path.
             node.Link.SWComponentPIDs = SaveSWComponents(model, node.Link.VisualComponents);
             node.Link.CollisionComponentPIDs = SaveSWComponents(model, node.Link.CollisionComponents);
 

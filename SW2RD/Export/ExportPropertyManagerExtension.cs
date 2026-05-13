@@ -459,23 +459,17 @@ namespace SW2RD.Export
             // Preload World attachment combobox for top-level bodies.
             // The combobox order matches WorldAttachmentModel (Welded=0,
             // Free=1) so we cast the enum directly to the index. For
-            // non-top-level nodes we leave the previously-selected index
-            // in place because the control is disabled and the user
-            // can't see / interact with it.
+            // Non-top-level nodes leave the current index in place because
+            // the control is disabled and the value is not editable.
             if (PMComboBoxWorldAttachment != null && nodeRole == NodeRole.TopLevelBody)
             {
                 PMComboBoxWorldAttachment.CurrentSelection = (short)(int)node.Link.WorldAttachment;
             }
 
-            // Repopulate ONLY the SelectionBox marks owned by the
-            // currently-active tab so the SOLIDWORKS viewer highlight
-            // shows the entities for the tab the user is looking at
-            // (rather than the union of every SelectionBox that ever
-            // held a pick for this link). Every other mark is drained
-            // first. See RehydrateMarksForActiveTab and AGENTS.md for
-            // the per-tab mark mapping. OnTabClicked uses the same
-            // helper, so a tab change after this point also keeps the
-            // viewer in sync.
+            // Repopulate only the SelectionBox marks owned by the active
+            // tab so the SOLIDWORKS viewer highlights the entities the user
+            // is editing. RehydrateMarksForActiveTab drains every other mark
+            // and owns the per-tab mark mapping.
             RehydrateMarksForActiveTab(node, currentActiveTabId);
 
             // Inertial source combo.

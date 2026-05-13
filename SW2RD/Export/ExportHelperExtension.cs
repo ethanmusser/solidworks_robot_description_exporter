@@ -750,7 +750,8 @@ namespace SW2RD.Export
         // multiple sub-component instances (or at none of them at the assembly
         // level), SW silently picks the wrong frame, producing STLs whose
         // geometry sits at a constant wrong offset from the link's body frame.
-        // See AGENTS.md for the full diagnosis trail.
+        // This prevents duplicate sub-component coord-system names from
+        // resolving to the wrong assembly-level export frame.
         private string EnsureUniqueAssemblyExportFrame(Link link, out bool createdTemp)
         {
             createdTemp = false;
@@ -1685,16 +1686,9 @@ namespace SW2RD.Export
                 {
                     // Walk r.OwningDoc.FeatureManager directly to resolve
                     // the named RefAxis without touching SelectionMgr.
-                    // The previous implementation called
-                    // Extension.SelectByID2(... Append=false, mark=0)
-                    // which silently CLOBBERED the assembly's
-                    // SelectionMgr - every PMP SelectionBox display
-                    // (joint coord-sys, joint axis, global coord-sys,
-                    // visual / collision / inertial component boxes)
-                    // would empty out mid-pick because the live axis
-                    // preview path runs on every coord-sys / axis pick.
-                    // FeatureManager.GetFeatures is read-only and does
-                    // not perturb selection state.
+                    // FeatureManager.GetFeatures is read-only, so live axis
+                    // preview cannot clear or contaminate PropertyManager
+                    // SelectionBox marks while the user is picking features.
                     Feature feat = FindNamedFeature(r.OwningDoc, "RefAxis", r.FeatureName);
                     if (feat == null)
                     {
@@ -1944,11 +1938,9 @@ namespace SW2RD.Export
         // TOP of geometry by design - they ignore the depth buffer, so an
         // axis hidden inside a tube or behind a link is still visible.
         // Display3 bodies, by contrast, are subject to normal depth test
-        // and disappear behind opaque geometry; that was the trigger to
-        // migrate. The Display3 path was non-trivial to land (see git
-        // history and AGENTS.md) but the user explicitly requested
-        // "visible through other bodies" which only the manipulator API
-        // gives us natively.
+        // and disappear behind opaque geometry. The manipulator API gives
+        // the overlay the required "visible through other bodies" behavior
+        // natively.
         //
         // The handler argument to CreateManipulator is REQUIRED. Passing
         // null causes SW to silently refuse to create the manipulator
@@ -2040,12 +2032,10 @@ namespace SW2RD.Export
                 if (axisManipulatorHandler == null)
                 {
                     // Use the no-op parameterless ctor: the bitmap-button
-                    // "Reverse Direction" control is the SOLE flip path
-                    // (see AGENTS.md "Joint axis direction"). Wiring the
-                    // OnDirectionFlipped callback in addition to AllowFlip =
-                    // true was attempted and confirmed to deadlock against
-                    // SW's manipulator update from inside ToggleAxisFlip ->
-                    // RefreshAxisDirectionPreview -> DrawAxisOverlay.
+                    // "Reverse Direction" control is the sole flip path.
+                    // Wiring OnDirectionFlipped together with AllowFlip=true
+                    // can deadlock inside SW's manipulator update while
+                    // DrawAxisOverlay is refreshing the overlay.
                     axisManipulatorHandler = new AxisOverlayManipulatorHandler();
                 }
 

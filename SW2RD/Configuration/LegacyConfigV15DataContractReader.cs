@@ -1,3 +1,25 @@
+/*
+Copyright (c) 2026 Ethan J. Musser
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
 using SW2RD.URDF;
 using System.IO;
 using System.Runtime.Serialization;
@@ -8,11 +30,11 @@ namespace SW2RD.Configuration
     /// <summary>
     /// Backward-reader for the v1.3-v1.5 DataContract XML configuration stored
     /// under "URDF Export Configuration (v1.5)" SolidWorks attributes. It keeps
-    /// legacy XML deserialization in the Configuration namespace while Phase 2
-    /// moves the active save format to Config JSON.
+    /// legacy XML deserialization in the Configuration namespace while active
+    /// saves use Config JSON.
     ///
-    /// As part of the world-aware refactor, the legacy single-link tree is
-    /// migrated on read into the new (WorldNode-rooted) shape: the global
+    /// Legacy single-link trees are migrated on read into the
+    /// WorldNode-rooted shape: the global
     /// origin coord-sys is lifted from the old base link onto a synthesized
     /// WorldNode, the old base link is demoted to a single Welded top-level
     /// body, and world-level visual / collision / sites start empty.

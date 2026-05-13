@@ -1,3 +1,25 @@
+/*
+Copyright (c) 2026 Ethan J. Musser
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
 using SW2RD.Core;
 using SW2RD.URDF;
 using SW2RD.Export;
@@ -8,10 +30,10 @@ using System.IO;
 
 namespace SW2RD.MJCF
 {
-    // Phase 2: the MJCF builder consumes the format-neutral KinematicTree
-    // (SW2RD.Core) directly. Callers that still hold a legacy Robot
-    // tree go through KinematicTreeAdapter.ToCore at the boundary; the
-    // builder itself knows nothing about URDFElement / SolidWorks types.
+    // The MJCF builder consumes the format-neutral KinematicTree
+    // (SW2RD.Core) directly. Callers that still hold a Robot tree go
+    // through KinematicTreeAdapter.ToCore at the boundary; the builder
+    // itself knows nothing about URDFElement / SolidWorks types.
     //
     // Mapping rules:
     //   - URDF <joint><origin xyz=... rpy=.../></joint> for the joint

@@ -119,8 +119,7 @@ namespace SW2RD.Export
         // geometry": they render through other bodies regardless of
         // depth, match the look of SW's own coord-system / mate flip
         // arrows, and need no IComponent2 anchor or inverse transform
-        // bookkeeping. See the AGENTS.md "Joint axis direction" section
-        // for the full rationale and the abandoned Display3 approach.
+        // bookkeeping.
         // Held so ClearAxisOverlay can call Remove() on every refresh
         // and on PM close - dropping the ref without Remove leaks the
         // arrow into the user's viewport across exports.
@@ -885,8 +884,9 @@ namespace SW2RD.Export
             // below. For coord systems already at the assembly level
             // EnsureUniqueAssemblyExportFrame returns the existing name and
             // createdTempFrame stays false (no behavior change for those links).
-            // See AGENTS.md > "MJCF-driven feature extensions" for the full
-            // diagnosis trail behind this layering.
+            // This keeps mesh export frame resolution local to the package
+            // writer without changing links whose coord systems are already
+            // assembly-level features.
             bool createdTempFrame;
             string exportCoordSysName = EnsureUniqueAssemblyExportFrame(link, out createdTempFrame);
             logger.Info(link.Name + ": Using coord system '" + exportCoordSysName +

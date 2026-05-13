@@ -45,12 +45,9 @@ namespace SW2RD.Export
         public SldWorks swApp;
         public ModelDoc2 ActiveSWModel;
 
-        // SOLIDWORKS exposes this class to COM via the IPropertyManagerPage2Handler
-        // interface, NOT via .NET (de)serialization. Configuration persistence runs
-        // through the DataContract path on Link / Joint, not through this handler.
-        // Earlier revisions carried a [Serializable] attribute and per-field
-        // [NonSerialized] annotations purely to silence the now-retired
-        // FxCopAnalyzers CA2235 warning; both are gone with the analyzer removal.
+        // SOLIDWORKS exposes this class to COM via IPropertyManagerPage2Handler,
+        // not via .NET serialization. Configuration persistence runs through
+        // Link / Joint, so the handler keeps only live UI state.
         public ExportHelper Exporter;
         public LinkNode previouslySelectedNode;
         public LinkNode rightClickedNode;
@@ -63,9 +60,7 @@ namespace SW2RD.Export
         // The PropertyManagerPage is organized as a fixed always-visible
         // header (Preview/Export button + status label + link tree +
         // child-count spinner) followed by six tabs. Builders attach
-        // controls directly to the relevant tab; the per-tab single-group
-        // wrapper layer was retired because it added a redundant
-        // collapse / expand affordance with no organizational value.
+        // controls directly to the relevant tab.
         private PropertyManagerPageTab PMSetupTab;
         private PropertyManagerPageTab PMLinkJointTab;
         private PropertyManagerPageTab PMVisualTab;
@@ -103,8 +98,7 @@ namespace SW2RD.Export
         // toggle and on SaveActiveNode.
         private PropertyManagerPageCheckbox PMCheckAutoDeriveAxis;
 
-        // Export-time choices that used to live on the now-retired
-        // AssemblyExportForm. They sit on the Setup tab and read together
+        // Export-time choices shown on the Setup tab. These read together
         // as "what should the next export do".
         private PropertyManagerPageCombobox PMComboBoxOutputFormat;
         private PropertyManagerPageCombobox PMComboBoxMeshFormat;
@@ -156,13 +150,9 @@ namespace SW2RD.Export
         // "Use visual groups as collision" toggle. When checked, the collision
         // editor below it is greyed out (Enabled=false but still rendered)
         // and the export pipeline reuses the visual meshes for collision.
-        // We deliberately do NOT also flip Visible: the prior implementation
-        // toggled both, which produced inconsistent UX between the two
-        // entry paths (FillPropertyManager loading a config with the box
-        // pre-checked rendered the controls "greyed but visible", whereas
-        // the user clicking the checkbox at runtime made them disappear).
-        // Enabled-only toggling keeps the layout stable and matches the
-        // SW idiom for "this section is inactive but still discoverable".
+        // Keep controls visible and toggle only Enabled. This keeps the
+        // layout stable while still communicating that the collision editor
+        // is inactive because visual meshes will be reused.
         private PropertyManagerPageCheckbox PMCheckCollisionUsesVisual;
 
         // "Reverse Direction" toggle for the joint axis. swControlType_BitmapButton
@@ -364,9 +354,8 @@ namespace SW2RD.Export
         private const int SelectionSiteCoordSysID = 103;
         private const int ValidationStatusLabelID = 104;
 
-        // Tab-local labels added to Visual / Collision / Inertial / Sites
-        // tabs to preserve the visual heading after the per-tab single-group
-        // wrapper was retired.
+        // Tab-local labels for the Visual / Collision / Inertial / Sites
+        // tabs so each page has an explicit visual heading.
         private const int LabelVisualHeaderID = 110;
         private const int LabelCollisionHeaderID = 111;
         private const int LabelInertialHeaderID = 112;
@@ -614,19 +603,8 @@ namespace SW2RD.Export
             PMPage.SetFocus(dotNetTree);
         }
         // Toggle the Enabled state of every control in the Collision Groups
-        // editor. Used by OnCheckboxCheck to grey out the editor when the
-        // user checks "Use visual groups as collision". Visible is NOT
-        // flipped: the prior implementation toggled both Visible and
-        // Enabled, which produced inconsistent UX between the two entry
-        // paths. FillPropertyManager (which fires for an existing config
-        // already carrying the toggle) ran before SW had laid out the
-        // controls, so the resulting Visible=false had no immediate
-        // visual effect and the controls appeared "greyed but visible";
-        // OnCheckboxCheck (firing after the controls had rendered) flipped
-        // Visible=false on rendered controls and they disappeared.
-        // Enabled-only avoids that split: every entry path produces the
-        // same "greyed out but still in layout" result, which is also
-        // closer to the SW idiom for an inactive section.
+        // editor. Controls stay visible so loading an existing config and
+        // clicking the checkbox produce the same stable, greyed-out layout.
         private void SetCollisionEditorEnabled(bool enabled)
         {
             object[] collisionEditorControls = new object[]

@@ -1,3 +1,25 @@
+/*
+Copyright (c) 2026 Ethan J. Musser
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 using System.Windows.Forms;
@@ -109,12 +131,10 @@ namespace SW2RD.URDF
         [DataMember(IsRequired = false)]
         public bool AutoDeriveAxis;
 
-        // Re-default fields that pre-date them so old configs still
-        // come back with sensible values. Required because
+        // Re-default fields that may be missing from saved configs.
         // DataContractSerializer constructs the object via
-        // FormatterServices.GetUninitializedObject and does NOT call
-        // the parameterless constructor (see AGENTS.md "DataContract /
-        // Link persistence gotchas").
+        // FormatterServices.GetUninitializedObject and does not call
+        // the parameterless constructor.
         [OnDeserializing]
         private void OnDeserializing(StreamingContext context)
         {
@@ -199,11 +219,10 @@ namespace SW2RD.URDF
             // The base method already performs the type check, so we don't have to for this cast
             Joint joint = (Joint)externalElement;
 
-            // These plain fields aren't kept as URDFAttribute objects and so
-            // are tracked separately. Without these manual copies, every
-            // Link.Clone() after a DataContractSerializer reload silently
-            // resets them to the zero-init default (see AGENTS.md
-            // four-paths landmine, Joint-scope variant).
+            // These plain fields are not URDFAttribute objects, so the
+            // base URDFElement copy path does not see them. Copy them
+            // explicitly to preserve saved joint settings across clone and
+            // reload paths.
             CoordinateSystemName = joint.CoordinateSystemName;
             AxisName = joint.AxisName;
             AxisFlipped = joint.AxisFlipped;

@@ -293,10 +293,9 @@ namespace SW2RD.Export
             // inertial branch -> active.Link.InertialComponents.Clear() +
             // AddRange(picked), which mutates the very list being foreach'd
             // -> InvalidOperationException("Collection was modified").
-            // That exception then aborts SwitchActiveNodes before line 147
-            // (previouslySelectedNode = node), and the stale textbox state
-            // becomes a link-rename trapdoor on the next tree click. See
-            // AGENTS.md for the full cascade.
+            // If selection loading re-enters commit logic, it can mutate the
+            // component list while it is being enumerated and leave the active
+            // tree node out of sync with the textboxes.
             bool prior = suppressGroupListboxRefresh;
             suppressGroupListboxRefresh = true;
             try

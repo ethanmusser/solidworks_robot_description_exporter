@@ -252,15 +252,10 @@ namespace SW2RD.SW
 
         public void AddCommandMgr()
         {
-            // The icon paths must be resolvable at SOLIDWORKS load time.
-            // The legacy code hardcoded "C:\Program Files\SOLIDWORKS Corp\
-            // SOLIDWORKS\URDFExporter\images\..." which only worked on the
-            // installer-built copy and silently broke on dev machines that
-            // load the DLL out of bin\x64\Debug or bin\x64\Release. Resolve
-            // the directory at runtime relative to the loaded assembly and
-            // fall back through search paths (DLL\images, DLL parent\images,
-            // legacy install dir) so a missing file is never the reason
-            // the menu / toolbar fails to register.
+            // Icon paths must be resolvable at SOLIDWORKS load time. Resolve
+            // them relative to the loaded assembly and fall back through the
+            // known install image folders so missing icons do not prevent menu
+            // or toolbar registration.
             string[] images = BuildIconList();
             int ret = SwApp.AddMenuItem5((int)swDocumentTypes_e.swDocASSEMBLY, add_in_id_, "Export Robot Description@&Tools",
                 -1, "AssemblyRobotDescriptionExporter", "", "Export assembly as a robot description (URDF or MJCF)", images);
@@ -274,13 +269,8 @@ namespace SW2RD.SW
             }
 
             // Also publish the export action as a CommandManager toolbar
-            // entry. SW's CmdMgr places the toolbar under the "SOLIDWORKS
-            // Add-Ins" ribbon tab when we ask for that tab by name; if the
-            // user has disabled that ribbon tab the toolbar still exists
-            // and is reachable via View > Toolbars > Robot Description Exporter.
-            // Failures register as warnings rather than errors so the
-            // legacy AddMenuItem5 path is still the documented escape
-            // hatch for a broken toolbar.
+            // entry. If toolbar registration fails, the Tools menu entry still
+            // gives users a stable way to launch the exporter.
             try
             {
                 AddCommandManagerToolbar(images);
@@ -290,9 +280,8 @@ namespace SW2RD.SW
                 logger.Warn("AddCommandManagerToolbar failed (toolbar entry skipped, menu still works): " + ex.Message, ex);
             }
 
-            // Single-part export was retired during the modernization rollup;
-            // the canonical workflow exports an assembly. Open the part as an
-            // assembly to export it as a robot description link.
+            // The exporter operates on assemblies. To export a single part,
+            // open it from an assembly and configure it as one link.
         }
 
         public int ToolbarEnableMethod()
@@ -439,33 +428,11 @@ namespace SW2RD.SW
         //
         // The whole sequence (CreateCommandGroup2 -> AddCommandItem2 ->
         // Activate -> per-doc-type CommandTab wiring) is the canonical
-        // SW add-in ribbon recipe. The non-obvious bits:
-        //   - We pass `ignorePrevious = true` to CreateCommandGroup2 so
-        //     a re-register on the same dev box always rebuilds the
-        //     CommandGroup (a stale registry entry from a prior version
-        //     would otherwise cause SW to silently skip our updates).
-        //   - We own a DEDICATED ribbon tab (`CmdGroupTitle`) rather
-        //     than sharing the built-in "SOLIDWORKS Add-Ins" tab.
-        //     Background: SOLIDWORKS caches the layout of each ribbon
-        //     tab (including the CommandTabBoxes hanging off it) across
-        //     SW sessions. RemoveCommandGroup2 on disconnect tears down
-        //     the underlying commands but NOT the CommandTabBoxes that
-        //     reference them. When we attached our box to the shared
-        //     Add-Ins tab, each rebuild + SW restart left another
-        //     stale box behind on that shared tab, and the user saw
-        //     duplicate icons accumulate. Owning the tab outright lets
-        //     us call RemoveCommandTab on connect (and again on
-        //     disconnect) to drop the entire stale tab in one shot
-        //     without touching any other add-in's boxes.
-        //   - HasMenu = false because the legacy AddMenuItem5 path
-        //     already publishes the menu entry under Tools. Setting
-        //     HasMenu = true would duplicate the menu entry.
-        //   - If you ever rename the tab, KEEP the connect-time
-        //     RemoveCommandTab pass against the NEW name; otherwise
-        //     each rename produces a new stale tab. The matching
-        //     cleanup against the OLD name needs to live in
-        //     RemoveCommandMgr until every dev box has cycled through
-        //     a disconnect under the old name.
+        // SW add-in ribbon recipe. We pass `ignorePrevious = true` and own
+        // a dedicated ribbon tab so reconnecting the add-in rebuilds cached
+        // toolbar state instead of accumulating duplicate icons on a shared
+        // tab. HasMenu stays false because AddMenuItem5 already publishes the
+        // Tools menu entry.
         private void AddCommandManagerToolbar(string[] iconList)
         {
             if (CmdMgr == null)
@@ -556,20 +523,16 @@ namespace SW2RD.SW
 
         // Attaches `commandID` to the dedicated Robot Description Exporter
         // ribbon tab for `docType`. The tab name is `CmdGroupTitle`,
-        // which we own; if a tab with that name already exists from a
-        // previous registration (SW caches ribbon layouts across
-        // sessions) we drop it via RemoveCommandTab and recreate from
-        // scratch, otherwise each rebuild + SW restart would leave
-        // another stale CommandTabBox attached to the cached tab and
-        // the user would see duplicate icons accumulate.
+        // which we own; recreating it on connect keeps SolidWorks's cached
+        // ribbon layout from accumulating duplicate CommandTabBox entries.
         private void AttachCommandToOwnTab(int docType, int commandID)
         {
             string tabName = CmdGroupTitle;
 
-            // Drop any stale tab from a previous registration. SW
-            // serializes the ribbon layout to the per-user registry
-            // and re-applies it on next launch, so the tab can be
-            // present here even though our CmdMgr was just connected.
+            // Drop any cached tab before recreating it. SW serializes
+            // ribbon layout to the per-user registry and re-applies it on
+            // launch, so the tab can be present even though our CmdMgr was
+            // just connected.
             // RemoveCommandTab on a non-existent tab is a no-op
             // (GetCommandTab returns null), so the guard is cheap. The
             // explicit (CommandTab) cast satisfies the SW interop

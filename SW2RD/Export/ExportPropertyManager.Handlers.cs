@@ -787,16 +787,11 @@ namespace SW2RD.Export
         // OnTabClicked returns true, and a synchronous load populates
         // the underlying SelectionMgr marks BEFORE SW paints the now-
         // active tab, so the freshly-loaded contents render
-        // immediately. A previous attempt to defer the load via
-        // Tree.BeginInvoke removed this synchronous path and broke
-        // rendering: SW painted the empty tab first, our deferred
-        // load wrote to the marks afterwards, and SW never re-rendered
-        // (the user saw "(N comp.)" in the listbox but an empty
-        // SelectionBox below it on every tab switch). The marks
-        // themselves are independent powers of 2 (see
-        // *SelectionMark constants in ExportPropertyManager.cs and
-        // the AGENTS.md "marks are bitmasks" note), so cross-mark
-        // contamination is not a concern here.
+        // immediately. The load must stay synchronous because SW paints the
+        // active tab as soon as this callback returns; a deferred load updates
+        // the marks after the first paint and leaves the SelectionBox visually
+        // empty. The *SelectionMark constants are independent powers of 2, so
+        // each box owns a distinct mark channel.
         bool IPropertyManagerPage2Handler9.OnTabClicked(int Id)
         {
             currentActiveTabId = Id;

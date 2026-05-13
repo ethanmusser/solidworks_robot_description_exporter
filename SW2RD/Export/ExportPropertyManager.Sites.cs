@@ -47,9 +47,8 @@ namespace SW2RD.Export
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
 
-            // Static heading on the tab so the visual hierarchy still
-            // reads "Sites (MJCF)" after the per-tab single-group wrapper
-            // was retired.
+            // Static heading so the tab's visual hierarchy reads
+            // "Sites (MJCF)".
             PMSitesTab.AddControl2(LabelSitesHeaderID,
                 (short)controlType, "Sites (MJCF)", (short)alignment, options,
                 "MJCF-only frames attached to a body. Ignored when exporting URDF.");

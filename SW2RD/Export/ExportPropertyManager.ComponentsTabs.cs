@@ -1,3 +1,25 @@
+/*
+Copyright (c) 2026 Ethan J. Musser
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
@@ -6,11 +28,8 @@ using System;
 namespace SW2RD.Export
 {
     // PMPage UI builder for the Visual / Collision / Inertial component
-    // tabs. Each tab is a flat list of controls (heading label, listbox /
-    // selection / name / Add / Remove for groups; combobox + selection
-    // for inertial). The per-tab single-group wrapper was retired - it
-    // added a redundant collapsible header with no organizational value
-    // now that the tab strip is the primary navigation.
+    // tabs. Each tab is a flat list of controls because the tab strip is
+    // already the primary navigation surface.
     public sealed partial class ExportPropertyManager : PropertyManagerPage2Handler9, IDisposable
     {
         private void BuildComponentsTabs()

@@ -2,7 +2,7 @@
 
 A SolidWorks add-in that exports assemblies as URDF and MJCF robot descriptions.
 
-The exporter is a hard fork of [Stephen Brawner's SolidWorks to URDF Exporter](https://github.com/ros/solidworks_urdf_exporter), extended with native MJCF support (separate visual / collision meshes, `<site>` tags, per-link inertial-source selection, etc.). See `AGENTS.md` for the project's design rationale.
+The exporter builds on [Stephen Brawner's SolidWorks to URDF Exporter](https://github.com/ros/solidworks_urdf_exporter) and adds native MJCF support, including separate visual / collision meshes, `<site>` tags, and per-link inertial-source selection.
 
 ## SolidWorks Version Requirements
 
