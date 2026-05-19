@@ -358,14 +358,12 @@ namespace SW2RD.Export
             {
                 node.IsBaseNode = false;
                 node.Link.Name = "empty_link";
-                // SelectionBox-only UI: empty AxisName /
-                // CoordinateSystemName + AutoDeriveAxis = true is the
-                // new "let the exporter figure it out" state. Replaces
-                // the legacy "Automatically Generate" sentinel that
-                // older configs still write.
+                // SelectionBox-only UI: empty AxisName with
+                // AutoDeriveAxis=false means the user still needs to pick
+                // a reference axis. Auto-derive is opt-in via the checkbox.
                 node.Link.Joint.AxisName = "";
                 node.Link.Joint.CoordinateSystemName = "";
-                node.Link.Joint.AutoDeriveAxis = true;
+                node.Link.Joint.AutoDeriveAxis = false;
                 node.Link.Joint.Type = "Automatically Detect";
                 node.Link.InertialComponents = new List<Component2>();
                 node.Link.Sites = new List<SiteSpec>();

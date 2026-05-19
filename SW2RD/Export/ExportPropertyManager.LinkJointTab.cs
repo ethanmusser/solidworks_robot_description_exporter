@@ -203,15 +203,15 @@ namespace SW2RD.Export
             PMLabelAxes = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
                 LabelAxesID, (short)controlType, "Joint axis", (short)alignment, options, tip);
 
-            // "Auto-derive axis from kinematic chain" toggle. When
-            // checked, the SelectionBox is disabled and AxisName is
-            // ignored at export time.
+            // "Auto-derive axis from kinematic chain" toggle. Defaults
+            // off so new joints require an explicit reference-axis pick
+            // unless the user opts into inference from mates.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Checkbox;
             PMCheckAutoDeriveAxis = (PropertyManagerPageCheckbox)PMLinkJointTab.AddControl2(
                 CheckAutoDeriveAxisID, (short)controlType,
                 "Auto-derive axis from kinematic chain", (short)alignment, options,
                 "When checked, the joint axis is resolved from the SolidWorks mates at export time and the picker below is ignored.");
-            PMCheckAutoDeriveAxis.Checked = true;
+            PMCheckAutoDeriveAxis.Checked = false;
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;

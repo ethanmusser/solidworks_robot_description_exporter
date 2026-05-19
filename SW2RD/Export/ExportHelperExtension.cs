@@ -556,10 +556,20 @@ namespace SW2RD.Export
                 jointType = "fixed";
                 child.Joint.Type = jointType;
             }
+            else if (!child.Joint.AutoDeriveAxis &&
+                string.IsNullOrEmpty(axisName) &&
+                jointType != "fixed")
+            {
+                ExportErrorWhy = string.Format(
+                    "The joint axis is empty for joint {0} from link {1} to {2}. " +
+                    "Pick a reference axis or enable auto-derive axis from kinematic chain.",
+                    child.Joint.Name, child.Name, parent.Name);
+                return false;
+            }
             else if (string.IsNullOrEmpty(coordSysName) ||
                 coordSysName == "Automatically Generate" ||
                 child.Joint.AutoDeriveAxis ||
-                string.IsNullOrEmpty(axisName) ||
+                axisName == "Automatically Generate" ||
                 jointType == "Automatically Detect")
             {
                 // We have to estimate the joint if the user specifies automatic for either the
@@ -596,8 +606,7 @@ namespace SW2RD.Export
                 CreateRefOrigin(child.Joint);
             }
 
-            if (child.Joint.AutoDeriveAxis || string.IsNullOrEmpty(axisName) ||
-                axisName == "Automatically Generate")
+            if (child.Joint.AutoDeriveAxis || axisName == "Automatically Generate")
             {
                 child.Joint.AxisName = "Axis_" + child.Joint.Name;
                 ActiveSWModel.ClearSelection2(true);
@@ -2347,7 +2356,6 @@ namespace SW2RD.Export
                 link.Joint.AxisName != "Automatically Generate" &&
                 !CheckRefAxisExists(link.Joint.AxisName))
             {
-                link.Joint.AutoDeriveAxis = true;
                 link.Joint.AxisName = "";
             }
         }

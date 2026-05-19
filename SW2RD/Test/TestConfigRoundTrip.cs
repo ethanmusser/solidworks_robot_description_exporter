@@ -339,6 +339,7 @@ namespace SW2RD.Test
             Config read = ConfigJsonSerializer.Deserialize(json);
             JointModel joint = FirstTopLevel(read.Tree).Children[0].Joint;
             Assert.True(joint.AutoComputeLimits);
+            Assert.False(joint.AutoDeriveAxis);
             Assert.Null(joint.Damping);
             Assert.Null(joint.Friction);
             Assert.Null(joint.Armature);

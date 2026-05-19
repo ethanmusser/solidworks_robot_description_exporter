@@ -72,7 +72,14 @@ namespace SW2RD.Export
                 node.IsIncomplete = true;
                 node.WhyIncomplete +=
                     "        The reference axis cannot be automatically generated\r\n" +
-                    "        without components. Either select an axis or at least one component.";
+                    "        without components. Either select an axis or at least one component.\r\n";
+            }
+
+            if (!node.Link.Joint.AutoDeriveAxis && string.IsNullOrWhiteSpace(node.Link.Joint.AxisName))
+            {
+                node.IsIncomplete = true;
+                node.WhyIncomplete +=
+                    "        Joint axis is empty. Pick a reference axis or enable auto-derive axis from kinematic chain.\r\n";
             }
 
             if (node.Link.SWComponents.Count == 0 && node.Link.Joint.Type == "Automatically Generate")
