@@ -158,9 +158,8 @@ jobs:
       #
       #   gh attestation verify sw2rdSetup_<tag>.exe -R <owner>/<repo>
       #
-      # predicate-type is pinned to SLSA v1 because `gh attestation verify`
-      # defaults to it; changing it silently breaks verification of installers
-      # already in the wild.
+      # actions/attest@v4 emits SLSA provenance by default when no custom
+      # predicate is supplied.
       #
       # Skipped on pull_request because (1) fork PRs lack OIDC permissions to
       # mint attestations and would fail noisily, and (2) PR-built installers
@@ -170,7 +169,6 @@ jobs:
         uses: actions/attest@v4
         with:
           subject-path: INSTALL/OUTPUT/${{ steps.filename.outputs.name }}.exe
-          predicate-type: https://slsa.dev/provenance/v1
 
       - name: Upload installer + checksum as workflow artifact
         uses: actions/upload-artifact@v6
