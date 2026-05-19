@@ -203,10 +203,10 @@ namespace SW2RD.Export
         private bool axisPreviewRefreshPending;
 
         // Index of the visual / collision group whose components are currently
-        // shown in the corresponding SelectionBox. Reset to 0 on every link
-        // switch and adjusted as the user picks rows in the listbox.
-        private int activeVisualGroupIndex = 0;
-        private int activeCollisionGroupIndex = 0;
+        // shown in the corresponding SelectionBox. -1 means the link currently
+        // has no group of that role.
+        private int activeVisualGroupIndex = -1;
+        private int activeCollisionGroupIndex = -1;
 
         // Guard against re-entrancy: when LoadActiveVisualGroupIntoSelectionBox /
         // LoadActiveCollisionGroupIntoSelectionBox programmatically populate a

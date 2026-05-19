@@ -467,12 +467,9 @@ namespace SW2RD.Export
                 : (link.Name ?? "").Replace('/', '_');
             string extension = (meshFormat == MeshExportFormat.THREEDXML) ? ".3dxml" : ".STL";
 
-            // Make sure VisualGroups / CollisionGroups are populated. For brand-
-            // new links the property setter creates a single default group from
-            // the legacy SWComponents list; legacy configs land in
-            // MigrateLegacyComponents during deserialization. After this call
-            // every populated link has at least one VisualGroup with the
-            // expected components.
+            // Make sure legacy flat component lists have been migrated into
+            // VisualGroups / CollisionGroups. New links may intentionally have
+            // zero visual groups until the user adds one.
             link.MigrateLegacyComponents();
 
             List<MeshGroup> visualGroups = link.VisualGroups ?? new List<MeshGroup>();

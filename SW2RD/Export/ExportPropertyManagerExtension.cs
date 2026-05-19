@@ -355,7 +355,7 @@ namespace SW2RD.Export
             else
             {
                 node.IsBaseNode = false;
-                node.Link.Name = "Empty_Link";
+                node.Link.Name = "empty_link";
                 // SelectionBox-only UI: empty AxisName /
                 // CoordinateSystemName + AutoDeriveAxis = true is the
                 // new "let the exporter figure it out" state. Replaces
@@ -370,12 +370,7 @@ namespace SW2RD.Export
                 node.Link.InertialSource = InertialSource.Visual;
                 node.IsBaseNode = false;
                 node.IsIncomplete = true;
-                // Seed a single empty visual group so the SelectionBox always has
-                // a place to commit user picks into.
-                node.Link.VisualGroups = new List<MeshGroup>
-                {
-                    new MeshGroup(MeshGroup.DefaultVisualName(node.Link.Name)),
-                };
+                node.Link.VisualGroups = new List<MeshGroup>();
                 node.Link.CollisionGroups = new List<MeshGroup>();
                 node.Link.CollisionUsesVisual = Link.DefaultCollisionUsesVisual;
                 node.Name = node.Link.Name;
@@ -405,10 +400,7 @@ namespace SW2RD.Export
             node.Link.InertialSource = InertialSource.Visual;
             node.IsBaseNode = false;
             node.IsIncomplete = true;
-            node.Link.VisualGroups = new List<MeshGroup>
-            {
-                new MeshGroup(MeshGroup.DefaultVisualName(node.Link.Name)),
-            };
+            node.Link.VisualGroups = new List<MeshGroup>();
             node.Link.CollisionGroups = new List<MeshGroup>();
             node.Link.CollisionUsesVisual = Link.DefaultCollisionUsesVisual;
             node.Name = node.Link.Name;
@@ -423,9 +415,8 @@ namespace SW2RD.Export
             PMNumberBoxChildCount.Value = node.Nodes.Count;
 
             // Migrate any legacy single-list config into the new groups model
-            // and ensure the lists are non-null. After this call, node.Link
-            // always has at least one VisualGroup (so the SelectionBox has a
-            // place to commit into).
+            // and ensure the group lists are non-null. New links may have
+            // zero visual groups until the user adds one.
             EnsureGroupsInitialized(node);
             if (node.Link.InertialComponents == null)
             {
@@ -437,8 +428,8 @@ namespace SW2RD.Export
             }
 
             // Reset which group is being edited; default to the first group on
-            // each link switch.
-            activeVisualGroupIndex = 0;
+            // each link switch when one exists.
+            activeVisualGroupIndex = (node.Link.VisualGroups.Count > 0) ? 0 : -1;
             activeCollisionGroupIndex = (node.Link.CollisionGroups.Count > 0) ? 0 : -1;
 
             // Refresh the listboxes BEFORE re-populating selection boxes; the
@@ -1105,8 +1096,8 @@ namespace SW2RD.Export
                 SaveActiveNode();
                 previouslySelectedNode = null;
                 rightClickedNode = null;
-                activeVisualGroupIndex = 0;
-                activeCollisionGroupIndex = 0;
+                activeVisualGroupIndex = -1;
+                activeCollisionGroupIndex = -1;
                 currentAxisFlipped = false;
                 Exporter.ClearAxisOverlay();
                 SetConfigTree(baseNode);

@@ -1,6 +1,8 @@
 using SW2RD.SW;
 using SW2RD.Export;
+using SW2RD.URDF;
 using System.Reflection;
+using System.Runtime.Serialization;
 using Xunit;
 
 namespace SW2RD.Test
@@ -14,6 +16,33 @@ namespace SW2RD.Test
     {
         public TestPropertyManager(SWTestFixture fixture) : base(fixture)
         {
+        }
+
+        [Fact]
+        public void TestGeneratedLinksStartWithExpectedNamesAndNoVisualGroups()
+        {
+            ExportPropertyManager pm = CreateUninitializedPropertyManager();
+
+            LinkNode freshRoot = pm.CreateEmptyNode(null);
+            WorldNode world = Xunit.Assert.IsType<WorldNode>(freshRoot);
+            Xunit.Assert.Single(world.Nodes);
+            LinkNode generatedTopLevel = Xunit.Assert.IsType<LinkNode>(world.Nodes[0]);
+            Xunit.Assert.Equal("base_link", generatedTopLevel.Link.Name);
+            Xunit.Assert.Empty(generatedTopLevel.Link.VisualGroups);
+
+            LinkNode directWorldChild = pm.CreateEmptyNode(world);
+            Xunit.Assert.Equal("base_link", directWorldChild.Link.Name);
+            Xunit.Assert.Empty(directWorldChild.Link.VisualGroups);
+
+            LinkNode nestedChild = pm.CreateEmptyNode(generatedTopLevel);
+            Xunit.Assert.Equal("empty_link", nestedChild.Link.Name);
+            Xunit.Assert.Empty(nestedChild.Link.VisualGroups);
+        }
+
+        private static ExportPropertyManager CreateUninitializedPropertyManager()
+        {
+            return (ExportPropertyManager)FormatterServices.GetUninitializedObject(
+                typeof(ExportPropertyManager));
         }
 
 

@@ -87,7 +87,7 @@ namespace SW2RD.Export
             }
             if (activeVisualGroupIndex < 0)
             {
-                activeVisualGroupIndex = 0;
+                activeVisualGroupIndex = -1;
             }
             RefreshVisualGroupsListbox(node);
             LoadActiveVisualGroupIntoSelectionBox(node);
@@ -626,10 +626,9 @@ namespace SW2RD.Export
             }
         }
 
-        // Ensures the link has a non-null VisualGroups / CollisionGroups list
-        // and at least one visual group (so the SelectionBox always has a
-        // place to commit to). Collision is allowed to be empty (URDF
-        // fallback).
+        // Ensures the link has non-null VisualGroups / CollisionGroups lists.
+        // Legacy flat component lists still migrate into a first visual group,
+        // but newly-created links may intentionally have zero visual groups.
         private static void EnsureGroupsInitialized(LinkNode node)
         {
             if (node == null || node.Link == null)
@@ -640,10 +639,6 @@ namespace SW2RD.Export
             if (node.Link.VisualGroups == null)
             {
                 node.Link.VisualGroups = new List<MeshGroup>();
-            }
-            if (node.Link.VisualGroups.Count == 0)
-            {
-                node.Link.VisualGroups.Add(new MeshGroup(MeshGroup.DefaultVisualName(node.Link.Name)));
             }
             if (node.Link.CollisionGroups == null)
             {
