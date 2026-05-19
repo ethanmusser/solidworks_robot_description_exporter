@@ -246,6 +246,8 @@ namespace SW2RD.Export
                 }
 
                 EnsureGroupsInitialized(previouslySelectedNode);
+                EnsureSitesInitialized(previouslySelectedNode);
+                SaveActiveSiteFields(previouslySelectedNode);
 
                 // Persist the "Use visual groups as collision" toggle before
                 // committing the per-group selections so that downstream code
@@ -431,11 +433,14 @@ namespace SW2RD.Export
             // each link switch when one exists.
             activeVisualGroupIndex = (node.Link.VisualGroups.Count > 0) ? 0 : -1;
             activeCollisionGroupIndex = (node.Link.CollisionGroups.Count > 0) ? 0 : -1;
+            activeSiteIndex = (node.Link.Sites.Count > 0) ? 0 : -1;
 
             // Refresh the listboxes BEFORE re-populating selection boxes; the
             // selection box population calls ClearSelection2.
             RefreshVisualGroupsListbox(node);
             RefreshCollisionGroupsListbox(node);
+            RefreshSitesListbox(node);
+            LoadActiveSiteIntoForm(node);
 
             // Toggle Enabled state on the Link/Joint controls BEFORE
             // populating the SelectionBoxes. SW occasionally drops
@@ -484,13 +489,6 @@ namespace SW2RD.Export
             // source != Custom. See SetInertialEditorEnabled for the
             // full rationale.
             SetInertialEditorEnabled(node.Link.InertialSource);
-
-            // Sites tab: nothing to pre-populate for the SelectionBox
-            // (the pick is consumed at Add Site click time, not
-            // round-tripped). Just clear the name input and refresh the
-            // listbox of already-saved sites.
-            PMTextBoxSiteName.Text = "";
-            RefreshSitesListbox(node);
 
             // "Use visual groups as collision" toggle. Re-sync the editor
             // visibility on every node switch so the UI matches the data
@@ -1098,6 +1096,7 @@ namespace SW2RD.Export
                 rightClickedNode = null;
                 activeVisualGroupIndex = -1;
                 activeCollisionGroupIndex = -1;
+                activeSiteIndex = -1;
                 currentAxisFlipped = false;
                 Exporter.ClearAxisOverlay();
                 SetConfigTree(baseNode);

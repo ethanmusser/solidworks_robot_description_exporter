@@ -534,9 +534,7 @@ namespace SW2RD.Export
         //   VisualTabID:       active visual group
         //   CollisionTabID:    active collision group
         //   InertialTabID:     inertial components
-        //   SitesTabID:        none (the site coord-sys SelectionBox is
-        //                      transient - consumed on Add Site click -
-        //                      and intentionally starts empty)
+        //   SitesTabID:        active site's reference coord-sys
         //
         // The whole sequence runs under suppressGroupListboxRefresh = true
         // so the synthetic OnSelectionboxListChanged events fired by the
@@ -572,10 +570,10 @@ namespace SW2RD.Export
                     case InertialTabID:
                         LoadActiveInertialIntoSelectionBox(node);
                         break;
-                    // SetupTabID and SitesTabID: no marks to populate.
-                    // Sites' site coord-sys SelectionBox is transient
-                    // (consumed on Add Site click) and intentionally
-                    // starts empty when the user lands on the tab.
+                    case SitesTabID:
+                        LoadActiveSiteCoordSysIntoSelectionBox(node);
+                        break;
+                    // SetupTabID: no marks to populate.
                 }
             }
             finally

@@ -367,13 +367,15 @@ namespace SW2RD.Export
                     DeferRefreshAxisPreview();
                 }
             }
-            // SelectionSiteCoordSysID is intentionally not committed here.
-            // The site coord-sys pick is "transient": it's consumed when
-            // the user clicks Add Site (AddSiteFromForm reads the marked
-            // SelectionMgr entry and clears the box). Letting an empty
-            // mark wipe a partially-typed pending pick would be hostile
-            // to the user; we just rely on AddSiteFromForm reading at
-            // click time.
+            else if (Id == SelectionSiteCoordSysID)
+            {
+                // Sites are edited live: the active listbox row owns the
+                // SelectionBox below it, so every accepted coord-sys pick
+                // writes directly to that SiteSpec. Empty marks can be
+                // synthetic clears from tab rehydration / teardown, so only
+                // non-empty picks update the model.
+                CommitActiveSiteCoordSysSelection(active);
+            }
         }
 
         bool IPropertyManagerPage2Handler9.OnSubmitSelection(
@@ -421,6 +423,10 @@ namespace SW2RD.Export
 
         void IPropertyManagerPage2Handler9.OnTextboxChanged(int Id, string Text)
         {
+            if (suppressSiteEditorEvents && Id == SitesNameTextBoxID)
+            {
+                return;
+            }
             if (Id == TextBoxLinkNameID)
             {
                 LinkNode node = (LinkNode)Tree.SelectedNode;
@@ -434,6 +440,12 @@ namespace SW2RD.Export
                 {
                     node.Link.Joint.Name = PMTextBoxJointName.Text ?? "";
                 }
+            }
+            else if (Id == SitesNameTextBoxID)
+            {
+                LinkNode node = (LinkNode)Tree.SelectedNode;
+                SaveActiveSiteFields(node);
+                RefreshSitesListbox(node);
             }
         }
 
@@ -713,6 +725,20 @@ namespace SW2RD.Export
                         activeCollisionGroupIndex = Item;
                         LoadActiveCollisionGroupIntoSelectionBox(node);
                         RefreshCollisionGroupsListbox(node);
+                    }
+                }
+                else if (Id == SitesListBoxID)
+                {
+                    if (suppressSiteListboxSelectionChanged)
+                    {
+                        return;
+                    }
+                    SaveActiveSiteFields(node);
+                    if (Item >= 0 && Item < (node.Link.Sites != null ? node.Link.Sites.Count : 0))
+                    {
+                        activeSiteIndex = Item;
+                        LoadActiveSiteIntoForm(node);
+                        RefreshSitesListbox(node);
                     }
                 }
             }

@@ -36,10 +36,8 @@ namespace SW2RD.Export
     public sealed partial class ExportPropertyManager : PropertyManagerPage2Handler9, IDisposable
     {
         // Builds every control on the Sites tab. Layout mirrors the
-        // Visual / Collision groups editor:
-        //   header -> help -> sites listbox + label -> name input ->
-        //   coord-system selectionbox + read-only echo combobox ->
-        //   Add / Remove buttons.
+        // Visual / Collision groups editor: a listbox selects the active
+        // site, and the fields below live-edit that selected row.
         private void BuildSitesTab()
         {
             int controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
@@ -55,20 +53,29 @@ namespace SW2RD.Export
 
             PMSitesTab.AddControl2(
                 SitesHelpLabelID, (short)controlType,
-                "Type a site name, pick a reference coord. system, then click Add Site.",
+                "Select a site row, then edit its name and reference coordinate system below.",
                 (short)alignment, options,
                 "Sites are MJCF-only frames attached to a body. They are ignored when exporting URDF.");
 
             PMSitesTab.AddControl2(
                 SitesListLabelID, (short)controlType, "Sites defined for this link",
                 (short)alignment, options,
-                "Read-only summary. Use Remove Selected Site to delete one.");
+                "Select a site to edit its name and coordinate system below.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Listbox;
             PMListBoxSites = (PropertyManagerPageListbox)PMSitesTab.AddControl2(
                 SitesListBoxID, (short)controlType, "", (short)alignment, options,
-                "Sites already added to this link. Select one and click Remove Selected Site to delete it.");
+                "Sites already added to this link. Select one to edit it.");
             PMListBoxSites.Height = 50;
+
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
+            PMButtonSiteAdd = (PropertyManagerPageButton)PMSitesTab.AddControl2(
+                SitesAddButtonID, (short)controlType, "New Site", 0, options,
+                "Create a new site on this link and make it active.");
+
+            PMButtonSiteRemove = (PropertyManagerPageButton)PMSitesTab.AddControl2(
+                SitesRemoveButtonID, (short)controlType, "Delete Selected Site", 0, options,
+                "Delete the highlighted site from this link.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             PMSitesTab.AddControl2(
@@ -93,7 +100,7 @@ namespace SW2RD.Export
             PMSelectionSiteCoordSys = (PropertyManagerPageSelectionbox)PMSitesTab.AddControl2(
                 SelectionSiteCoordSysID, (short)controlType, "Pick site coord. system",
                 (short)alignment, options,
-                "Pick the reference coordinate system that defines the site's pose. The pick is consumed when you click Add Site.");
+                "Pick the reference coordinate system that defines the active site's pose.");
             // SingleEntityOnly = true matches SW's own coord-system /
             // mate creation single-entity pickers - a new pick OVERWRITES
             // the prior pick in place. See PMSelectionGlobalCoordsys in
@@ -109,22 +116,8 @@ namespace SW2RD.Export
             PMSelectionSiteCoordSys.Height = 18;
             PMSelectionSiteCoordSys.SetSelectionFilters(coordSysFilterObj);
             PMSelectionSiteCoordSys.Mark = SiteCoordSysSelectionMark;
-
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            PMButtonSiteAdd = (PropertyManagerPageButton)PMSitesTab.AddControl2(
-                SitesAddButtonID, (short)controlType, "Add Site", 0, options,
-                "Add the entered site to this link");
-
-            PMButtonSiteRemove = (PropertyManagerPageButton)PMSitesTab.AddControl2(
-                SitesRemoveButtonID, (short)controlType, "Remove Selected Site", 0, options,
-                "Remove the selected site from the list");
         }
 
-        // Reads the marked SelectionMgr entry for the site coord-sys
-        // SelectionBox at click time. The SelectionBox-only design has
-        // no echo combobox to fall back on, so a "no pick" is detected
-        // by an empty mark.
         private void AddSiteFromForm()
         {
             LinkNode node = (LinkNode)Tree.SelectedNode;
@@ -132,68 +125,247 @@ namespace SW2RD.Export
             {
                 return;
             }
-            string name = (PMTextBoxSiteName.Text ?? "").Trim();
-            string coord = ReadMarkedFeatureName(SiteCoordSysSelectionMark);
-            if (string.IsNullOrEmpty(name))
+
+            EnsureSitesInitialized(node);
+            SaveActiveSiteFields(node);
+
+            string linkName = (PMTextBoxLinkName != null && !string.IsNullOrWhiteSpace(PMTextBoxLinkName.Text))
+                ? PMTextBoxLinkName.Text.Trim()
+                : node.Link.Name;
+            string name = NextDefaultSiteName(node.Link.Sites, linkName);
+            node.Link.Sites.Add(new SiteSpec(name, ""));
+            activeSiteIndex = node.Link.Sites.Count - 1;
+            RefreshSitesListbox(node);
+            LoadActiveSiteIntoForm(node);
+        }
+
+        private void RemoveSelectedSiteFromForm()
+        {
+            LinkNode node = (LinkNode)Tree.SelectedNode;
+            if (node == null)
             {
-                MessageBox.Show("Please enter a site name before adding the site.");
                 return;
             }
-            if (string.IsNullOrEmpty(coord))
+            EnsureSitesInitialized(node);
+            if (node.Link.Sites.Count == 0)
             {
-                MessageBox.Show("Please pick a reference coordinate system in the site SelectionBox before adding the site.");
+                activeSiteIndex = -1;
+                LoadActiveSiteIntoForm(node);
+                return;
+            }
+
+            short selected = PMListBoxSites.CurrentSelection;
+            if (selected < 0 || selected >= node.Link.Sites.Count)
+            {
+                selected = (short)activeSiteIndex;
+            }
+            if (selected < 0 || selected >= node.Link.Sites.Count)
+            {
+                return;
+            }
+            node.Link.Sites.RemoveAt(selected);
+            activeSiteIndex = node.Link.Sites.Count == 0
+                ? -1
+                : Math.Min(selected, node.Link.Sites.Count - 1);
+            RefreshSitesListbox(node);
+            LoadActiveSiteIntoForm(node);
+        }
+
+        public void RefreshSitesListbox(LinkNode node)
+        {
+            bool prior = suppressSiteListboxSelectionChanged;
+            suppressSiteListboxSelectionChanged = true;
+            try
+            {
+                PMListBoxSites.Clear();
+                if (node == null || node.Link.Sites == null)
+                {
+                    return;
+                }
+                for (int i = 0; i < node.Link.Sites.Count; i++)
+                {
+                    SiteSpec site = node.Link.Sites[i];
+                    PMListBoxSites.AddItems(SiteDisplayName(site));
+                }
+                if (activeSiteIndex >= 0 && activeSiteIndex < node.Link.Sites.Count)
+                {
+                    PMListBoxSites.CurrentSelection = (short)activeSiteIndex;
+                }
+            }
+            finally
+            {
+                suppressSiteListboxSelectionChanged = prior;
+            }
+        }
+
+        private void SaveActiveSiteFields(LinkNode node)
+        {
+            if (node == null || node.Link == null)
+            {
+                return;
+            }
+            EnsureSitesInitialized(node);
+            if (activeSiteIndex < 0 || activeSiteIndex >= node.Link.Sites.Count)
+            {
+                return;
+            }
+
+            SiteSpec site = node.Link.Sites[activeSiteIndex];
+            if (PMTextBoxSiteName != null)
+            {
+                site.Name = (PMTextBoxSiteName.Text ?? "").Trim();
+            }
+
+            string picked = ReadMarkedFeatureName(SiteCoordSysSelectionMark);
+            if (!string.IsNullOrEmpty(picked))
+            {
+                site.CoordinateSystemName = picked;
+            }
+        }
+
+        private void CommitActiveSiteCoordSysSelection(LinkNode node)
+        {
+            if (node == null || node.Link == null)
+            {
+                return;
+            }
+            EnsureSitesInitialized(node);
+            if (activeSiteIndex < 0 || activeSiteIndex >= node.Link.Sites.Count)
+            {
+                return;
+            }
+
+            string picked = ReadMarkedFeatureName(SiteCoordSysSelectionMark);
+            if (!string.IsNullOrEmpty(picked))
+            {
+                node.Link.Sites[activeSiteIndex].CoordinateSystemName = picked;
+            }
+        }
+
+        private void LoadActiveSiteIntoForm(LinkNode node)
+        {
+            bool prior = suppressSiteEditorEvents;
+            suppressSiteEditorEvents = true;
+            try
+            {
+                if (node == null || node.Link == null)
+                {
+                    return;
+                }
+                EnsureSitesInitialized(node);
+                if (activeSiteIndex < 0 || activeSiteIndex >= node.Link.Sites.Count)
+                {
+                    PMTextBoxSiteName.Text = "";
+                    ClearSiteCoordSysSelection();
+                    return;
+                }
+
+                SiteSpec site = node.Link.Sites[activeSiteIndex];
+                PMTextBoxSiteName.Text = site.Name ?? "";
+                if (currentActiveTabId == SitesTabID)
+                {
+                    LoadActiveSiteCoordSysIntoSelectionBox(node);
+                }
+                else
+                {
+                    ClearSiteCoordSysSelection();
+                }
+            }
+            finally
+            {
+                suppressSiteEditorEvents = prior;
+            }
+        }
+
+        private void LoadActiveSiteCoordSysIntoSelectionBox(LinkNode node)
+        {
+            bool prior = suppressGroupListboxRefresh;
+            suppressGroupListboxRefresh = true;
+            try
+            {
+                ClearSiteCoordSysSelection();
+                if (node == null || node.Link == null)
+                {
+                    return;
+                }
+                EnsureSitesInitialized(node);
+                if (activeSiteIndex < 0 || activeSiteIndex >= node.Link.Sites.Count)
+                {
+                    return;
+                }
+
+                string name = node.Link.Sites[activeSiteIndex].CoordinateSystemName;
+                if (!IsRealFeatureName(name))
+                {
+                    return;
+                }
+                SelectFeatureIntoMark(name, "COORDSYS", SiteCoordSysSelectionMark);
+            }
+            finally
+            {
+                suppressGroupListboxRefresh = prior;
+            }
+        }
+
+        private void ClearSiteCoordSysSelection()
+        {
+            try
+            {
+                CommonSwOperations.DeselectAllAtMark(ActiveSWModel, SiteCoordSysSelectionMark);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("DeselectAllAtMark for site coord-sys failed: " + ex.Message);
+            }
+        }
+
+        private static void EnsureSitesInitialized(LinkNode node)
+        {
+            if (node == null || node.Link == null)
+            {
                 return;
             }
             if (node.Link.Sites == null)
             {
                 node.Link.Sites = new List<SiteSpec>();
             }
-            node.Link.Sites.Add(new SiteSpec(name, coord));
-            PMTextBoxSiteName.Text = "";
-            // Clear the site SelectionBox only so the user has a clean
-            // slate for the next site. ClearSelection2(true) here would
-            // wipe every sibling SelectionBox (visual / collision /
-            // inertial component boxes, the joint coord-sys / axis /
-            // global-coord-sys feature pickers).
-            try
-            {
-                CommonSwOperations.DeselectAllAtMark(
-                    ActiveSWModel, SiteCoordSysSelectionMark);
-            }
-            catch (Exception ex)
-            {
-                logger.Warn("DeselectAllAtMark after AddSiteFromForm failed: " + ex.Message);
-            }
-            RefreshSitesListbox(node);
         }
 
-        private void RemoveSelectedSiteFromForm()
+        private static string NextDefaultSiteName(List<SiteSpec> sites, string linkName)
         {
-            LinkNode node = (LinkNode)Tree.SelectedNode;
-            if (node == null || node.Link.Sites == null || node.Link.Sites.Count == 0)
+            string baseName = string.IsNullOrWhiteSpace(linkName)
+                ? "site"
+                : linkName + "_site";
+            HashSet<string> existing = new HashSet<string>();
+            if (sites != null)
             {
-                return;
+                foreach (SiteSpec site in sites)
+                {
+                    if (!string.IsNullOrEmpty(site.Name))
+                    {
+                        existing.Add(site.Name);
+                    }
+                }
             }
-            short selected = PMListBoxSites.CurrentSelection;
-            if (selected < 0 || selected >= node.Link.Sites.Count)
+            if (!existing.Contains(baseName))
             {
-                return;
+                return baseName;
             }
-            node.Link.Sites.RemoveAt(selected);
-            RefreshSitesListbox(node);
+            int n = 2;
+            while (existing.Contains(baseName + "_" + n))
+            {
+                n++;
+            }
+            return baseName + "_" + n;
         }
 
-        public void RefreshSitesListbox(LinkNode node)
+        private static string SiteDisplayName(SiteSpec site)
         {
-            PMListBoxSites.Clear();
-            if (node == null || node.Link.Sites == null)
+            if (site == null || string.IsNullOrWhiteSpace(site.Name))
             {
-                return;
+                return "(unnamed)";
             }
-            foreach (SiteSpec site in node.Link.Sites)
-            {
-                PMListBoxSites.AddItems(site.Name + " : " + site.CoordinateSystemName);
-            }
+            return site.Name;
         }
     }
 }

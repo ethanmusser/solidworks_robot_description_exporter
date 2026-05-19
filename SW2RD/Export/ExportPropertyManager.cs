@@ -207,6 +207,7 @@ namespace SW2RD.Export
         // has no group of that role.
         private int activeVisualGroupIndex = -1;
         private int activeCollisionGroupIndex = -1;
+        private int activeSiteIndex = -1;
 
         // Guard against re-entrancy: when LoadActiveVisualGroupIntoSelectionBox /
         // LoadActiveCollisionGroupIntoSelectionBox programmatically populate a
@@ -247,15 +248,16 @@ namespace SW2RD.Export
         private bool pageIsClosing;
 
         // Sites sub-section: a small inline editor on the per-link page.
-        // The site coord-sys is picked through PMSelectionSiteCoordSys
-        // (SelectionBox-only); AddSiteFromForm reads the marked
-        // SelectionMgr entry at click time, so there is no read-only
-        // echo combobox.
+        // The listbox selects the active site; the textbox and
+        // SelectionBox live-edit that active site's name and coordinate
+        // system.
         private PropertyManagerPageListbox PMListBoxSites;
         private PropertyManagerPageTextbox PMTextBoxSiteName;
         private PropertyManagerPageSelectionbox PMSelectionSiteCoordSys;
         private PropertyManagerPageButton PMButtonSiteAdd;
         private PropertyManagerPageButton PMButtonSiteRemove;
+        private bool suppressSiteEditorEvents;
+        private bool suppressSiteListboxSelectionChanged;
 
         private PropertyManagerPageLabel PMLabelJointName;
         private PropertyManagerPageLabel PMLabelParentLink;
