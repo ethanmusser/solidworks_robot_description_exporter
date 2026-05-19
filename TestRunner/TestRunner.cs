@@ -1,5 +1,4 @@
-﻿using SolidWorks.Interop.sldworks;
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using Xunit.Abstractions;
@@ -24,7 +23,7 @@ namespace TestRunner
         public static int Main(string[] args)
         {
             string solutionDir =
-                Path.GetDirectoryName( // sw2urdf
+                Path.GetDirectoryName( // sw2rd
                 Path.GetDirectoryName( // TestRunner
                 Path.GetDirectoryName( // bin
                 Path.GetDirectoryName( // x64
@@ -32,7 +31,7 @@ namespace TestRunner
                     AppDomain.CurrentDomain.BaseDirectory // Debug
                 )))));
 
-            string testAssembly = Path.Combine(solutionDir, "SW2URDF\\bin\\x64\\Debug\\SW2URDF.dll");
+            string testAssembly = Path.Combine(solutionDir, "SW2RD\\bin\\x64\\Debug\\SW2RD.dll");
             string typeName = null;
 
             using (var runner = AssemblyRunner.WithAppDomain(testAssembly))

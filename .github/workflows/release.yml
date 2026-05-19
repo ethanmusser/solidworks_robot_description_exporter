@@ -1,0 +1,192 @@
+name: Build SW2RD and (optionally) installer
+
+# `build` runs on every supported trigger and compiles SW2RD.dll. `installer`
+# depends on `build`, downloads its artifact, and runs Inno Setup + checksum +
+# attestation + upload. The installer job runs only when:
+#   - trigger is `release` (cuts a tagged release with assets attached)
+#   - trigger is `workflow_dispatch` (manual smoke test from the Actions tab)
+#   - trigger is `pull_request` AND the PR has the `ci:installer` label
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag name to fold into the installer filename (workflow_dispatch only)"
+        required: false
+        default: "manual"
+  pull_request:
+    # `labeled` / `unlabeled` re-trigger the workflow when the `ci:installer`
+    # label is added or removed without a fresh push.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - 'SW2RD/**'
+      - 'INSTALL/**'
+      - 'scripts/**'
+      - 'SW2RD.sln'
+      - '.github/workflows/release.yml'
+
+# Collapse rapid pushes on the same ref into one build. Release events use a
+# unique tag ref so they never share a group with anything else.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# `id-token: write` + `attestations: write` are required by actions/attest@v4
+# in the installer job. Scoped at workflow level for simplicity.
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    name: Build SW2RD.dll
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout (with full history for git describe)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # scripts/UpdateVersionInfo.ps1 runs `git describe --tags` at MSBuild
+      # BeforeBuild and embeds the result as AssemblyInformationalVersion.
+      # Force-refresh tags so a release commit's tag is visible.
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      # Target SW2RD.csproj directly (not SW2RD.sln) so we skip the sibling
+      # TestRunner project, which references solidworkstools.dll and is
+      # unsatisfiable on GitHub-hosted runners. `msbuild /restore /t:Build` uses
+      # the NuGet client that ships with VS and scopes restore to one project.
+      #
+      # /p:SolidWorksPath points SW2RD.csproj's HintPaths at the vendored
+      # SOLIDWORKS DLLs under SW2RD/lib/sw-api/api/redist/.
+      - name: Restore + Build SW2RD (Release, x64)
+        run: msbuild SW2RD\SW2RD.csproj /restore /t:Build /p:Configuration=Release /p:Platform=x64 "/p:SolidWorksPath=$env:GITHUB_WORKSPACE\SW2RD\lib\sw-api" /verbosity:minimal /nologo
+
+      # Upload the full bin/x64/Release/ tree (DLL, vendored NuGet refs,
+      # images/, .config files) so the installer job can reconstruct it at the
+      # path Install.iss reads from. A DLL-only artifact would silently produce
+      # a broken installer.
+      - name: Upload build output
+        uses: actions/upload-artifact@v6
+        with:
+          name: sw2rd-build-output
+          path: SW2RD/bin/x64/Release/
+          retention-days: 7
+          if-no-files-found: error
+
+  installer:
+    name: Build installer
+    needs: build
+    if: |
+      github.event_name == 'release' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:installer'))
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      # Shallow checkout: only Install.iss and the trigger event payload are
+      # needed here; no `git describe` runs in this job.
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Land at the relative path Install.iss reads from
+      # (SourceDir=..\SW2RD\bin\, Source: x64\Release\* recursive).
+      - name: Download build output
+        uses: actions/download-artifact@v7
+        with:
+          name: sw2rd-build-output
+          path: SW2RD/bin/x64/Release/
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      # AssemblyVersion is pinned at 0.1.0.0 (see AssemblyInfo.cs), so the
+      # .iss-default OutputBaseFilename (computed from GetFileVersion) would
+      # collide across releases. Derive a unique suffix from the trigger
+      # payload instead.
+      - name: Compute installer filename
+        id: filename
+        run: |
+          $evt = $env:GITHUB_EVENT_NAME
+          if ($evt -eq 'release') {
+            $tag = '${{ github.event.release.tag_name }}'
+          } elseif ($evt -eq 'pull_request') {
+            $sha = '${{ github.event.pull_request.head.sha }}'
+            $shortSha = if ($sha.Length -ge 7) { $sha.Substring(0,7) } else { $sha }
+            $tag = "pr${{ github.event.pull_request.number }}-$shortSha"
+          } else {
+            $tag = '${{ github.event.inputs.tag_name }}'
+          }
+          if ([string]::IsNullOrWhiteSpace($tag)) { $tag = 'manual' }
+          $safe = ($tag -replace '[^A-Za-z0-9._-]', '_')
+          $name = "sw2rdSetup_$safe"
+          Write-Host "Installer base filename: $name"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "name=$name"
+
+      - name: Build installer
+        run: iscc /DBuildConfig=Release "/DOutputBaseFilename=${{ steps.filename.outputs.name }}" INSTALL\Install.iss
+
+      - name: List built installer
+        run: Get-ChildItem INSTALL\OUTPUT
+
+      # Output format is GNU coreutils binary mode ("<sha> *<filename>") so
+      # `sha256sum -c` works unmodified on the receiving side. See README
+      # "Verifying downloads".
+      - name: Compute SHA-256 checksum
+        run: |
+          $exe = "INSTALL\OUTPUT\${{ steps.filename.outputs.name }}.exe"
+          $sha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          $line = "$sha *${{ steps.filename.outputs.name }}.exe"
+          Set-Content -Path "$exe.sha256" -Value $line -NoNewline
+          Write-Host "Checksum: $line"
+
+      # Mint a Sigstore-backed build provenance attestation. Users verify with:
+      #
+      #   gh attestation verify sw2rdSetup_<tag>.exe -R <owner>/<repo>
+      #
+      # predicate-type is pinned to SLSA v1 because `gh attestation verify`
+      # defaults to it; changing it silently breaks verification of installers
+      # already in the wild.
+      #
+      # Skipped on pull_request because (1) fork PRs lack OIDC permissions to
+      # mint attestations and would fail noisily, and (2) PR-built installers
+      # are iteration artifacts that shouldn't appear in the transparency log.
+      - name: Generate build provenance attestation
+        if: github.event_name != 'pull_request'
+        uses: actions/attest@v4
+        with:
+          subject-path: INSTALL/OUTPUT/${{ steps.filename.outputs.name }}.exe
+          predicate-type: https://slsa.dev/provenance/v1
+
+      - name: Upload installer + checksum as workflow artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.filename.outputs.name }}
+          path: |
+            INSTALL/OUTPUT/${{ steps.filename.outputs.name }}.exe
+            INSTALL/OUTPUT/${{ steps.filename.outputs.name }}.exe.sha256
+          if-no-files-found: error
+
+      - name: Attach installer + checksum to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" `
+            "INSTALL\OUTPUT\${{ steps.filename.outputs.name }}.exe" `
+            "INSTALL\OUTPUT\${{ steps.filename.outputs.name }}.exe.sha256" `
+            --clobber

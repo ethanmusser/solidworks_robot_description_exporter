@@ -16,4 +16,4 @@ A clear and concise description of what the bug is.
 
 **Attach simple model which clearly illustrates the issue**
 
-**Attach an example of a corrected URDF (if applicable)**
+**Attach an example of a corrected robot description (URDF or MJCF) if applicable**

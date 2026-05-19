@@ -1,0 +1,165 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RootNamespace>SW2RD</RootNamespace>
+    <AssemblyName>SW2RD</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+
+    <!--
+      AssemblyInfo.cs and Versioning\VersionInfo.cs both supply [assembly: ...]
+      attributes by hand, so suppress the SDK auto-generated AssemblyInfo to
+      avoid duplicate-attribute errors.
+    -->
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+
+    <!--
+      Preserve the output layout (bin\x64\Debug\, bin\x64\Release\) so
+      COM-registration entries continue to point at the expected DLL path.
+      Changing the path would force re-registration on every developer
+      workstation.
+    -->
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\x64\$(Configuration)\</OutputPath>
+
+    <CodeAnalysisRuleSet>SW2RD.ruleset</CodeAnalysisRuleSet>
+    <DebugType>full</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <CheckForOverflowUnderflow>true</CheckForOverflowUnderflow>
+
+    <!--
+      The SOLIDWORKS API/redist DLLs live under each developer's SOLIDWORKS
+      install. Override on the command line with /p:SolidWorksPath=... if your
+      install lives elsewhere.
+    -->
+    <SolidWorksPath Condition="'$(SolidWorksPath)' == ''">C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS</SolidWorksPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <Optimize>false</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DefineConstants>TRACE</DefineConstants>
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- SOLIDWORKS interop assemblies (per-developer install). -->
+    <Reference Include="SolidWorks.Interop.sldworks">
+      <HintPath>$(SolidWorksPath)\api\redist\SolidWorks.Interop.sldworks.dll</HintPath>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="SolidWorks.Interop.swconst">
+      <HintPath>$(SolidWorksPath)\api\redist\SolidWorks.Interop.swconst.dll</HintPath>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="SolidWorks.Interop.swpublished">
+      <HintPath>$(SolidWorksPath)\api\redist\SolidWorks.Interop.swpublished.dll</HintPath>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </Reference>
+
+    <!--
+      The SwAddinAttribute used by SwAddin.cs would normally come from
+      SolidWorksTools.dll, which lives in the main SOLIDWORKS install folder
+      (NOT api/redist/) and is NOT on SolidWorks's redistribution allow-list.
+      We replace it with an in-project shim in SW/SwAddinAttribute.cs so the
+      build does not need that DLL and the produced installer is fully
+      license-clean.
+    -->
+
+    <!-- log4net is shipped as a vendored binary in lib/. -->
+    <Reference Include="log4net">
+      <HintPath>lib\log4net.dll</HintPath>
+    </Reference>
+
+    <!-- Framework assemblies that are NOT auto-imported by UseWindowsForms or UseWPF. -->
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.ComponentModel.Composition" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.DirectoryServices" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Web" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Castle.Core" Version="4.3.1" />
+    <PackageReference Include="MathNet.Numerics.Signed" Version="4.7.0" />
+    <PackageReference Include="Moq" Version="4.10.1" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
+    <PackageReference Include="System.Text.Json" Version="10.0.7" />
+    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
+    <PackageReference Include="xunit" Version="2.4.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.1">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SOLIDWORKS add-in toolbar / icon BMPs read out of the assembly resources. -->
+    <EmbeddedResource Include="UI\Resources\Images\ToolbarLarge.bmp" />
+    <EmbeddedResource Include="UI\Resources\Images\ToolbarSmall.bmp" />
+    <EmbeddedResource Include="UI\Resources\Images\MainIconLarge.bmp" />
+    <EmbeddedResource Include="UI\Resources\Images\MainIconSmall.bmp" />
+    <EmbeddedResource Include="UI\Resources\Images\AddinIcon.bmp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Loose content copied next to the DLL. -->
+    <Content Include="SW2RD.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\ros_logo_128x128.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\ros_logo_16x16.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\ros_logo_20x20.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\ros_logo_32x32.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\ros_logo_40x40.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\ros_logo_64x64.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\ros_logo_96x96.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="UpdateVersionInfo" BeforeTargets="BeforeBuild">
+    <Exec Command="powershell.exe -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\scripts\UpdateVersionInfo.ps1&quot; --filename &quot;$(MSBuildProjectDirectory)\Versioning\VersionInfo.cs&quot;" />
+  </Target>
+
+  <!--
+    RegAsm /codebase the resulting DLL on every build so SOLIDWORKS can find
+    the COM-visible types after a rebuild. The MSBuild <RegisterForComInterop>
+    property invokes a task that only exists in the .NET Framework version of
+    MSBuild (it fails under `dotnet build` with MSB4803), so we shell out to
+    the framework's RegAsm.exe directly to keep both build paths working.
+
+    RegAsm can report access-denied failures when MSBuild is not running as
+    administrator. ContinueOnError keeps those registration warnings from
+    failing an otherwise successful build.
+  -->
+  <Target Name="RegisterForComInterop" AfterTargets="Build">
+    <PropertyGroup>
+      <RegAsmExe>$(WinDir)\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe</RegAsmExe>
+    </PropertyGroup>
+    <Exec Command="&quot;$(RegAsmExe)&quot; /codebase &quot;$(TargetPath)&quot;" Condition="Exists('$(RegAsmExe)')" ContinueOnError="WarnAndContinue" />
+  </Target>
+
+</Project>
