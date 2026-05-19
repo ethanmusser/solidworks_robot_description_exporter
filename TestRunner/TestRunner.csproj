@@ -9,28 +9,10 @@
     <LangVersion>latest</LangVersion>
     <OutputType>Exe</OutputType>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-
-    <!-- Override on the command line via /p:SolidWorksPath=... if installed elsewhere. -->
-    <SolidWorksPath Condition="'$(SolidWorksPath)' == ''">C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS</SolidWorksPath>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="xunit.runner.utility" Version="2.4.1" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Reference Include="SolidWorks.Interop.sldworks">
-      <HintPath>$(SolidWorksPath)\api\redist\SolidWorks.Interop.sldworks.dll</HintPath>
-    </Reference>
-    <Reference Include="SolidWorks.Interop.swconst">
-      <HintPath>$(SolidWorksPath)\api\redist\SolidWorks.Interop.swconst.dll</HintPath>
-    </Reference>
-    <Reference Include="SolidWorks.Interop.swpublished">
-      <HintPath>$(SolidWorksPath)\api\redist\SolidWorks.Interop.swpublished.dll</HintPath>
-    </Reference>
-    <Reference Include="SolidWorksTools">
-      <HintPath>$(SolidWorksPath)\solidworkstools.dll</HintPath>
-    </Reference>
   </ItemGroup>
 
 </Project>

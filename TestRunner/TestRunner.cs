@@ -1,5 +1,4 @@
-﻿using SolidWorks.Interop.sldworks;
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using Xunit.Abstractions;

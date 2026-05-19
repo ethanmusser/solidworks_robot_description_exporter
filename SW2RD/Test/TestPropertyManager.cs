@@ -47,8 +47,8 @@ namespace SW2RD.Test
 
 
         // TODO(SIMINT-164) pm.Show() crashes with drag drop 
-        //[Theory]
-        //[InlineData("3_DOF_ARM")]
+        [Theory(Skip = "SIMINT-164: pm.Show() crashes with drag drop")]
+        [InlineData("3_DOF_ARM")]
         public void TestPropertyManagerOpens(string modelName)
         {
             OpenSWDocument(modelName);
@@ -59,8 +59,8 @@ namespace SW2RD.Test
         }
 
         // TODO(SIMINT-164) pm.Show() crashes with drag drop 
-        //[Theory]
-        //[InlineData("3_DOF_ARM")]
+        [Theory(Skip = "SIMINT-164: pm.Show() crashes with drag drop")]
+        [InlineData("3_DOF_ARM")]
         public void TestPropertyManagerOpenCloseOk(string modelName)
         {
             OpenSWDocument(modelName);
@@ -73,8 +73,8 @@ namespace SW2RD.Test
         }
 
         // TODO(SIMINT-164) pm.Show() crashes with drag drop 
-        //[Theory]
-        //[InlineData("3_DOF_ARM")]
+        [Theory(Skip = "SIMINT-164: pm.Show() crashes with drag drop")]
+        [InlineData("3_DOF_ARM")]
         public void TestPropertyManagerOpenCloseNotOk(string modelName)
         {
             OpenSWDocument(modelName);
@@ -87,8 +87,8 @@ namespace SW2RD.Test
         }
 
         // TODO(SIMINT-164) pm.Show() crashes with drag drop
-        //[Theory]
-        //[InlineData("3_DOF_ARM")]
+        [Theory(Skip = "SIMINT-164: pm.Show() crashes with drag drop")]
+        [InlineData("3_DOF_ARM")]
         public void TestPreviewExport(string modelName)
         {
             OpenSWDocument(modelName);
