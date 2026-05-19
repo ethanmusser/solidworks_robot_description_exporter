@@ -20,18 +20,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-using Moq;
 using SW2RD.MJCF;
 using SW2RD.URDF;
 using SW2RD.Export;
-using SW2RD.UI;
 using SW2RD.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Windows;
 using System.Xml;
 using System.Xml.Linq;
 using Xunit;
@@ -478,11 +475,6 @@ namespace SW2RD.Test
                 // location (mjcf/<name>.xml), not a package:// URI.
                 Assert.Equal("../meshes/", pkg.MJCFMeshDir);
 
-                Mock<IMessageBox> messageBoxMock = new Mock<IMessageBox>();
-                messageBoxMock.Setup(m => m.Show(It.IsAny<string>()))
-                    .Returns(MessageBoxResult.OK);
-                ExportPackage.MessageBox = messageBoxMock.Object;
-
                 pkg.CreateDirectories();
                 Assert.True(Directory.Exists(pkg.WindowsPackageDirectory));
                 Assert.True(Directory.Exists(pkg.WindowsMeshesDirectory));
@@ -503,10 +495,6 @@ namespace SW2RD.Test
             try
             {
                 ExportPackage pkg = new ExportPackage("test_mjcf", tempDir, ExportFormat.MJCF);
-                Mock<IMessageBox> messageBoxMock = new Mock<IMessageBox>();
-                messageBoxMock.Setup(m => m.Show(It.IsAny<string>()))
-                    .Returns(MessageBoxResult.OK);
-                ExportPackage.MessageBox = messageBoxMock.Object;
 
                 pkg.CreateDirectories();
                 Assert.False(Directory.Exists(pkg.WindowsTexturesDirectory));

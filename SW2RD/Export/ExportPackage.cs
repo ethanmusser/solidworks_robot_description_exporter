@@ -20,7 +20,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-using SW2RD.UI;
 using System.IO;
 
 namespace SW2RD.Export
@@ -31,8 +30,6 @@ namespace SW2RD.Export
     // model XML and a shared meshes/ folder.
     public class ExportPackage
     {
-        public static IMessageBox MessageBox = new MessageBoxHelper();
-
         public ExportFormat Format { get; }
         public string PackageName { get; }
 
@@ -109,9 +106,6 @@ namespace SW2RD.Export
 
         public void CreateDirectories()
         {
-            MessageBox.Show("Creating " + Format + " package \"" +
-                PackageName + "\" at:\n" + WindowsPackageDirectory);
-
             if (!Directory.Exists(WindowsPackageDirectory))
             {
                 Directory.CreateDirectory(WindowsPackageDirectory);
