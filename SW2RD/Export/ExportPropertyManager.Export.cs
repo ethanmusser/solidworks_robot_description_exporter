@@ -170,15 +170,7 @@ namespace SW2RD.Export
                 return;
             }
 
-            // Suggest a filename suffix matching the chosen format so test
-            // exports stay self-labeling (e.g. "3_DOF_ARM - MJCF"). Mirrors
-            // the legacy AssemblyExportForm naming convention.
-            string formatSuffix = outputFormat == ExportFormat.MJCF ? " - MJCF" : " - URDF";
-            string suggestedName = Exporter.PackageName ?? string.Empty;
-            if (!suggestedName.EndsWith(formatSuffix, StringComparison.OrdinalIgnoreCase))
-            {
-                suggestedName += formatSuffix;
-            }
+            string suggestedName = GetSuggestedExportFileName(Exporter.PackageName, outputFormat);
 
             using (SaveFileDialog dialog = new SaveFileDialog
             {
@@ -216,6 +208,14 @@ namespace SW2RD.Export
                 logger.Info("Saving " + outputFormat + " package to " + dialog.FileName);
                 Exporter.ExportRobot(exportMeshes, meshFormat, outputFormat);
             }
+        }
+
+        internal static string GetSuggestedExportFileName(string packageName, ExportFormat outputFormat)
+        {
+            // The output format no longer changes the default file name; keep it
+            // in the signature so tests cover both export paths that call here.
+            _ = outputFormat;
+            return packageName ?? string.Empty;
         }
 
         // Updates the in-page status panel. PMPage controls reject writes
