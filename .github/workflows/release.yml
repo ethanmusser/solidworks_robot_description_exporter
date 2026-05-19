@@ -106,7 +106,7 @@ jobs:
       # Land at the relative path Install.iss reads from
       # (SourceDir=..\SW2RD\bin\, Source: x64\Release\* recursive).
       - name: Download build output
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: sw2rd-build-output
           path: SW2RD/bin/x64/Release/
