@@ -59,11 +59,30 @@ namespace SW2RD.Test
 
             WorldNode world = Assert.IsType<WorldNode>(root);
             Assert.Equal("Origin_global", world.GlobalOriginCoordinateSystemName);
-            Assert.Equal(1, world.Nodes.Count);
+            Assert.Single(world.Nodes);
 
             LinkNode topLevel = (LinkNode)world.Nodes[0];
             Assert.Equal("base_link", topLevel.Link.Name);
             Assert.Equal(WorldAttachmentModel.Welded, topLevel.Link.WorldAttachment);
+        }
+
+        [Fact]
+        public void TestV15DataContractDefaultsCollisionUsesVisualWhenMissing()
+        {
+            // Older SW2URDF DataContract payloads predate CollisionUsesVisual,
+            // so missing XML should import as checked by default.
+            Link baseLink = new Link { Name = "base_link" };
+            string xml = SerializeWithDataContract(baseLink);
+            xml = xml.Replace(
+                "<CollisionUsesVisual>true</CollisionUsesVisual>",
+                "");
+            Assert.DoesNotContain("CollisionUsesVisual", xml);
+
+            LinkNode root = LegacyConfigV15DataContractReader.ReadBaseNode(xml);
+            WorldNode world = Assert.IsType<WorldNode>(root);
+            LinkNode topLevel = (LinkNode)world.Nodes[0];
+
+            Assert.True(topLevel.Link.CollisionUsesVisual);
         }
 
         [Fact]

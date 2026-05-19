@@ -23,6 +23,7 @@ THE SOFTWARE.
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
+using SW2RD.URDF;
 using System;
 
 namespace SW2RD.Export
@@ -173,7 +174,7 @@ namespace SW2RD.Export
                 CheckCollisionUsesVisualID, (short)controlType,
                 "Use visual groups as collision", (short)alignment, options,
                 "When checked, the visual groups are reused as collision meshes; the collision editor below is hidden so you don't have to re-pick the same components.");
-            PMCheckCollisionUsesVisual.Checked = false;
+            PMCheckCollisionUsesVisual.Checked = Link.DefaultCollisionUsesVisual;
         }
 
         // Collision Groups editor. Mirrors Visual Groups. An empty list

@@ -1,7 +1,9 @@
 using SolidWorks.Interop.sldworks;
+using SolidWorks.Interop.swconst;
 using SW2RD.URDF;
 using SW2RD.Export;
 using System;
+using System.IO;
 using System.Reflection;
 using Xunit;
 
@@ -29,8 +31,49 @@ namespace SW2RD.Test
             return method.Invoke(null, args);
         }
 
+        private ModelDoc2 OpenCopiedSWDocument(string modelName, out string tempDirectory)
+        {
+            Assert.True(SwApp.CloseAllDocuments(true));
+
+            string sourceDirectory = GetModelDirectory(modelName);
+            tempDirectory = CreateRandomTempDirectory();
+            string copiedModelDirectory = Path.Combine(tempDirectory, modelName);
+            CopyDirectory(sourceDirectory, copiedModelDirectory);
+
+            string filename = Path.Combine(copiedModelDirectory, modelName + ".SLDASM");
+            Assert.True(File.Exists(filename));
+
+            int errors = 0;
+            int warnings = 0;
+            ModelDoc2 doc = SwApp.OpenDoc6(
+                filename,
+                (int)swDocumentTypes_e.swDocASSEMBLY,
+                (int)swOpenDocOptions_e.swOpenDocOptions_Silent,
+                "",
+                ref errors,
+                ref warnings);
+            Assert.Equal(0, errors);
+            Assert.Equal(0, warnings);
+            return doc;
+        }
+
+        private static void CopyDirectory(string sourceDirectory, string destinationDirectory)
+        {
+            Directory.CreateDirectory(destinationDirectory);
+            foreach (string directory in Directory.GetDirectories(sourceDirectory, "*", SearchOption.AllDirectories))
+            {
+                string relative = directory.Substring(sourceDirectory.Length).TrimStart(Path.DirectorySeparatorChar);
+                Directory.CreateDirectory(Path.Combine(destinationDirectory, relative));
+            }
+            foreach (string file in Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+            {
+                string relative = file.Substring(sourceDirectory.Length).TrimStart(Path.DirectorySeparatorChar);
+                File.Copy(file, Path.Combine(destinationDirectory, relative));
+            }
+        }
+
         [Theory]
-        [InlineData("3_DOF_ARM", 4)]
+        [InlineData("3_DOF_ARM", 5)]
         public void TestLoadConfigFromStringXML(string modelName, int expNumLinks)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
@@ -62,15 +105,44 @@ namespace SW2RD.Test
         }
 
         [Theory]
-        [InlineData("3_DOF_ARM", 4)]
-        [InlineData("4_WHEELER", 5)]
-        public void TestLoadBaseNodeFromModel(string modelName, int expNumLinks)
+        [InlineData("3_DOF_ARM", 5)]
+        [InlineData("4_WHEELER", 6)]
+        public void TestLoadLegacyBaseNodeFromModel(string modelName, int expNumLinks)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool error);
             Xunit.Assert.False(error);
             Xunit.Assert.NotNull(baseNode);
             Xunit.Assert.Equal(expNumLinks, CommonSwOperations.GetCount(baseNode.RebuildLink()));
+        }
+
+        [Theory]
+        [InlineData("3_DOF_ARM")]
+        public void TestDefaultLoadDoesNotImportLegacyConfig(string modelName)
+        {
+            string tempDirectory = null;
+            try
+            {
+                ModelDoc2 doc = OpenCopiedSWDocument(modelName, out tempDirectory);
+                Xunit.Assert.True(ConfigurationSerialization.HasLegacyConfiguration(doc));
+                if (ConfigurationSerialization.HasSavedConfiguration(doc))
+                {
+                    Xunit.Assert.True(ConfigurationSerialization.ClearSavedConfiguration(doc));
+                }
+
+                LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
+
+                Xunit.Assert.False(error);
+                Xunit.Assert.Null(baseNode);
+            }
+            finally
+            {
+                SwApp.CloseAllDocuments(true);
+                if (!string.IsNullOrEmpty(tempDirectory) && Directory.Exists(tempDirectory))
+                {
+                    Directory.Delete(tempDirectory, true);
+                }
+            }
         }
 
         [Theory]
@@ -79,7 +151,7 @@ namespace SW2RD.Test
         public void TestSerializeToString(string modelName)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool error);
             Xunit.Assert.False(error);
 
             string newData = (string)InvokePrivateStatic(

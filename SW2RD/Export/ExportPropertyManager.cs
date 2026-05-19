@@ -103,6 +103,9 @@ namespace SW2RD.Export
         private PropertyManagerPageCombobox PMComboBoxOutputFormat;
         private PropertyManagerPageCombobox PMComboBoxMeshFormat;
         private PropertyManagerPageCheckbox PMCheckExportMeshes;
+        private PropertyManagerPageLabel PMLabelConfigurationCache;
+        private PropertyManagerPageButton PMButtonClearSavedConfiguration;
+        private PropertyManagerPageButton PMButtonImportLegacyConfiguration;
 
         // Per-joint properties (Limits / Dynamics / Reference / Armature) and
         // the per-joint "auto-compute lower/upper from limit mate" toggle.
@@ -399,6 +402,9 @@ namespace SW2RD.Export
         private const int LabelActiveLinkTreeID = 148;
         private const int LabelWorldAttachmentID = 149;
         private const int ComboBoxWorldAttachmentID = 150;
+        private const int LabelConfigurationCacheID = 151;
+        private const int ButtonClearSavedConfigurationID = 152;
+        private const int ButtonImportLegacyConfigurationID = 153;
 
         // Marks for every PMP SelectionBox so SOLIDWORKS can attribute the
         // user's selection to the right list. CRITICAL:

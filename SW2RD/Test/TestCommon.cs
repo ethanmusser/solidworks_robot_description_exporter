@@ -34,7 +34,7 @@ namespace SW2RD.Test
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
             AssemblyDoc assyDoc = (AssemblyDoc)doc;
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool abortProcess);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool abortProcess);
             Assert.False(abortProcess);
 
             Link baseLink = baseNode.RebuildLink();
@@ -67,7 +67,7 @@ namespace SW2RD.Test
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
             AssemblyDoc assyDoc = (AssemblyDoc)doc;
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool abortProcess);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool abortProcess);
             Assert.False(abortProcess);
 
             Link baseLink = baseNode.RebuildLink();
@@ -102,7 +102,7 @@ namespace SW2RD.Test
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
             AssemblyDoc assyDoc = (AssemblyDoc)doc;
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool abortProcess);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool abortProcess);
             Assert.False(abortProcess);
 
             Link baseLink = baseNode.RebuildLink();
@@ -188,7 +188,7 @@ namespace SW2RD.Test
         public void TestGetCountLink(string modelName, int expected)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool abortProcess);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool abortProcess);
             Assert.False(abortProcess);
 
             Link baseLink = baseNode.RebuildLink();
@@ -202,7 +202,7 @@ namespace SW2RD.Test
         public void TestGetCountNodeCollection(string modelName, int expected)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool abortProcess);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool abortProcess);
             Assert.False(abortProcess);
 
             Assert.Equal(expected, CommonSwOperations.GetCount(baseNode.Nodes));
@@ -215,7 +215,7 @@ namespace SW2RD.Test
         public void TestRetrieveSWComponentPIDs(string modelName)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool abortProcess);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool abortProcess);
             Assert.False(abortProcess);
 
             CommonSwOperations.RetrieveSWComponentPIDs(doc, baseNode);
@@ -229,7 +229,7 @@ namespace SW2RD.Test
         public void TestSaveSWComponentsLink(string modelName)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool abortProcess);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool abortProcess);
             Assert.False(abortProcess);
 
             List<string> problemLinks = new List<string>();
@@ -271,7 +271,7 @@ namespace SW2RD.Test
             AssemblyDoc assyDoc = (AssemblyDoc)doc;
             Component2 component = assyDoc.GetComponentByName(componentName);
             Assert.NotNull(component);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool abortProcess);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool abortProcess);
             Assert.False(abortProcess);
             baseNode.Link.SWMainComponent = component;
             byte[] pid = CommonSwOperations.SaveSWComponent(doc, baseNode.Link.SWMainComponent);
@@ -285,7 +285,7 @@ namespace SW2RD.Test
         public void TestLoadSWComponentsLinkNode(string modelName)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool abortProcess);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool abortProcess);
             Assert.False(abortProcess);
             List<string> problemLinks = new List<string>();
             CommonSwOperations.LoadSWComponents(doc, baseNode, problemLinks);
@@ -299,7 +299,7 @@ namespace SW2RD.Test
         public void TestLoadSWComponentsList(string modelName)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool abortProcess);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool abortProcess);
             Assert.False(abortProcess);
             List<Component2> components = CommonSwOperations.LoadSWComponents(doc, baseNode.Link.SWComponentPIDs);
             Assert.Equal(baseNode.Link.SWComponentPIDs.Count, components.Count);
@@ -312,7 +312,7 @@ namespace SW2RD.Test
         public void TestLoadSWComponent(string modelName)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool abortProcess);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool abortProcess);
             Assert.False(abortProcess);
             baseNode.Link.SWMainComponentPID = baseNode.Link.SWComponentPIDs[0];
             Component2 component = CommonSwOperations.LoadSWComponent(doc, baseNode.Link.SWMainComponentPID);

@@ -59,6 +59,14 @@ namespace SW2RD.Export
                     ExportButtonPress();
                     break;
 
+                case ButtonClearSavedConfigurationID:
+                    ClearSavedConfigurationFromForm();
+                    break;
+
+                case ButtonImportLegacyConfigurationID:
+                    ImportLegacyConfigurationFromForm();
+                    break;
+
                 case SitesAddButtonID:
                     AddSiteFromForm();
                     break;

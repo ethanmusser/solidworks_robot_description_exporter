@@ -495,6 +495,29 @@ namespace SW2RD.Test
             Assert.True(read.Tree.WorldBody.CollisionUsesVisual);
         }
 
+        [Fact]
+        public void TestRoundTripPreservesExplicitCollisionUsesVisualFalse()
+        {
+            LinkModel baseLink = SimpleLink("base") with
+            {
+                CollisionUsesVisual = false,
+            };
+            KinematicTree tree = new KinematicTree(
+                "collision_false",
+                "Origin_global",
+                WorldBody(baseLink));
+            Config original = new Config(
+                Config.CurrentSchemaVersion,
+                "1.6.1-test",
+                DateTime.UtcNow,
+                tree);
+
+            string json = ConfigJsonSerializer.Serialize(original);
+            Config read = ConfigJsonSerializer.Deserialize(json);
+
+            Assert.False(FirstTopLevel(read.Tree).CollisionUsesVisual);
+        }
+
         // Convenience accessor used throughout the tests. All sample configs
         // have exactly one top-level body, so this is the single-tree
         // analogue of the old `tree.BaseLink`.

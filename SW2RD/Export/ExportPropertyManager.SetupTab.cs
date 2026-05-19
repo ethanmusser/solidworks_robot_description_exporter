@@ -167,6 +167,50 @@ namespace SW2RD.Export
                 "Regenerate mesh files alongside the description. Uncheck to " +
                 "rewrite only the description XML using existing meshes.");
             PMCheckExportMeshes.Checked = ExportPreferences.GetLastExportMeshes();
+
+            PMLabelConfigurationCache = (PropertyManagerPageLabel)PMSetupTab.AddControl2(
+                LabelConfigurationCacheID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Label,
+                "", (short)alignment, options,
+                "Shows whether this model has saved SW2RD configuration or importable legacy SW2URDF data.");
+
+            PMButtonClearSavedConfiguration = (PropertyManagerPageButton)PMSetupTab.AddControl2(
+                ButtonClearSavedConfigurationID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Button,
+                "Clear Saved Configuration", 0, options,
+                "Remove the saved SW2RD export configuration from this model and start a fresh tree.");
+
+            PMButtonImportLegacyConfiguration = (PropertyManagerPageButton)PMSetupTab.AddControl2(
+                ButtonImportLegacyConfigurationID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Button,
+                "Import Legacy SW2URDF Configuration", 0, options,
+                "Import an older SW2URDF or pre-rebrand SW2RD configuration from this model.");
+
+            UpdateSetupConfigurationActions();
+        }
+
+        private void UpdateSetupConfigurationActions()
+        {
+            bool hasSaved = ConfigurationSerialization.HasSavedConfiguration(ActiveSWModel);
+            bool hasLegacy = ConfigurationSerialization.HasLegacyConfiguration(ActiveSWModel);
+
+            if (PMLabelConfigurationCache != null)
+            {
+                string savedText = hasSaved ? "SW2RD saved config found" : "No SW2RD saved config";
+                string legacyText = hasLegacy ? "legacy import available" : "no legacy import found";
+                PMLabelConfigurationCache.Caption = "Saved Configuration: " + savedText + "; " + legacyText + ".";
+            }
+
+            SetControlEnabled(PMButtonImportLegacyConfiguration, hasLegacy);
+        }
+
+        private static void SetControlEnabled(object control, bool enabled)
+        {
+            IPropertyManagerPageControl pageControl = control as IPropertyManagerPageControl;
+            if (pageControl != null)
+            {
+                pageControl.Enabled = enabled;
+            }
         }
     }
 }

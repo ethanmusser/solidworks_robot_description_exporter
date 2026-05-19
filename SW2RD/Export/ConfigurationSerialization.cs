@@ -42,10 +42,9 @@ namespace SW2RD.Export
     /// document attributes. The canonical save format is the SW2RD v1 JSON
     /// schema (<see cref="Config"/>); the legacy SW2URDF v2 JSON, v1.3-v1.5
     /// DataContract XML, and very-old XmlSerializer SerialNode formats remain
-    /// read-only fallbacks so an existing assembly's saved configuration
-    /// still loads after upgrade. First save after loading a legacy attribute
-    /// migrates onto the SW2RD v1 attribute (written alongside, not replacing,
-    /// the old one).
+    /// read-only explicit import sources. First save after importing a legacy
+    /// attribute migrates onto the SW2RD v1 attribute (written alongside, not
+    /// replacing, the old one).
     /// </summary>
     public static class ConfigurationSerialization
     {
@@ -96,22 +95,26 @@ namespace SW2RD.Export
         #region Public Methods
 
         /// <summary>
-        /// Loads the URDF tree from the SW Model Document. Tries the
-        /// canonical SW2RD v1 JSON attribute first, then probes the legacy
-        /// pre-rebrand SW2RD JSON / SW2URDF v2 JSON names (one-way migration
-        /// on next save), then falls back to v1.3-v1.5 DataContract XML;
-        /// finally falls back to the very-old XmlSerializer format.
+        /// Loads only the canonical SW2RD v1 JSON tree from the SW Model
+        /// Document. Legacy SW2URDF / pre-rebrand attributes are intentionally
+        /// not probed here; users import those explicitly from the Setup tab.
         /// </summary>
         public static LinkNode LoadBaseNodeFromModel(ModelDoc2 model, out bool error)
         {
             error = false;
 
             // Canonical SW2RD v1 JSON.
-            LinkNode v1 = TryLoadV2Json(model, ConfigurationSwAttributeName);
-            if (v1 != null)
-            {
-                return v1;
-            }
+            return TryLoadV2Json(model, ConfigurationSwAttributeName);
+        }
+
+        /// <summary>
+        /// Explicit one-shot importer for legacy pre-rebrand SW2RD /
+        /// SW2URDF attributes. This preserves backward compatibility without
+        /// making legacy import the default PMPage startup behavior.
+        /// </summary>
+        public static LinkNode LoadLegacyBaseNodeFromModel(ModelDoc2 model, out bool error)
+        {
+            error = false;
 
             // Probe each legacy attribute name as JSON first. Older entries
             // in PREVIOUS_CONFIGURATION_NAMES are DataContract XML names; the
@@ -125,7 +128,7 @@ namespace SW2RD.Export
                 {
                     logger.Info("Migrating legacy JSON config from attribute \"" + legacyName +
                         "\"; next save will write to \"" + ConfigurationSwAttributeName + "\".");
-                    return migrated;
+                    return ApplyLegacyCollisionUsesVisualDefault(migrated);
                 }
             }
 
@@ -142,9 +145,95 @@ namespace SW2RD.Export
 
             if (legacyVersion >= MinDataContractVersion)
             {
-                return DeserializeFromString(legacyData);
+                return ApplyLegacyCollisionUsesVisualDefault(DeserializeFromString(legacyData));
             }
-            return LoadConfigFromStringXML(legacyData);
+            return ApplyLegacyCollisionUsesVisualDefault(LoadConfigFromStringXML(legacyData));
+        }
+
+        private static LinkNode ApplyLegacyCollisionUsesVisualDefault(LinkNode node)
+        {
+            SetCollisionUsesVisualDefault(node);
+            return node;
+        }
+
+        private static void SetCollisionUsesVisualDefault(LinkNode node)
+        {
+            if (node == null)
+            {
+                return;
+            }
+            if (node.Link != null)
+            {
+                node.Link.CollisionUsesVisual = Link.DefaultCollisionUsesVisual;
+            }
+            foreach (TreeNode child in node.Nodes)
+            {
+                SetCollisionUsesVisualDefault(child as LinkNode);
+            }
+        }
+
+        /// <summary>
+        /// Returns true when the model carries any legacy export configuration
+        /// attribute that can be imported explicitly.
+        /// </summary>
+        public static bool HasLegacyConfiguration(ModelDoc2 model)
+        {
+            if (model == null)
+            {
+                return false;
+            }
+            return CheckForOldAttributes(model) != null;
+        }
+
+        /// <summary>
+        /// Returns true when the model has the canonical SW2RD v1 JSON
+        /// configuration attribute.
+        /// </summary>
+        public static bool HasSavedConfiguration(ModelDoc2 model)
+        {
+            if (model == null)
+            {
+                return false;
+            }
+            return FindSWSaveAttribute(model, ConfigurationSwAttributeName) != null;
+        }
+
+        /// <summary>
+        /// Deletes the canonical SW2RD v1 JSON configuration attribute from
+        /// the model. Legacy attributes are left untouched so the user can
+        /// still import them explicitly after clearing the SW2RD cache.
+        /// </summary>
+        public static bool ClearSavedConfiguration(ModelDoc2 model)
+        {
+            if (model == null)
+            {
+                return false;
+            }
+
+            Feature feature = GetFeatureAttributeByName(model, ConfigurationSwAttributeName);
+            if (feature == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                model.ClearSelection2(true);
+                bool selected = feature.Select2(false, 0);
+                if (!selected)
+                {
+                    logger.Warn("Could not select SW2RD configuration attribute for deletion.");
+                    return false;
+                }
+                model.EditDelete();
+                model.ClearSelection2(true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("Failed to clear SW2RD configuration attribute.", ex);
+                return false;
+            }
         }
 
         // Reads `attributeName` and attempts to deserialize as SW2RD Config
@@ -242,6 +331,19 @@ namespace SW2RD.Export
                     SaveDataToModelDoc(swApp, model, ConfigurationSwAttributeName, newData);
                 }
             }
+        }
+
+        // Serializes the current PMPage tree to canonical Config JSON. Kept as
+        // a small helper because tests invoke it directly via reflection and
+        // ConfigBridge documents this as the pre-write normalization path.
+        private static string SerializeToString(LinkNode baseNode)
+        {
+            if (baseNode == null)
+            {
+                return string.Empty;
+            }
+            Config config = ConfigBridge.CreateFromLinkNode(baseNode, "robot");
+            return ConfigJsonSerializer.Serialize(config);
         }
 
         #endregion Public Methods

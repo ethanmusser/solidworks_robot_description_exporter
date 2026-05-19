@@ -97,6 +97,8 @@ namespace SW2RD.URDF
         // two sets coincide. The CollisionGroups data is still serialized so
         // unchecking the toggle restores any previously-defined collision
         // groups.
+        public const bool DefaultCollisionUsesVisual = true;
+
         [DataMember(IsRequired = false)]
         public bool CollisionUsesVisual;
 
@@ -268,6 +270,7 @@ namespace SW2RD.URDF
             CollisionComponentPIDs = new List<byte[]>();
             InertialComponentPIDs = new List<byte[]>();
             Sites = new List<SiteSpec>();
+            CollisionUsesVisual = DefaultCollisionUsesVisual;
             InertialSource = InertialSource.Visual;
             NameAttribute = new URDFAttribute("name", true, "");
 
@@ -309,6 +312,7 @@ namespace SW2RD.URDF
             CollisionComponentPIDs = new List<byte[]>();
             InertialComponentPIDs = new List<byte[]>();
             Sites = new List<SiteSpec>();
+            CollisionUsesVisual = DefaultCollisionUsesVisual;
             InertialSource = InertialSource.Visual;
             NameAttribute = new URDFAttribute("name", true, "");
 
@@ -330,6 +334,12 @@ namespace SW2RD.URDF
         // single-list PIDs when an older config (which knew nothing about groups)
         // is read in. Idempotent: once VisualGroups is non-empty the legacy
         // fields are ignored.
+        [OnDeserializing]
+        private void OnDeserializing(StreamingContext _)
+        {
+            CollisionUsesVisual = DefaultCollisionUsesVisual;
+        }
+
         [OnDeserialized]
         private void OnDeserialized(StreamingContext _)
         {

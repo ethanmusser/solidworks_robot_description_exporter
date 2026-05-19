@@ -28,7 +28,7 @@ namespace SW2RD.Test
             helper.SetComputeJointKinematics(true);
             helper.SetComputeJointLimits(true);
             helper.SetComputeVisualCollision(true);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool error);
             Assert.False(error);
             helper.CreateRobotFromTreeView(baseNode);
             helper.ExportRobot(true, meshExportFormat);
@@ -49,7 +49,7 @@ namespace SW2RD.Test
             helper.SetComputeJointKinematics(true);
             helper.SetComputeJointLimits(true);
             helper.SetComputeVisualCollision(true);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool error);
             Assert.False(error);
             helper.CreateRobotFromTreeView(baseNode);
             helper.ExportRobot(false);
@@ -70,7 +70,7 @@ namespace SW2RD.Test
             helper.SetComputeJointKinematics(true);
             helper.SetComputeJointLimits(true);
             helper.SetComputeVisualCollision(true);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool error);
             Assert.False(error);
             helper.CreateRobotFromTreeView(baseNode);
             helper.ExportRobot(true);
@@ -91,7 +91,7 @@ namespace SW2RD.Test
             helper.SetComputeJointKinematics(true);
             helper.SetComputeJointLimits(true);
             helper.SetComputeVisualCollision(false);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool error);
             Assert.False(error);
             helper.CreateRobotFromTreeView(baseNode);
             helper.ExportRobot(true);
@@ -112,7 +112,7 @@ namespace SW2RD.Test
             helper.SetComputeJointKinematics(false);
             helper.SetComputeJointLimits(true);
             helper.SetComputeVisualCollision(true);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool error);
             Assert.False(error);
             helper.CreateRobotFromTreeView(baseNode);
             helper.ExportRobot(true);
@@ -133,7 +133,7 @@ namespace SW2RD.Test
             helper.SetComputeJointKinematics(true);
             helper.SetComputeJointLimits(false);
             helper.SetComputeVisualCollision(true);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool error);
             Assert.False(error);
             helper.CreateRobotFromTreeView(baseNode);
             helper.ExportRobot(true);
@@ -150,7 +150,7 @@ namespace SW2RD.Test
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
             ExportHelper helper = new ExportHelper(SwApp);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool error);
             Assert.False(error);
             helper.CreateRobotFromTreeView(baseNode);
             helper.ExportRobot(true);
@@ -191,7 +191,7 @@ namespace SW2RD.Test
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
             ExportHelper helper = new ExportHelper(SwApp);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool error);
+            LinkNode baseNode = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(doc, out bool error);
             Assert.False(error);
 
             helper.CreateRobotFromTreeView(baseNode);

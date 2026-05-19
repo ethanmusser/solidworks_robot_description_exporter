@@ -377,6 +377,7 @@ namespace SW2RD.Export
                     new MeshGroup(MeshGroup.DefaultVisualName(node.Link.Name)),
                 };
                 node.Link.CollisionGroups = new List<MeshGroup>();
+                node.Link.CollisionUsesVisual = Link.DefaultCollisionUsesVisual;
                 node.Name = node.Link.Name;
                 node.Text = node.Link.Name;
             }
@@ -409,6 +410,7 @@ namespace SW2RD.Export
                 new MeshGroup(MeshGroup.DefaultVisualName(node.Link.Name)),
             };
             node.Link.CollisionGroups = new List<MeshGroup>();
+            node.Link.CollisionUsesVisual = Link.DefaultCollisionUsesVisual;
             node.Name = node.Link.Name;
             node.Text = node.Link.Name;
             return node;
@@ -1010,8 +1012,109 @@ namespace SW2RD.Export
             }
 
             SetConfigTree(baseNode);
+            UpdateSetupConfigurationActions();
 
             return true;
+        }
+
+        private void ClearSavedConfigurationFromForm()
+        {
+            DialogResult answer = MessageBox.Show(
+                "Clear the saved SW2RD export configuration from this model and start a fresh tree?\r\n\r\n" +
+                "Legacy SW2URDF configuration attributes will be left in place and can still be imported explicitly.",
+                "Clear Saved Export Configuration",
+                MessageBoxButtons.YesNo);
+            if (answer != DialogResult.Yes)
+            {
+                return;
+            }
+
+            bool cleared;
+            bool prior = suppressGroupListboxRefresh;
+            suppressGroupListboxRefresh = true;
+            try
+            {
+                ReplaceConfigTree(null);
+                cleared = ConfigurationSerialization.ClearSavedConfiguration(ActiveSWModel);
+            }
+            finally
+            {
+                suppressGroupListboxRefresh = prior;
+            }
+            UpdateSetupConfigurationActions();
+
+            if (PMLabelValidationStatus != null)
+            {
+                PMLabelValidationStatus.Caption = cleared
+                    ? "Status: Cleared saved configuration. Fresh tree started."
+                    : "Status: Fresh tree started. No saved SW2RD configuration was found to delete.";
+            }
+        }
+
+        private void ImportLegacyConfigurationFromForm()
+        {
+            if (!ConfigurationSerialization.HasLegacyConfiguration(ActiveSWModel))
+            {
+                MessageBox.Show("This model does not contain an importable legacy SW2URDF configuration.");
+                UpdateSetupConfigurationActions();
+                return;
+            }
+
+            DialogResult answer = MessageBox.Show(
+                "Import the legacy SW2URDF configuration from this model?\r\n\r\n" +
+                "This replaces the current in-page tree. The imported configuration will not be saved as SW2RD JSON " +
+                "until you click OK or export.",
+                "Import Legacy Configuration",
+                MessageBoxButtons.YesNo);
+            if (answer != DialogResult.Yes)
+            {
+                return;
+            }
+
+            LinkNode imported = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(
+                ActiveSWModel, out bool abortProcess);
+            if (abortProcess)
+            {
+                MessageBox.Show("An error occurred importing the legacy configuration. Please resolve the issue " +
+                    "or delete the legacy configuration from the FeatureManager.");
+                return;
+            }
+            if (imported == null)
+            {
+                MessageBox.Show("No importable legacy SW2URDF configuration was found.");
+                UpdateSetupConfigurationActions();
+                return;
+            }
+
+            ReplaceConfigTree(imported);
+            UpdateSetupConfigurationActions();
+
+            if (PMLabelValidationStatus != null)
+            {
+                PMLabelValidationStatus.Caption =
+                    "Status: Imported legacy configuration. Click OK or Export to save it as SW2RD JSON.";
+            }
+        }
+
+        private void ReplaceConfigTree(LinkNode baseNode)
+        {
+            bool prior = suppressGroupListboxRefresh;
+            suppressGroupListboxRefresh = true;
+            try
+            {
+                SaveActiveNode();
+                previouslySelectedNode = null;
+                rightClickedNode = null;
+                activeVisualGroupIndex = 0;
+                activeCollisionGroupIndex = 0;
+                currentAxisFlipped = false;
+                Exporter.ClearAxisOverlay();
+                SetConfigTree(baseNode);
+            }
+            finally
+            {
+                suppressGroupListboxRefresh = prior;
+            }
         }
 
         private void SetConfigTree(LinkNode baseNode)
