@@ -157,6 +157,40 @@ namespace SW2RD.Test
         }
 
         [Fact]
+        public void TestAdapterLoadsLegacyContinuousAsRevoluteWithoutLimits()
+        {
+            JointModel childJoint = new JointModel(
+                "joint1", "continuous", "base_link", "child_link",
+                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
+                new Vector3Model(0, 0, 1),
+                Limit: null,
+                CoordinateSystemName: "joint_coordsys",
+                AxisName: "joint_axis",
+                AxisFlipped: false);
+            LinkModel child = new LinkModel(
+                "child_link", null, null,
+                Array.Empty<MeshGroupModel>(), Array.Empty<MeshGroupModel>(),
+                false, InertialSourceModel.Visual,
+                Array.Empty<ComponentReferenceModel>(),
+                Array.Empty<SiteModel>(),
+                childJoint, Array.Empty<LinkModel>());
+            LinkModel root = new LinkModel(
+                "base_link", null, null,
+                Array.Empty<MeshGroupModel>(), Array.Empty<MeshGroupModel>(),
+                false, InertialSourceModel.Visual,
+                Array.Empty<ComponentReferenceModel>(),
+                Array.Empty<SiteModel>(),
+                null, new[] { child });
+
+            SW2RD.URDF.Link legacyRoot = KinematicTreeAdapter.ToLegacyLink(root, null);
+            SW2RD.URDF.Joint legacyJoint = legacyRoot.Children[0].Joint;
+
+            Assert.Equal("revolute", legacyJoint.Type);
+            Assert.Null(legacyJoint.Limit.LowerOrNull);
+            Assert.Null(legacyJoint.Limit.UpperOrNull);
+        }
+
+        [Fact]
         public void TestLimitSetValuesKeepsBlankEffortAndVelocityUnset()
         {
             Limit limit = new Limit();

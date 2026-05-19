@@ -360,7 +360,7 @@ namespace SW2RD.Export
             }
 
             target.Name = source.Name ?? "";
-            target.Type = source.Type ?? "";
+            target.Type = NormalizeJointTypeForUi(source.Type);
             target.Parent.Name = source.ParentLinkName ?? "";
             target.Child.Name = source.ChildLinkName ?? "";
             target.CoordinateSystemName = source.CoordinateSystemName ?? "";
@@ -407,6 +407,19 @@ namespace SW2RD.Export
             {
                 target.Dynamics.Friction = source.Friction.Value;
             }
+        }
+
+        private static string NormalizeJointTypeForUi(string jointType)
+        {
+            if (jointType == "continuous")
+            {
+                return "revolute";
+            }
+            if (jointType == "Automatically Detect" || jointType == "Automatically Generate")
+            {
+                return "";
+            }
+            return jointType ?? "";
         }
 
         private static void ApplyPose(PoseModel source, Origin target)

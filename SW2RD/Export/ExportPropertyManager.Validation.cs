@@ -59,6 +59,14 @@ namespace SW2RD.Export
 
         private void CheckNodeJointComplete(LinkNode node)
         {
+            string jointType = node.Link.Joint.Type ?? "";
+            if (!IsSupportedUserJointType(jointType))
+            {
+                node.IsIncomplete = true;
+                node.WhyIncomplete +=
+                    "        Joint type is empty or unsupported. Choose fixed, revolute, or prismatic.\r\n";
+            }
+
             if (node.Link.SWComponents.Count == 0 && node.Link.Joint.CoordinateSystemName == "Automatically Generate")
             {
                 node.IsIncomplete = true;
@@ -75,20 +83,27 @@ namespace SW2RD.Export
                     "        without components. Either select an axis or at least one component.\r\n";
             }
 
-            if (!node.Link.Joint.AutoDeriveAxis && string.IsNullOrWhiteSpace(node.Link.Joint.AxisName))
+            if (jointType != "fixed" && !node.Link.Joint.AutoDeriveAxis &&
+                string.IsNullOrWhiteSpace(node.Link.Joint.AxisName))
             {
                 node.IsIncomplete = true;
                 node.WhyIncomplete +=
                     "        Joint axis is empty. Pick a reference axis or enable auto-derive axis from kinematic chain.\r\n";
             }
 
-            if (node.Link.SWComponents.Count == 0 && node.Link.Joint.Type == "Automatically Generate")
+            if (node.Link.SWComponents.Count == 0 &&
+                (node.Link.Joint.Type == "Automatically Generate" || node.Link.Joint.Type == "Automatically Detect"))
             {
                 node.IsIncomplete = true;
                 node.WhyIncomplete +=
                     "        The joint type cannot be automatically detected\r\n" +
-                    "        without components. Either select an joint type or at least one component.";
+                    "        without components. Choose fixed, revolute, or prismatic.";
             }
+        }
+
+        private static bool IsSupportedUserJointType(string jointType)
+        {
+            return jointType == "fixed" || jointType == "revolute" || jointType == "prismatic";
         }
 
         // Sets the node's IsIncomplete flag if the node has key items that

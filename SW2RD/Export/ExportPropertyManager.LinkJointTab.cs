@@ -262,7 +262,7 @@ namespace SW2RD.Export
             PMComboBoxJointType.Style =
                 (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
             PMComboBoxJointType.AddItems(new string[] {
-                "Automatically Detect", "continuous", "revolute", "prismatic", "fixed" });
+                "", "fixed", "revolute", "prismatic" });
         }
 
         // Joint Properties section: per-joint Limits / Dynamics / Reference
@@ -298,13 +298,13 @@ namespace SW2RD.Export
 
             PMLabelJointLower = AddJointPropertyLabel(LabelJointLowerID,
                 "Lower [deg or m]",
-                "Lower limit of the joint range. Degrees for revolute/continuous, meters for prismatic.");
+                "Lower limit of the joint range. Degrees for revolute, meters for prismatic.");
             PMTextBoxJointLower = AddJointPropertyTextbox(TextBoxJointLowerID,
                 "Lower limit (blank = none)");
 
             PMLabelJointUpper = AddJointPropertyLabel(LabelJointUpperID,
                 "Upper [deg or m]",
-                "Upper limit of the joint range. Degrees for revolute/continuous, meters for prismatic.");
+                "Upper limit of the joint range. Degrees for revolute, meters for prismatic.");
             PMTextBoxJointUpper = AddJointPropertyTextbox(TextBoxJointUpperID,
                 "Upper limit (blank = none)");
 
@@ -316,13 +316,13 @@ namespace SW2RD.Export
 
             PMLabelJointVelocity = AddJointPropertyLabel(LabelJointVelocityID,
                 "Velocity [deg/s or m/s] (URDF)",
-                "Maximum joint velocity. Degrees/second for revolute/continuous, meters/second for prismatic. URDF <limit velocity>; ignored on MJCF export.");
+                "Maximum joint velocity. Degrees/second for revolute, meters/second for prismatic. URDF <limit velocity>; ignored on MJCF export.");
             PMTextBoxJointVelocity = AddJointPropertyTextbox(TextBoxJointVelocityID,
                 "Velocity limit (blank = none, URDF only)");
 
             PMLabelJointDamping = AddJointPropertyLabel(LabelJointDampingID,
                 "Damping [N*m*s/deg or N*s/m]",
-                "Viscous damping coefficient. Enter N*m*s/deg for revolute/continuous or N*s/m for prismatic. Export converts angular damping to the per-radian coefficient used by URDF/MJCF.");
+                "Viscous damping coefficient. Enter N*m*s/deg for revolute or N*s/m for prismatic. Export converts angular damping to the per-radian coefficient used by URDF/MJCF.");
             PMTextBoxJointDamping = AddJointPropertyTextbox(TextBoxJointDampingID,
                 "Damping (blank = none)");
 

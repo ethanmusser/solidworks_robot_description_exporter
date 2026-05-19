@@ -364,7 +364,7 @@ namespace SW2RD.Export
                 node.Link.Joint.AxisName = "";
                 node.Link.Joint.CoordinateSystemName = "";
                 node.Link.Joint.AutoDeriveAxis = false;
-                node.Link.Joint.Type = "Automatically Detect";
+                node.Link.Joint.Type = "";
                 node.Link.InertialComponents = new List<Component2>();
                 node.Link.Sites = new List<SiteSpec>();
                 node.Link.InertialSource = InertialSource.Visual;
@@ -1126,12 +1126,39 @@ namespace SW2RD.Export
                 }
             }
 
+            NormalizeJointTypesForUi(baseNode);
             AddDocMenu(baseNode);
 
             Tree.Nodes.Clear();
             Tree.Nodes.Add(baseNode);
             Tree.ExpandAll();
             Tree.SelectedNode = Tree.Nodes[0];
+        }
+
+        private static void NormalizeJointTypesForUi(LinkNode node)
+        {
+            if (node == null)
+            {
+                return;
+            }
+
+            if (!(node is WorldNode) && !node.IsTopLevelBody && node.Link?.Joint != null)
+            {
+                string jointType = node.Link.Joint.Type;
+                if (jointType == "continuous")
+                {
+                    node.Link.Joint.Type = "revolute";
+                }
+                else if (jointType == "Automatically Detect" || jointType == "Automatically Generate")
+                {
+                    node.Link.Joint.Type = "";
+                }
+            }
+
+            foreach (TreeNode child in node.Nodes)
+            {
+                NormalizeJointTypesForUi(child as LinkNode);
+            }
         }
 
         public void MoveComponentsToFolder(LinkNode node)

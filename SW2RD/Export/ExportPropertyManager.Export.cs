@@ -154,18 +154,17 @@ namespace SW2RD.Export
         {
             logger.Info("Completing export");
 
-            // Belt-and-suspenders against schema-level required fields that
-            // CheckNodesComplete may not catch. The pre-close validators
-            // already run on the LinkNode tree; this runs on the resolved
-            // URDFRobot.BaseLink and reports anything left.
-            string errors = CheckLinksForRequiredFieldErrors(Exporter.URDFRobot.BaseLink);
+            // Belt-and-suspenders against export-format constraints that
+            // CheckNodesComplete may not catch until after SolidWorks-derived
+            // joint limits have been computed.
+            string errors = CheckExportFieldErrors(Exporter.URDFRobot.BaseLink, outputFormat);
             if (!string.IsNullOrWhiteSpace(errors))
             {
-                logger.Info("Link errors encountered:\n " + errors);
+                logger.Info("Export validation errors encountered:\n " + errors);
                 MessageBox.Show(
-                    "Some links are missing required fields and cannot be exported:\r\n\r\n" +
+                    "Some joints are missing fields required for the selected export format:\r\n\r\n" +
                     errors +
-                    "\r\nReopen the Robot Description Exporter and fix these links before exporting.",
+                    "\r\nReopen the Robot Description Exporter and fix these joints before exporting.",
                     "Required fields missing");
                 return;
             }
@@ -241,27 +240,90 @@ namespace SW2RD.Export
             }
         }
 
-        // Walks the link tree and returns a newline-delimited list of links
-        // whose required URDF / MJCF fields are not satisfied (e.g. missing
-        // joint name on a non-base link). Empty string means everything checks
-        // out.
-        private static string CheckLinksForRequiredFieldErrors(Link baseLink)
+        // Walks the built Robot tree and returns a detailed, newline-delimited
+        // list of post-compute validation failures. Empty string means the
+        // selected format can represent the configured joints.
+        internal static string CheckExportFieldErrors(Link baseLink, ExportFormat outputFormat)
         {
             StringBuilder builder = new StringBuilder();
-            CheckLinkForRequiredFieldErrors(baseLink, builder);
+            CheckExportFieldErrors(baseLink, outputFormat, builder);
             return builder.ToString();
         }
 
-        private static void CheckLinkForRequiredFieldErrors(Link link, StringBuilder builder)
+        private static void CheckExportFieldErrors(Link link, ExportFormat outputFormat, StringBuilder builder)
         {
-            if (!link.AreRequiredFieldsSatisfied())
+            if (link == null)
             {
-                builder.Append(link.Name).Append("\r\n");
+                return;
             }
+
             foreach (Link child in link.Children)
             {
-                CheckLinkForRequiredFieldErrors(child, builder);
+                CheckJointExportFieldErrors(child, outputFormat, builder);
+                CheckExportFieldErrors(child, outputFormat, builder);
             }
+        }
+
+        private static void CheckJointExportFieldErrors(Link child, ExportFormat outputFormat, StringBuilder builder)
+        {
+            Joint joint = child?.Joint;
+            if (joint == null)
+            {
+                return;
+            }
+
+            string jointType = joint.Type ?? "";
+            if (!IsSupportedUiJointType(jointType) && jointType != "continuous")
+            {
+                builder.Append("    ")
+                    .Append(DescribeJoint(child, joint))
+                    .Append(": Joint type '")
+                    .Append(string.IsNullOrWhiteSpace(jointType) ? "(empty)" : jointType)
+                    .Append("' is not supported. Choose fixed, revolute, or prismatic.\r\n");
+                return;
+            }
+
+            if (Joint.HasPartialRangeLimit(joint.Limit))
+            {
+                builder.Append("    ")
+                    .Append(DescribeJoint(child, joint))
+                    .Append(": Lower and Upper limits must either both be set or both be blank.\r\n");
+                return;
+            }
+
+            bool missingRange = !Joint.HasCompleteRangeLimit(joint.Limit);
+            if (outputFormat == ExportFormat.URDF && jointType == "prismatic" && missingRange)
+            {
+                builder.Append("    ")
+                    .Append(DescribeJoint(child, joint))
+                    .Append(": Lower and Upper limits are missing. URDF prismatic joints require a limited range.\r\n")
+                    .Append("        ")
+                    .Append(GetMissingLimitGuidance(joint))
+                    .Append("\r\n");
+            }
+        }
+
+        private static bool IsSupportedUiJointType(string jointType)
+        {
+            return jointType == "fixed" || jointType == "revolute" || jointType == "prismatic";
+        }
+
+        private static string DescribeJoint(Link child, Joint joint)
+        {
+            string linkName = string.IsNullOrWhiteSpace(child?.Name) ? "(unnamed link)" : child.Name;
+            string jointName = string.IsNullOrWhiteSpace(joint?.Name) ? "(unnamed joint)" : joint.Name;
+            string jointType = string.IsNullOrWhiteSpace(joint?.Type) ? "(empty)" : joint.Type;
+            return linkName + " / " + jointName + " (" + jointType + ")";
+        }
+
+        private static string GetMissingLimitGuidance(Joint joint)
+        {
+            if (joint != null && joint.AutoComputeLimits)
+            {
+                return "Auto-compute Lower/Upper was enabled, but no compatible SolidWorks limit mate was found. " +
+                    "Add a distance limit mate for this prismatic joint, or uncheck Auto-compute and enter Lower/Upper manually.";
+            }
+            return "Enter Lower and Upper manually in the Joint Properties section.";
         }
 
         // Pre-close walk over the WinForms LinkNode tree. The Robot tree

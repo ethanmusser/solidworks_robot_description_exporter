@@ -2244,7 +2244,7 @@ namespace SW2RD.Export
                 {
                     // [TODO] This assumes the limit mate limits the right degree of freedom,
                     // it really should check that assumption
-                    if ((Joint.Type == "continuous" && swMate.Type ==
+                    if (((Joint.Type == "revolute" || Joint.Type == "continuous") && swMate.Type ==
                             (int)swMateType_e.swMateANGLE) ||
                         (Joint.Type == "prismatic" && swMate.Type ==
                             (int)swMateType_e.swMateDISTANCE))

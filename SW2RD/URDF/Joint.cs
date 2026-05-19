@@ -42,6 +42,20 @@ namespace SW2RD.URDF
             return jointType == "revolute" || jointType == "continuous";
         }
 
+        public static bool HasCompleteRangeLimit(Limit limit)
+        {
+            return limit != null && limit.LowerOrNull.HasValue && limit.UpperOrNull.HasValue;
+        }
+
+        public static bool HasPartialRangeLimit(Limit limit)
+        {
+            if (limit == null)
+            {
+                return false;
+            }
+            return limit.LowerOrNull.HasValue != limit.UpperOrNull.HasValue;
+        }
+
         public static double DegreesToRadians(double degrees)
         {
             return degrees * Math.PI / 180.0;
@@ -235,8 +249,13 @@ namespace SW2RD.URDF
             double? upper = Limit.UpperOrNull;
             double? velocity = Limit.VelocityOrNull;
             double? damping = Dynamics.DampingOrNull;
+            string originalType = Type;
             try
             {
+                if (Type == "revolute" && !lower.HasValue && !upper.HasValue)
+                {
+                    Type = "continuous";
+                }
                 if (lower.HasValue)
                 {
                     Limit.SetLower(DegreesToRadians(lower.Value));
@@ -257,6 +276,7 @@ namespace SW2RD.URDF
             }
             finally
             {
+                Type = originalType;
                 Limit.SetLower(lower);
                 Limit.SetUpper(upper);
                 Limit.SetVelocity(velocity);
@@ -271,7 +291,8 @@ namespace SW2RD.URDF
 
         public override bool AreRequiredFieldsSatisfied()
         {
-            Limit.SetRequired((Type == "prismatic" || Type == "revolute"));
+            Limit.SetRequired(Type == "prismatic" ||
+                (Type == "revolute" && (HasCompleteRangeLimit(Limit) || HasPartialRangeLimit(Limit))));
             return base.AreRequiredFieldsSatisfied();
         }
 
