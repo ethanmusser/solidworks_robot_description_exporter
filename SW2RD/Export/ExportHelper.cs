@@ -402,13 +402,22 @@ namespace SW2RD.Export
             {
                 if (willExportAnyMesh)
                 {
+                    // Timing split: the restore (ShowAllComponents) and the
+                    // viewport refresh (GraphicsRedraw2) both reload graphics for
+                    // the ~components the hide-all purged, so historically the
+                    // single "Showing..." -> "Resetting..." gap conflated the two.
+                    // Log each independently so we can see which one dominates.
+                    System.Diagnostics.Stopwatch sw = System.Diagnostics.Stopwatch.StartNew();
                     logger.Info("Showing all components except previously hidden components");
                     CommonSwOperations.ShowAllComponents(ActiveSWModel, hiddenComponents);
+                    logger.Info("ShowAllComponents took " + sw.ElapsedMilliseconds + " ms");
 
                     if (activeView != null)
                     {
                         activeView.EnableGraphicsUpdate = priorGraphicsUpdate;
+                        sw.Restart();
                         ActiveSWModel.GraphicsRedraw2();
+                        logger.Info("GraphicsRedraw2 took " + sw.ElapsedMilliseconds + " ms");
                     }
                 }
 
