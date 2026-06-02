@@ -240,6 +240,27 @@ namespace SW2RD.Export
             SetSTLExportPreferences();
 
             //Saving part as STL mesh
+            // The hide-everything / show-only-this-link's-components pattern below
+            // is what keeps each per-link STL clean (the assembly STL SaveAs in
+            // SaveSTL exports all VISIBLE geometry, so every non-member component
+            // must be hidden). Hiding lightweight components does NOT resolve them,
+            // and the per-link SaveSTL only makes the link's already-resolved
+            // components visible, so unused components stay lightweight + hidden
+            // and are never loaded - that is what makes a sparse export of a large
+            // assembly fast now that the up-front full resolve is gone (see
+            // ExportPropertyManager.ResolveUsedComponents).
+            //
+            // The remaining cost that still scales with TOTAL component count is
+            // this whole-assembly enumeration: GetComponents(false) +
+            // FindHiddenComponents + SelectAll + HideComponent2 here, and
+            // ShowAllComponents in the finally below. These are cheap per
+            // component (no geometry load on lightweight parts) but still touch
+            // every component. If that enumeration ever dominates on a very large
+            // assembly, the lever is to SUPPRESS the unused components for the
+            // duration of the export (suppressed components produce no geometry,
+            // so the hide-all becomes unnecessary) and restore them afterward -
+            // intentionally deferred here in favor of the lower-risk
+            // leave-lightweight-and-hide approach.
             AssemblyDoc assyDoc = (AssemblyDoc)ActiveSWModel;
             List<string> hiddenComponents = CommonSwOperations.FindHiddenComponents(assyDoc.GetComponents(false));
             logger.Info("Found " + hiddenComponents.Count + " hidden components " + String.Join(", ", hiddenComponents));
