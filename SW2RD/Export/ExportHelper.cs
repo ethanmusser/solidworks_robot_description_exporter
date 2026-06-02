@@ -197,6 +197,74 @@ namespace SW2RD.Export
             }
         }
 
+        // True if any link in the robot (body tree + world node) carries at
+        // least one visual or collision mesh group with components, i.e. the
+        // export will actually write an STL. Used to skip the expensive
+        // whole-assembly hide/show when there is nothing to write. Mirrors the
+        // group membership ProcessLinkMeshes iterates, so it never reports a
+        // mesh the export pipeline would not emit.
+        private bool RobotHasExportableMesh()
+        {
+            if (LinkSubtreeHasMesh(URDFRobot?.BaseLink))
+            {
+                return true;
+            }
+            if (ActiveWorldNode != null && LinkHasMeshComponents(ActiveWorldNode.Link))
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private static bool LinkSubtreeHasMesh(Link link)
+        {
+            if (link == null)
+            {
+                return false;
+            }
+            if (LinkHasMeshComponents(link))
+            {
+                return true;
+            }
+            if (link.Children != null)
+            {
+                foreach (Link child in link.Children)
+                {
+                    if (LinkSubtreeHasMesh(child))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private static bool LinkHasMeshComponents(Link link)
+        {
+            if (link == null)
+            {
+                return false;
+            }
+            link.MigrateLegacyComponents();
+            return GroupsHaveComponents(link.VisualGroups) || GroupsHaveComponents(link.CollisionGroups);
+        }
+
+        private static bool GroupsHaveComponents(List<MeshGroup> groups)
+        {
+            if (groups == null)
+            {
+                return false;
+            }
+            foreach (MeshGroup group in groups)
+            {
+                if (group != null && group.Components != null && group.Components.Count > 0)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private void ExportRobotCore(bool exportSTL,
             MeshExportFormat meshFormat,
             ExportFormat outputFormat)
@@ -250,23 +318,53 @@ namespace SW2RD.Export
             // assembly fast now that the up-front full resolve is gone (see
             // ExportPropertyManager.ResolveUsedComponents).
             //
-            // The remaining cost that still scales with TOTAL component count is
-            // this whole-assembly enumeration: GetComponents(false) +
-            // FindHiddenComponents + SelectAll + HideComponent2 here, and
-            // ShowAllComponents in the finally below. These are cheap per
-            // component (no geometry load on lightweight parts) but still touch
-            // every component. If that enumeration ever dominates on a very large
-            // assembly, the lever is to SUPPRESS the unused components for the
-            // duration of the export (suppressed components produce no geometry,
-            // so the hide-all becomes unnecessary) and restore them afterward -
-            // intentionally deferred here in favor of the lower-risk
-            // leave-lightweight-and-hide approach.
+            // Two cost controls wrap the hide / show because it scales with TOTAL
+            // component count, not with how much geometry is exported:
+            //   (1) We ONLY hide / show when at least one STL will actually be
+            //       written (exportSTL AND some link has a non-empty visual /
+            //       collision group). A default export with no geometry selected -
+            //       or one with "Export Meshes" unchecked - writes no STL, so the
+            //       whole-assembly SelectAll + HideComponent2 + ShowAllComponents
+            //       graphics churn (minutes on a large lightweight assembly) is
+            //       pure waste and is skipped. ExportFiles still runs to populate
+            //       mjcfAux (mesh refs + sites); its per-link ExportLinkMesh call
+            //       is itself gated on exportSTL + group membership, so it is a
+            //       cheap no-op when there is nothing to write.
+            //   (2) When we DO hide / show, viewport graphics updates are suppressed
+            //       for the duration. STL tessellation reads model visibility, not
+            //       the rendered view, so suppressing per-operation redraws is safe
+            //       and avoids SW redrawing / reloading graphics for every component
+            //       on every hide / show. A single GraphicsRedraw2 restores the
+            //       view at the end.
+            // If this ever still dominates, the next lever is to SUPPRESS the
+            // unused components for the export (suppressed components emit no
+            // geometry, so the hide-all becomes unnecessary) and restore them
+            // afterward - deferred as higher-risk than the current approach.
             AssemblyDoc assyDoc = (AssemblyDoc)ActiveSWModel;
-            List<string> hiddenComponents = CommonSwOperations.FindHiddenComponents(assyDoc.GetComponents(false));
-            logger.Info("Found " + hiddenComponents.Count + " hidden components " + String.Join(", ", hiddenComponents));
-            logger.Info("Hiding all components");
-            ActiveSWModel.Extension.SelectAll();
-            ActiveSWModel.HideComponent2();
+            bool willExportAnyMesh = exportSTL && RobotHasExportableMesh();
+
+            List<string> hiddenComponents = null;
+            ModelView activeView = ActiveSWModel.ActiveView as ModelView;
+            bool priorGraphicsUpdate = true;
+            if (willExportAnyMesh)
+            {
+                if (activeView != null)
+                {
+                    priorGraphicsUpdate = activeView.EnableGraphicsUpdate;
+                    activeView.EnableGraphicsUpdate = false;
+                }
+
+                hiddenComponents = CommonSwOperations.FindHiddenComponents(assyDoc.GetComponents(false));
+                logger.Info("Found " + hiddenComponents.Count + " hidden components " + String.Join(", ", hiddenComponents));
+                logger.Info("Hiding all components");
+                ActiveSWModel.Extension.SelectAll();
+                ActiveSWModel.HideComponent2();
+            }
+            else
+            {
+                logger.Info("No STL will be written (no geometry selected or mesh export disabled); " +
+                    "skipping the whole-assembly hide/show.");
+            }
 
             bool success = false;
             try
@@ -302,8 +400,17 @@ namespace SW2RD.Export
             }
             finally
             {
-                logger.Info("Showing all components except previously hidden components");
-                CommonSwOperations.ShowAllComponents(ActiveSWModel, hiddenComponents);
+                if (willExportAnyMesh)
+                {
+                    logger.Info("Showing all components except previously hidden components");
+                    CommonSwOperations.ShowAllComponents(ActiveSWModel, hiddenComponents);
+
+                    if (activeView != null)
+                    {
+                        activeView.EnableGraphicsUpdate = priorGraphicsUpdate;
+                        ActiveSWModel.GraphicsRedraw2();
+                    }
+                }
 
                 logger.Info("Resetting STL preferences");
                 ResetUserPreferences();

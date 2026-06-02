@@ -166,17 +166,48 @@ namespace SW2RD.Export
         //Except for an exclusionary list, this shows all the components
         public static void ShowAllComponents(ModelDoc2 model, List<string> hiddenComponents)
         {
+            // Restore each component to its pre-export visibility by setting
+            // Component2.Visible DIRECTLY - no SelectionMgr, no Select4.
+            //
+            // History of this method (two confirmed-bad approaches):
+            //   1. Original: build a "show these" list (every component except
+            //      the already-hidden ones) and select each one individually
+            //      via Component2.Select4, then ShowComponent2. The per-component
+            //      Select4 SelectionMgr round-trips dominated export time -
+            //      measured ~3.5 min restoring ~2000 lightweight/network-PDM
+            //      components.
+            //   2. Extension.SelectAll() + ShowComponent2(). Fast, but WRONG:
+            //      SelectAll selects only VISIBLE entities, and by this point
+            //      we have hidden the whole assembly, so SelectAll selects
+            //      nothing and ShowComponent2 is a no-op - the entire assembly
+            //      stayed hidden after export.
+            // Setting comp.Visible bypasses the SelectionMgr entirely (the cost
+            // in #1) AND works on currently-hidden components (the bug in #2).
+            // The whole-component iteration is cheap property work (GetComponents
+            // + one Name2 + one Visible read/write per component); FindHidden
+            // Components does the comparable IsHidden walk in tens of ms.
+            HashSet<string> hiddenSet = (hiddenComponents != null)
+                ? new HashSet<string>(hiddenComponents)
+                : new HashSet<string>();
+
             AssemblyDoc assyDoc = (AssemblyDoc)model;
-            List<Component2> componentsToShow = new List<Component2>();
             object[] varComps = assyDoc.GetComponents(false);
             foreach (Component2 comp in varComps)
             {
-                if (!hiddenComponents.Contains(comp.Name2))
+                if (comp == null)
                 {
-                    componentsToShow.Add(comp);
+                    continue;
+                }
+                // Components hidden BEFORE the export stay hidden; everything
+                // else returns to visible.
+                int desired = hiddenSet.Contains(comp.Name2)
+                    ? (int)swComponentVisibilityState_e.swComponentHidden
+                    : (int)swComponentVisibilityState_e.swComponentVisible;
+                if (comp.Visible != desired)
+                {
+                    comp.Visible = desired;
                 }
             }
-            ShowComponents(model, componentsToShow);
         }
 
         //Shows the components in the list. Useful  for exporting STLs
