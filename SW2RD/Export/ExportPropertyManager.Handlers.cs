@@ -447,6 +447,44 @@ namespace SW2RD.Export
                 SaveActiveSiteFields(node);
                 RefreshSitesListbox(node);
             }
+            else if (Id == VisualGroupsNameTextBoxID)
+            {
+                // Live-rename the active visual group. Skip the synthetic
+                // event fired when SyncVisualGroupNameTextbox programmatically
+                // loads the selected group's name (otherwise we'd just write
+                // the loaded name straight back).
+                if (suppressGroupNameTextboxEvents)
+                {
+                    return;
+                }
+                LinkNode node = (LinkNode)Tree.SelectedNode;
+                if (node != null && node.Link.VisualGroups != null &&
+                    activeVisualGroupIndex >= 0 &&
+                    activeVisualGroupIndex < node.Link.VisualGroups.Count)
+                {
+                    node.Link.VisualGroups[activeVisualGroupIndex].Name =
+                        PMTextBoxVisualGroupName.Text ?? "";
+                    RefreshVisualGroupsListbox(node);
+                }
+            }
+            else if (Id == CollisionGroupsNameTextBoxID)
+            {
+                // See VisualGroupsNameTextBoxID: live-rename the active
+                // collision group, ignoring programmatic loads.
+                if (suppressGroupNameTextboxEvents)
+                {
+                    return;
+                }
+                LinkNode node = (LinkNode)Tree.SelectedNode;
+                if (node != null && node.Link.CollisionGroups != null &&
+                    activeCollisionGroupIndex >= 0 &&
+                    activeCollisionGroupIndex < node.Link.CollisionGroups.Count)
+                {
+                    node.Link.CollisionGroups[activeCollisionGroupIndex].Name =
+                        PMTextBoxCollisionGroupName.Text ?? "";
+                    RefreshCollisionGroupsListbox(node);
+                }
+            }
         }
 
         int IPropertyManagerPage2Handler9.OnWindowFromHandleControlCreated(int Id, bool Status)
@@ -739,6 +777,7 @@ namespace SW2RD.Export
                         activeVisualGroupIndex = Item;
                         LoadActiveVisualGroupIntoSelectionBox(node);
                         RefreshVisualGroupsListbox(node);
+                        SyncVisualGroupNameTextbox(node);
                     }
                 }
                 else if (Id == CollisionGroupsListBoxID)
@@ -749,6 +788,7 @@ namespace SW2RD.Export
                         activeCollisionGroupIndex = Item;
                         LoadActiveCollisionGroupIntoSelectionBox(node);
                         RefreshCollisionGroupsListbox(node);
+                        SyncCollisionGroupNameTextbox(node);
                     }
                 }
                 else if (Id == SitesListBoxID)

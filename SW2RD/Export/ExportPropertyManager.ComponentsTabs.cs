@@ -106,7 +106,7 @@ namespace SW2RD.Export
 
             PMVisualTab.AddControl2(
                 VisualGroupsHelpLabelID, (short)controlType,
-                "Click a row to load that group's components into the box below. To add a new group, type a name and click Add Group.",
+                "Click a row to load that group's components into the box below and its name into the Group name box (edit it to rename in place). Click Add Visual Group to create a new group.",
                 (short)alignment, options,
                 "Components selected in the box below belong to the highlighted group.");
 
@@ -114,7 +114,7 @@ namespace SW2RD.Export
             PMListBoxVisualGroups = (PropertyManagerPageListbox)PMVisualTab.AddControl2(
                 VisualGroupsListBoxID, (short)controlType, "", (short)alignment, options,
                 "Visual groups defined for this link. Click a row to edit it; click Remove Selected Group to delete it.");
-            PMListBoxVisualGroups.Height = 50;
+            PMListBoxVisualGroups.Height = 150;
 
             PMVisualTab.AddControl2(LabelVisualComponentsHeaderID,
                 (short)controlType, "Components in active visual group",
@@ -139,15 +139,15 @@ namespace SW2RD.Export
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             PMVisualTab.AddControl2(
-                VisualGroupsNameLabelID, (short)controlType, "Group name (for new group)",
+                VisualGroupsNameLabelID, (short)controlType, "Group name",
                 (short)alignment, options,
-                "Used as the new group's display name and as the suffix on its mesh filename.");
+                "Display name of the selected group and the suffix on its mesh filename.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Textbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             PMTextBoxVisualGroupName = (PropertyManagerPageTextbox)PMVisualTab.AddControl2(
                 VisualGroupsNameTextBoxID, (short)controlType, "", (short)alignment, options,
-                "Group name for the next group to add.");
+                "Edit to rename the selected visual group.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
             PMButtonVisualGroupAdd = (PropertyManagerPageButton)PMVisualTab.AddControl2(
@@ -192,7 +192,7 @@ namespace SW2RD.Export
 
             PMLabelCollisionGroupsHelp = (PropertyManagerPageLabel)PMCollisionTab.AddControl2(
                 CollisionGroupsHelpLabelID, (short)controlType,
-                "Click a row to load that group's components into the box below. To add a new group, type a name and click Add Group.",
+                "Click a row to load that group's components into the box below and its name into the Group name box (edit it to rename in place). Click Add Collision Group to create a new group.",
                 (short)alignment, options,
                 "Components selected in the box below belong to the highlighted group.");
 
@@ -200,7 +200,7 @@ namespace SW2RD.Export
             PMListBoxCollisionGroups = (PropertyManagerPageListbox)PMCollisionTab.AddControl2(
                 CollisionGroupsListBoxID, (short)controlType, "", (short)alignment, options,
                 "Collision groups defined for this link.");
-            PMListBoxCollisionGroups.Height = 50;
+            PMListBoxCollisionGroups.Height = 150;
 
             PMCollisionTab.AddControl2(LabelCollisionComponentsHeaderID,
                 (short)controlType, "Components in active collision group",
@@ -223,15 +223,15 @@ namespace SW2RD.Export
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             PMLabelCollisionGroupsName = (PropertyManagerPageLabel)PMCollisionTab.AddControl2(
-                CollisionGroupsNameLabelID, (short)controlType, "Group name (for new group)",
+                CollisionGroupsNameLabelID, (short)controlType, "Group name",
                 (short)alignment, options,
-                "Used as the new group's display name and as the suffix on its mesh filename.");
+                "Display name of the selected group and the suffix on its mesh filename.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Textbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             PMTextBoxCollisionGroupName = (PropertyManagerPageTextbox)PMCollisionTab.AddControl2(
                 CollisionGroupsNameTextBoxID, (short)controlType, "", (short)alignment, options,
-                "Group name for the next group to add.");
+                "Edit to rename the selected collision group.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
             PMButtonCollisionGroupAdd = (PropertyManagerPageButton)PMCollisionTab.AddControl2(

@@ -68,20 +68,23 @@ namespace SW2RD.URDF
             MeshFilename = "";
         }
 
-        // Default name for a single visual group when migrating a legacy config
-        // that only stored one flat list of visual components.
-        public static string DefaultVisualName(string linkName)
+        // Default base name for a visual group. Intentionally link-INDEPENDENT
+        // ("visual", and "visual_2", "visual_3", ... via NextDefaultGroupName)
+        // because the export pipeline already prefixes the link name when it
+        // builds the mesh / geom name (ChooseVisualMeshBaseName ->
+        // "<link>_<group>"). Embedding the link name here too produced the
+        // doubled "<link>_<link>_visual" geom names; the export prefix alone
+        // keeps the name unique across links while staying short.
+        public static string DefaultVisualName()
         {
-            string trimmed = string.IsNullOrWhiteSpace(linkName) ? "link" : linkName.Trim();
-            return trimmed + "_visual";
+            return "visual";
         }
 
-        // Default name for a single collision group when migrating a legacy
-        // config or when the user adds a first collision group implicitly.
-        public static string DefaultCollisionName(string linkName)
+        // Default base name for a collision group. Link-INDEPENDENT for the
+        // same reason as DefaultVisualName.
+        public static string DefaultCollisionName()
         {
-            string trimmed = string.IsNullOrWhiteSpace(linkName) ? "link" : linkName.Trim();
-            return trimmed + "_collision";
+            return "collision";
         }
 
         public MeshGroup Clone()
