@@ -34,6 +34,15 @@ namespace SW2RD.MJCF
         public double[] Position { get; set; } = new double[] { 0, 0, 0 };
         public double[] Quaternion { get; set; } = new double[] { 1, 0, 0, 0 };
 
+        // How the orientation (always stored as Quaternion above) is serialized.
+        // Defaults to Quaternion so callers that don't set it preserve the
+        // legacy quat= output byte-for-byte.
+        public MJCFRotationFormat RotationFormat { get; set; } = MJCFRotationFormat.Quaternion;
+
+        // Unit for the orientation's angular value (axisangle / euler). Quaternion
+        // output ignores it. Defaults to Degree (MuJoCo default).
+        public MJCFAngleUnit AngleUnit { get; set; } = MJCFAngleUnit.Degree;
+
         public MJCFInertial Inertial { get; set; }
         public MJCFJoint Joint { get; set; } // null for the root body or a fixed joint
         public List<Geom> Geoms { get; }
@@ -72,7 +81,7 @@ namespace SW2RD.MJCF
             if (!SuppressTransform)
             {
                 writer.WriteAttributeString("pos", MJCFFormat.FormatTriple(Position));
-                writer.WriteAttributeString("quat", MJCFFormat.FormatQuat(Quaternion));
+                MJCFFormat.WriteOrientation(writer, Quaternion, RotationFormat, AngleUnit);
             }
 
             // Order: inertial, freejoint, joint, geoms, sites, child bodies. This

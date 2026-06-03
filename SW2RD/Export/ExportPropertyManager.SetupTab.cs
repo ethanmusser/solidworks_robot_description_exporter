@@ -201,6 +201,54 @@ namespace SW2RD.Export
             // by the format combo and fast-export checkbox handlers.
             UpdateMeshQualityEnabled();
 
+            PMSetupTab.AddControl2(LabelRotationFormatID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Label,
+                "Rotation Format (MJCF)", (short)alignment, options,
+                "How frame orientations are written in MJCF output. All three are " +
+                "equivalent; pick the most readable for you. URDF ignores this.");
+
+            PMComboBoxRotationFormat = (PropertyManagerPageCombobox)PMSetupTab.AddControl2(
+                RotationFormatComboID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Combobox,
+                "", (short)alignment, options,
+                "Axis-angle: rotation axis + angle (deg). Quaternion: w x y z. " +
+                "Euler: roll-pitch-yaw (deg), same convention as URDF.");
+            PMComboBoxRotationFormat.Style =
+                (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
+            // Item order MUST match the MJCFRotationFormat enum / ExportPreferences
+            // value (0 = Axis-angle, 1 = Quaternion, 2 = Euler).
+            PMComboBoxRotationFormat.AddItems(new string[] { "Axis-angle", "Quaternion", "Euler" });
+            PMComboBoxRotationFormat.CurrentSelection =
+                (short)ExportPreferences.ClampRotationFormat(ExportPreferences.GetRotationFormat());
+
+            // MJCF-only option; grey it out for URDF so the user sees clearly that
+            // it does not apply. Output format CurrentSelection: 0 = URDF, 1 = MJCF.
+            // Kept in sync at runtime by OnComboboxSelectionChanged(OutputFormatComboID).
+            SetRotationFormatEnabled(PMComboBoxOutputFormat.CurrentSelection == 1);
+
+            PMSetupTab.AddControl2(LabelAngleUnitID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Label,
+                "Angle Units (MJCF)", (short)alignment, options,
+                "Units for angular values (axis-angle / Euler angles and hinge joint " +
+                "ranges) in MJCF output. URDF always uses radians and ignores this.");
+
+            PMComboBoxAngleUnit = (PropertyManagerPageCombobox)PMSetupTab.AddControl2(
+                AngleUnitComboID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Combobox,
+                "", (short)alignment, options,
+                "Degrees: MuJoCo's default (no compiler angle attribute written). " +
+                "Radians: writes <compiler angle=\"radian\"> and emits angles in radians.");
+            PMComboBoxAngleUnit.Style =
+                (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
+            // Item order MUST match the MJCFAngleUnit enum / ExportPreferences
+            // value (0 = Degrees, 1 = Radians).
+            PMComboBoxAngleUnit.AddItems(new string[] { "Degrees", "Radians" });
+            PMComboBoxAngleUnit.CurrentSelection =
+                (short)ExportPreferences.ClampAngleUnit(ExportPreferences.GetAngleUnit());
+
+            // MJCF-only option, same gating as the rotation format dropdown.
+            SetAngleUnitEnabled(PMComboBoxOutputFormat.CurrentSelection == 1);
+
             PMLabelConfigurationCache = (PropertyManagerPageLabel)PMSetupTab.AddControl2(
                 LabelConfigurationCacheID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Label,
@@ -263,6 +311,24 @@ namespace SW2RD.Export
             bool stl = PMComboBoxMeshFormat != null && PMComboBoxMeshFormat.CurrentSelection == 0;
             bool fast = PMCheckFastMeshExport != null && PMCheckFastMeshExport.Checked;
             SetControlEnabled(PMComboBoxMeshQuality, stl && fast);
+        }
+
+        // Greys out the MJCF "Rotation Format" dropdown when the selected output
+        // format is URDF (which has no equivalent option and ignores it). Called
+        // at build time and from OnComboboxSelectionChanged when the output
+        // format dropdown changes.
+        private void SetRotationFormatEnabled(bool enabled)
+        {
+            SetControlEnabled(PMComboBoxRotationFormat, enabled);
+        }
+
+        // Greys out the MJCF "Angle Units" dropdown when the selected output
+        // format is URDF (which always uses radians and ignores it). Called at
+        // build time and from OnComboboxSelectionChanged when the output format
+        // dropdown changes.
+        private void SetAngleUnitEnabled(bool enabled)
+        {
+            SetControlEnabled(PMComboBoxAngleUnit, enabled);
         }
     }
 }

@@ -66,16 +66,29 @@ namespace SW2RD.Export
         //When a keyboard key is pressed on the tree
         private void TreeKeyDown(object sender, KeyEventArgs e)
         {
-            if (rightClickedNode.IsEditing)
+            try
             {
-                if (e.KeyCode == Keys.Enter)
+                // rightClickedNode is only set on right-click and is reset to
+                // null on config-tree replacement, so a keypress on the focused
+                // tree before any right-click would otherwise NRE here.
+                if (rightClickedNode != null && rightClickedNode.IsEditing)
                 {
-                    rightClickedNode.EndEdit(false);
+                    if (e.KeyCode == Keys.Enter)
+                    {
+                        rightClickedNode.EndEdit(false);
+                    }
+                    else if (e.KeyCode == Keys.Escape)
+                    {
+                        rightClickedNode.EndEdit(true);
+                    }
                 }
-                else if (e.KeyCode == Keys.Escape)
-                {
-                    rightClickedNode.EndEdit(true);
-                }
+            }
+            catch (Exception ex)
+            {
+                logger.Error("Exception caught on tree view KeyDown ", ex);
+                MessageBox.Show("There was a problem with the property manager: \n\"" +
+                    ex.Message + "\"\nEmail your maintainer with the log file found at " +
+                    Logger.GetFileName());
             }
         }
 
