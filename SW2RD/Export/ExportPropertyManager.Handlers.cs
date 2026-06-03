@@ -463,6 +463,15 @@ namespace SW2RD.Export
         // regularly called anyway
         void IPropertyManagerPage2Handler9.OnCheckboxCheck(int Id, bool Checked)
         {
+            if (Id == FastMeshExportCheckID)
+            {
+                // Mesh quality only matters for the tessellation (fast) STL
+                // path, so the dropdown is enabled only when fast export is
+                // checked AND the format is STL. Re-evaluate on every toggle.
+                UpdateMeshQualityEnabled();
+                return;
+            }
+
             if (Id == CheckCollisionUsesVisualID)
             {
                 SetCollisionEditorEnabled(!Checked);
@@ -621,6 +630,21 @@ namespace SW2RD.Export
 
         void IPropertyManagerPage2Handler9.OnComboboxSelectionChanged(int Id, int Item)
         {
+            if (Id == MeshFormatComboID)
+            {
+                // "Fast mesh export" (per-part tessellation) only produces STL.
+                // 3DXML always uses the legacy whole-assembly path, so grey out
+                // the checkbox for 3DXML - that leaves exactly three valid
+                // combinations (STL+fast, STL+legacy, 3DXML+legacy) and no two
+                // paths to the same result. Item order matches the AddItems call
+                // in BuildSetupTab: 0 = STL, 1 = 3DXML.
+                SetFastMeshExportEnabled(Item == 0);
+                // Quality depends on BOTH format (STL) and the fast-export
+                // checkbox, so re-evaluate it whenever the format changes too.
+                UpdateMeshQualityEnabled();
+                return;
+            }
+
             if (Id == ComboInertialSourceID)
             {
                 // Map the dropdown index to the InertialSource enum

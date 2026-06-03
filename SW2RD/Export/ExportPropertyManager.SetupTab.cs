@@ -168,6 +168,39 @@ namespace SW2RD.Export
                 "rewrite only the description XML using existing meshes.");
             PMCheckExportMeshes.Checked = ExportPreferences.GetLastExportMeshes();
 
+            PMCheckFastMeshExport = (PropertyManagerPageCheckbox)PMSetupTab.AddControl2(
+                FastMeshExportCheckID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Checkbox,
+                "Fast mesh export", (short)alignment, options,
+                "Export meshes by tessellating each part directly at the chosen " +
+                "mesh quality, skipping the slow hide/show of the whole assembly. " +
+                "Much faster on large assemblies. Uncheck to use the legacy " +
+                "whole-assembly STL export.");
+            PMCheckFastMeshExport.Checked = ExportPreferences.GetFastMeshExport();
+
+            PMComboBoxMeshQuality = (PropertyManagerPageCombobox)PMSetupTab.AddControl2(
+                MeshQualityComboID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Combobox,
+                "Mesh quality", (short)alignment, options,
+                "Quality of the fast (tessellation) mesh export. The chord tolerance " +
+                "is set per part relative to that part's own size, so every part - " +
+                "and every part inside a sub-assembly - gets uniform, display-" +
+                "independent detail. Finer = smoother curves and larger files.");
+            PMComboBoxMeshQuality.Style =
+                (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
+            PMComboBoxMeshQuality.AddItems(new string[] { "Coarse", "Medium", "Fine", "Very fine" });
+            PMComboBoxMeshQuality.CurrentSelection =
+                (short)ExportPreferences.ClampMeshQuality(ExportPreferences.GetMeshQuality());
+
+            // Fast mesh export only produces STL; grey it out unless STL is the
+            // selected mesh format (CurrentSelection 0 = STL, 1 = 3DXML). Kept in
+            // sync at runtime by OnComboboxSelectionChanged(MeshFormatComboID).
+            SetFastMeshExportEnabled(PMComboBoxMeshFormat.CurrentSelection == 0);
+            // Mesh quality only affects the fast STL path, so it starts greyed
+            // unless STL + fast export are both active. Kept in sync at runtime
+            // by the format combo and fast-export checkbox handlers.
+            UpdateMeshQualityEnabled();
+
             PMLabelConfigurationCache = (PropertyManagerPageLabel)PMSetupTab.AddControl2(
                 LabelConfigurationCacheID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Label,
@@ -211,6 +244,25 @@ namespace SW2RD.Export
             {
                 pageControl.Enabled = enabled;
             }
+        }
+
+        // Greys out the "Fast mesh export" checkbox when the selected mesh format
+        // can't use the tessellation path (only STL can). Called at build time
+        // and from OnComboboxSelectionChanged when the format dropdown changes.
+        private void SetFastMeshExportEnabled(bool enabled)
+        {
+            SetControlEnabled(PMCheckFastMeshExport, enabled);
+        }
+
+        // Greys out the "Mesh quality" dropdown unless it actually affects the
+        // export: quality only applies to the tessellation (fast) STL path, so
+        // it is enabled only when the format is STL AND fast export is checked.
+        // Called at build time and whenever either of those two controls change.
+        private void UpdateMeshQualityEnabled()
+        {
+            bool stl = PMComboBoxMeshFormat != null && PMComboBoxMeshFormat.CurrentSelection == 0;
+            bool fast = PMCheckFastMeshExport != null && PMCheckFastMeshExport.Checked;
+            SetControlEnabled(PMComboBoxMeshQuality, stl && fast);
         }
     }
 }

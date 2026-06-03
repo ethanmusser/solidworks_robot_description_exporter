@@ -36,12 +36,24 @@ namespace SW2RD.Export
         private const string OutputFormatValueName = "OutputFormat";
         private const string MeshFormatValueName = "MeshFormat";
         private const string ExportMeshesValueName = "ExportMeshes";
+        private const string FastMeshExportValueName = "FastMeshExport";
+        private const string MeshQualityValueName = "MeshQuality";
 
         // Defaults used when the user has not saved export preferences.
         // These match the Setup tab's standard initial state.
         private const int DefaultOutputFormat = 0; // 0 = URDF, 1 = MJCF
         private const int DefaultMeshFormat = 0;   // 0 = STL, 1 = 3DXML
         private const bool DefaultExportMeshes = true;
+        // Per-part tessellation mesh export. Default ON: validated on RAILGHOST
+        // (geometry/orientation/units/frame correct, ~10 s mesh phase vs ~44 s
+        // legacy whole-assembly hide/show restore) with per-body quality giving
+        // uniform, display-independent detail. The legacy whole-assembly SaveAs
+        // path remains available by unchecking "Fast mesh export".
+        private const bool DefaultFastMeshExport = true;
+        // Mesh quality for the per-part tessellation path:
+        // 0 = Coarse, 1 = Medium, 2 = Fine, 3 = Very fine. Default Fine.
+        private const int DefaultMeshQuality = 2;
+        private const int MaxMeshQuality = 3;
 
         private static readonly log4net.ILog logger = Logger.GetLogger();
 
@@ -74,6 +86,29 @@ namespace SW2RD.Export
         {
             WriteInt(ExportMeshesValueName, value ? 1 : 0);
         }
+
+        public static bool GetFastMeshExport()
+        {
+            return ReadInt(FastMeshExportValueName, DefaultFastMeshExport ? 1 : 0) != 0;
+        }
+
+        public static void SetFastMeshExport(bool value)
+        {
+            WriteInt(FastMeshExportValueName, value ? 1 : 0);
+        }
+
+        public static int GetMeshQuality()
+        {
+            return ClampMeshQuality(ReadInt(MeshQualityValueName, DefaultMeshQuality));
+        }
+
+        public static void SetMeshQuality(int value)
+        {
+            WriteInt(MeshQualityValueName, ClampMeshQuality(value));
+        }
+
+        public static int ClampMeshQuality(int value) =>
+            value < 0 || value > MaxMeshQuality ? DefaultMeshQuality : value;
 
         // Combobox CurrentSelection is short-typed; clamp to the
         // documented range here so a stale registry entry left over

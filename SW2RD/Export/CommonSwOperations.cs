@@ -166,31 +166,209 @@ namespace SW2RD.Export
         //Except for an exclusionary list, this shows all the components
         public static void ShowAllComponents(ModelDoc2 model, List<string> hiddenComponents)
         {
+            // Restore every component that the export hid back to visible, in a
+            // SINGLE bulk SelectionMgr.AddSelectionListObjects + ShowComponent2
+            // round trip - the symmetric counterpart to the fast bulk hide
+            // (Extension.SelectAll + HideComponent2, ~1s for ~1800 components).
+            //
+            // Components that were ALREADY hidden before the export (the
+            // hiddenComponents exclusion list) are left untouched so they stay
+            // hidden.
+            //
+            // History of this method (THREE prior approaches, all slower or
+            // wrong - do NOT regress to any of them):
+            //   1. Select each reveal-target individually via Component2.Select4,
+            //      then one ShowComponent2. Correct, but the per-component
+            //      Select4 SelectionMgr round trips dominated - ~3.5 min
+            //      restoring ~2000 lightweight/network-PDM components.
+            //   2. Extension.SelectAll() + ShowComponent2(). Fast, but WRONG:
+            //      SelectAll selects only VISIBLE entities, and by this point the
+            //      whole assembly is hidden, so SelectAll selects nothing and
+            //      ShowComponent2 is a no-op - the assembly stayed hidden.
+            //   3. Per-component Component2.Visible = swComponentVisible. Correct
+            //      and avoids Select4, but each property set is its own SW round
+            //      trip; measured ~38s restoring ~1800 components even with
+            //      viewport graphics updates suppressed. (Retained below as the
+            //      verified fallback, since it is the provably-correct path.)
+            // AddSelectionListObjects selects the entire reveal set in ONE COM
+            // call (a SAFEARRAY of Component2), so the subsequent single
+            // ShowComponent2 does the show in bulk like the hide does. This is
+            // the same selection semantics as #1's Select4 (which is known to
+            // reveal currently-hidden components), just without the per-item
+            // round trips. We VERIFY it actually worked (count selected >=
+            // requested AND no target left hidden) and fall back to #3 if a
+            // future SW version refuses to bulk-select hidden components - so
+            // correctness can never regress, only speed.
+            HashSet<string> hiddenSet = (hiddenComponents != null)
+                ? new HashSet<string>(hiddenComponents)
+                : new HashSet<string>();
+
             AssemblyDoc assyDoc = (AssemblyDoc)model;
-            List<Component2> componentsToShow = new List<Component2>();
             object[] varComps = assyDoc.GetComponents(false);
+
+            List<Component2> toShow = new List<Component2>();
             foreach (Component2 comp in varComps)
             {
-                if (!hiddenComponents.Contains(comp.Name2))
+                if (comp == null)
                 {
-                    componentsToShow.Add(comp);
+                    continue;
+                }
+                if (!hiddenSet.Contains(comp.Name2))
+                {
+                    toShow.Add(comp);
                 }
             }
-            ShowComponents(model, componentsToShow);
+            if (toShow.Count == 0)
+            {
+                return;
+            }
+
+            bool bulkOk = false;
+            try
+            {
+                model.ClearSelection2(true);
+                SelectionMgr selMgr = model.SelectionManager;
+                SelectData data = selMgr.CreateSelectData();
+                // Mark -1 == "no mark"; matches the transient-selection pattern
+                // SelectComponents already uses for show/hide (these are not
+                // PMP SelectionBoxes, so the bitmask-mark rules do not apply).
+                data.Mark = -1;
+                int selected = selMgr.AddSelectionListObjects(toShow.ToArray(), data);
+                if (selected > 0)
+                {
+                    model.ShowComponent2();
+                }
+                model.ClearSelection2(true);
+
+                // Confirm the bulk path revealed everything before trusting it.
+                // AnyStillHidden short-circuits on the first hidden target, so
+                // on success it is a single cheap IsHidden walk and on failure
+                // it returns immediately.
+                bulkOk = (selected >= toShow.Count) && !AnyStillHidden(toShow);
+            }
+            catch
+            {
+                bulkOk = false;
+            }
+
+            if (bulkOk)
+            {
+                return;
+            }
+
+            logger.Warn("Bulk ShowComponent2 did not reveal every component; " +
+                "falling back to per-component visibility restore.");
+            foreach (Component2 comp in toShow)
+            {
+                if (comp == null)
+                {
+                    continue;
+                }
+                if (comp.Visible != (int)swComponentVisibilityState_e.swComponentVisible)
+                {
+                    comp.Visible = (int)swComponentVisibilityState_e.swComponentVisible;
+                }
+            }
+        }
+
+        // True if any component in the list is still hidden. Used to verify the
+        // bulk ShowComponent2 path in ShowAllComponents actually revealed every
+        // target before we trust it over the per-component fallback.
+        private static bool AnyStillHidden(List<Component2> comps)
+        {
+            foreach (Component2 comp in comps)
+            {
+                if (comp != null && comp.IsHidden(false))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         //Shows the components in the list. Useful  for exporting STLs
         public static void ShowComponents(ModelDoc2 model, List<Component2> components)
         {
-            SelectComponents(model, components, true);
+            List<Component2> expanded = ExpandWithChildren(components);
+            SelectComponents(model, expanded, true);
             model.ShowComponent2();
         }
 
         //Hides the components from a list
         public static void HideComponents(ModelDoc2 model, List<Component2> components)
         {
-            SelectComponents(model, components, true);
+            List<Component2> expanded = ExpandWithChildren(components);
+            SelectComponents(model, expanded, true);
             model.HideComponent2();
+        }
+
+        // Returns the input components PLUS every descendant component
+        // (recursively, deduped by Name2).
+        //
+        // Why this is required for the STL export show/hide: a visual or
+        // collision group may name a SUB-ASSEMBLY as its (single) component
+        // rather than a leaf part. The whole-assembly hide-all in
+        // ExportRobotCore (Extension.SelectAll + HideComponent2) hides every
+        // component at every level, including that sub-assembly's leaf parts.
+        // ShowComponent2 on the sub-assembly NODE alone does NOT re-reveal its
+        // already-hidden leaf parts, so the per-link assembly STL SaveAs - which
+        // exports only VISIBLE geometry - sees nothing inside the sub-assembly
+        // and writes an EMPTY mesh (which MuJoCo / downstream consumers reject).
+        // Expanding to descendants makes the sub-assembly export the union of
+        // its parts as one mesh. The expansion MUST be applied symmetrically in
+        // HideComponents too: after the SaveAs, the same descendants have to be
+        // re-hidden, otherwise they stay visible and contaminate every
+        // subsequent link's SaveAs. Leaf-part groups are unaffected -
+        // GetChildren returns nothing for a part, so the expansion is a no-op
+        // and the result is just the original list.
+        public static List<Component2> ExpandWithChildren(List<Component2> components)
+        {
+            List<Component2> result = new List<Component2>();
+            if (components == null)
+            {
+                return result;
+            }
+
+            HashSet<string> seen = new HashSet<string>();
+            Stack<Component2> stack = new Stack<Component2>();
+            foreach (Component2 c in components)
+            {
+                if (c != null)
+                {
+                    stack.Push(c);
+                }
+            }
+
+            while (stack.Count > 0)
+            {
+                Component2 comp = stack.Pop();
+                if (comp == null)
+                {
+                    continue;
+                }
+                string key = comp.Name2;
+                // Dedup by Name2 so a component named in the group AND reached as
+                // a descendant of another group member is only shown/hidden once.
+                if (key != null && !seen.Add(key))
+                {
+                    continue;
+                }
+                result.Add(comp);
+
+                object childrenObj = comp.GetChildren();
+                if (childrenObj is object[] children)
+                {
+                    foreach (object o in children)
+                    {
+                        Component2 child = o as Component2;
+                        if (child != null)
+                        {
+                            stack.Push(child);
+                        }
+                    }
+                }
+            }
+            return result;
         }
 
         public static int GetCount(Link Link)

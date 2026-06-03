@@ -103,6 +103,8 @@ namespace SW2RD.Export
         private PropertyManagerPageCombobox PMComboBoxOutputFormat;
         private PropertyManagerPageCombobox PMComboBoxMeshFormat;
         private PropertyManagerPageCheckbox PMCheckExportMeshes;
+        private PropertyManagerPageCheckbox PMCheckFastMeshExport;
+        private PropertyManagerPageCombobox PMComboBoxMeshQuality;
         private PropertyManagerPageLabel PMLabelConfigurationCache;
         private PropertyManagerPageButton PMButtonClearSavedConfiguration;
         private PropertyManagerPageButton PMButtonImportLegacyConfiguration;
@@ -407,6 +409,8 @@ namespace SW2RD.Export
         private const int LabelConfigurationCacheID = 151;
         private const int ButtonClearSavedConfigurationID = 152;
         private const int ButtonImportLegacyConfigurationID = 153;
+        private const int FastMeshExportCheckID = 154;
+        private const int MeshQualityComboID = 155;
 
         // Marks for every PMP SelectionBox so SOLIDWORKS can attribute the
         // user's selection to the right list. CRITICAL:
