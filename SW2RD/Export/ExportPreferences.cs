@@ -38,6 +38,8 @@ namespace SW2RD.Export
         private const string ExportMeshesValueName = "ExportMeshes";
         private const string FastMeshExportValueName = "FastMeshExport";
         private const string MeshQualityValueName = "MeshQuality";
+        private const string RotationFormatValueName = "RotationFormat";
+        private const string AngleUnitValueName = "AngleUnit";
 
         // Defaults used when the user has not saved export preferences.
         // These match the Setup tab's standard initial state.
@@ -54,6 +56,17 @@ namespace SW2RD.Export
         // 0 = Coarse, 1 = Medium, 2 = Fine, 3 = Very fine. Default Fine.
         private const int DefaultMeshQuality = 2;
         private const int MaxMeshQuality = 3;
+        // MJCF frame-orientation representation:
+        // 0 = Axis-angle, 1 = Quaternion, 2 = Euler. Default Axis-angle (the
+        // most human-readable while still unambiguous). Mirrors the
+        // MJCFRotationFormat enum order.
+        private const int DefaultRotationFormat = 0;
+        private const int MaxRotationFormat = 2;
+        // MJCF angular unit: 0 = Degree, 1 = Radian. Default Degree (MuJoCo's
+        // own default, so no <compiler angle> attribute is written). Mirrors the
+        // MJCFAngleUnit enum order.
+        private const int DefaultAngleUnit = 0;
+        private const int MaxAngleUnit = 1;
 
         private static readonly log4net.ILog logger = Logger.GetLogger();
 
@@ -109,6 +122,32 @@ namespace SW2RD.Export
 
         public static int ClampMeshQuality(int value) =>
             value < 0 || value > MaxMeshQuality ? DefaultMeshQuality : value;
+
+        public static int GetRotationFormat()
+        {
+            return ClampRotationFormat(ReadInt(RotationFormatValueName, DefaultRotationFormat));
+        }
+
+        public static void SetRotationFormat(int value)
+        {
+            WriteInt(RotationFormatValueName, ClampRotationFormat(value));
+        }
+
+        public static int ClampRotationFormat(int value) =>
+            value < 0 || value > MaxRotationFormat ? DefaultRotationFormat : value;
+
+        public static int GetAngleUnit()
+        {
+            return ClampAngleUnit(ReadInt(AngleUnitValueName, DefaultAngleUnit));
+        }
+
+        public static void SetAngleUnit(int value)
+        {
+            WriteInt(AngleUnitValueName, ClampAngleUnit(value));
+        }
+
+        public static int ClampAngleUnit(int value) =>
+            value < 0 || value > MaxAngleUnit ? DefaultAngleUnit : value;
 
         // Combobox CurrentSelection is short-typed; clamp to the
         // documented range here so a stale registry entry left over

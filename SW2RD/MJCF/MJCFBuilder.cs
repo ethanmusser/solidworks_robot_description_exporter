@@ -73,7 +73,9 @@ namespace SW2RD.MJCF
         public static MJCFModel Build(
             KinematicTree tree,
             string meshDir,
-            Dictionary<string, LinkAuxiliary> auxByLinkName)
+            Dictionary<string, LinkAuxiliary> auxByLinkName,
+            MJCFRotationFormat rotationFormat = MJCFRotationFormat.Quaternion,
+            MJCFAngleUnit angleUnit = MJCFAngleUnit.Degree)
         {
             if (tree == null)
             {
@@ -82,6 +84,19 @@ namespace SW2RD.MJCF
 
             MJCFModel model = new MJCFModel(tree.Name ?? "");
             model.Compiler.MeshDir = string.IsNullOrEmpty(meshDir) ? "meshes/" : meshDir;
+
+            // Angle unit applies model-wide; the compiler emits angle="radian"
+            // only for the non-default unit, and the body / joint / site builders
+            // convert their angular quantities to match.
+            model.Compiler.Angle = angleUnit;
+
+            // Euler emission needs the extrinsic-XYZ sequence so the angles
+            // match the URDF roll-pitch-yaw convention. Other formats leave
+            // eulerseq unset (MuJoCo default).
+            if (rotationFormat == MJCFRotationFormat.Euler)
+            {
+                model.Compiler.EulerSeq = "XYZ";
+            }
 
             // Reset the default RootBody seed so we can build TopLevelBodies
             // from scratch via the multi-tree walk below.
@@ -98,7 +113,7 @@ namespace SW2RD.MJCF
                 {
                     continue;
                 }
-                Body body = BuildBody(topLevel, model.Asset, auxByLinkName, isRoot: true);
+                Body body = BuildBody(topLevel, model.Asset, auxByLinkName, isRoot: true, rotationFormat, angleUnit);
 
                 // World->body offset: when the body's reference frame
                 // matches the world's global origin coord-sys, the legacy
@@ -132,7 +147,7 @@ namespace SW2RD.MJCF
             // mesh filenames / site transforms that the SW export step
             // pre-computed. Empty world collections produce no <geom> /
             // <site> elements at all, preserving today's single-tree output.
-            EmitWorldGeometry(worldBody, model, auxByLinkName);
+            EmitWorldGeometry(worldBody, model, auxByLinkName, rotationFormat, angleUnit);
 
             if (model.Asset.Textures.Count > 0)
             {
@@ -181,7 +196,9 @@ namespace SW2RD.MJCF
         private static void EmitWorldGeometry(
             LinkModel world,
             MJCFModel model,
-            Dictionary<string, LinkAuxiliary> auxByLinkName)
+            Dictionary<string, LinkAuxiliary> auxByLinkName,
+            MJCFRotationFormat rotationFormat,
+            MJCFAngleUnit angleUnit)
         {
             if (world == null || auxByLinkName == null)
             {
@@ -195,7 +212,7 @@ namespace SW2RD.MJCF
             Body scratch = new Body { Name = "world" };
             EmitVisualGeoms(scratch, model.Asset, world, aux);
             EmitCollisionGeoms(scratch, model.Asset, world, aux);
-            EmitSites(scratch, aux);
+            EmitSites(scratch, aux, rotationFormat, angleUnit);
 
             model.WorldGeoms.AddRange(scratch.Geoms);
             model.WorldSites.AddRange(scratch.Sites);
@@ -208,22 +225,27 @@ namespace SW2RD.MJCF
         public static MJCFModel Build(
             Robot robot,
             string meshDir,
-            Dictionary<string, LinkAuxiliary> auxByLinkName)
+            Dictionary<string, LinkAuxiliary> auxByLinkName,
+            MJCFRotationFormat rotationFormat = MJCFRotationFormat.Quaternion,
+            MJCFAngleUnit angleUnit = MJCFAngleUnit.Degree)
         {
             if (robot == null)
             {
                 throw new ArgumentNullException(nameof(robot));
             }
-            return Build(KinematicTreeAdapter.ToCore(robot), meshDir, auxByLinkName);
+            return Build(KinematicTreeAdapter.ToCore(robot), meshDir, auxByLinkName, rotationFormat, angleUnit);
         }
 
         private static Body BuildBody(
-            LinkModel link, Asset asset, Dictionary<string, LinkAuxiliary> auxByLinkName, bool isRoot)
+            LinkModel link, Asset asset, Dictionary<string, LinkAuxiliary> auxByLinkName, bool isRoot,
+            MJCFRotationFormat rotationFormat, MJCFAngleUnit angleUnit)
         {
             Body body = new Body
             {
                 Name = link.Name ?? "",
                 SuppressTransform = isRoot,
+                RotationFormat = rotationFormat,
+                AngleUnit = angleUnit,
             };
 
             if (!isRoot && link.Joint != null && link.Joint.Origin != null)
@@ -245,7 +267,7 @@ namespace SW2RD.MJCF
             // attached to its parent.
             if (!isRoot && link.Joint != null && !string.Equals(link.Joint.Type, "fixed", StringComparison.Ordinal))
             {
-                body.Joint = BuildJoint(link.Joint);
+                body.Joint = BuildJoint(link.Joint, angleUnit);
             }
 
             LinkAuxiliary aux = null;
@@ -272,14 +294,14 @@ namespace SW2RD.MJCF
             {
                 EmitVisualGeoms(body, asset, link, aux);
                 EmitCollisionGeoms(body, asset, link, aux);
-                EmitSites(body, aux);
+                EmitSites(body, aux, rotationFormat, angleUnit);
             }
 
             if (link.Children != null)
             {
                 foreach (LinkModel childLink in link.Children)
                 {
-                    body.Children.Add(BuildBody(childLink, asset, auxByLinkName, isRoot: false));
+                    body.Children.Add(BuildBody(childLink, asset, auxByLinkName, isRoot: false, rotationFormat, angleUnit));
                 }
             }
 
@@ -321,7 +343,7 @@ namespace SW2RD.MJCF
             };
         }
 
-        private static MJCFJoint BuildJoint(JointModel urdfJoint)
+        private static MJCFJoint BuildJoint(JointModel urdfJoint, MJCFAngleUnit angleUnit)
         {
             Vector3Model axisVec = urdfJoint.Axis ?? new Vector3Model(0, 0, 1);
             MJCFJoint mjJoint = new MJCFJoint
@@ -329,6 +351,7 @@ namespace SW2RD.MJCF
                 Name = urdfJoint.Name ?? "",
                 Axis = new[] { axisVec.X, axisVec.Y, axisVec.Z },
                 Position = new double[] { 0, 0, 0 },
+                AngleUnit = angleUnit,
             };
             if (MJCFJointTypeExtensions.TryFromURDFType(urdfJoint.Type ?? "", out MJCFJointType mjType))
             {
@@ -482,7 +505,8 @@ namespace SW2RD.MJCF
             return false;
         }
 
-        private static void EmitSites(Body body, LinkAuxiliary aux)
+        private static void EmitSites(
+            Body body, LinkAuxiliary aux, MJCFRotationFormat rotationFormat, MJCFAngleUnit angleUnit)
         {
             if (aux.Sites == null)
             {
@@ -495,6 +519,8 @@ namespace SW2RD.MJCF
                     Name = st.Name,
                     Position = st.Position ?? new double[] { 0, 0, 0 },
                     Quaternion = st.Quaternion ?? new double[] { 1, 0, 0, 0 },
+                    RotationFormat = rotationFormat,
+                    AngleUnit = angleUnit,
                 });
             }
         }

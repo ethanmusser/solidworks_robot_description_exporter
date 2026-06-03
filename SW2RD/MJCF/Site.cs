@@ -34,6 +34,15 @@ namespace SW2RD.MJCF
         public double[] Quaternion { get; set; } = new double[] { 1, 0, 0, 0 };
         public double Size { get; set; } = 0.005;
 
+        // How the orientation (always stored as Quaternion above) is serialized.
+        // Defaults to Quaternion so callers that don't set it preserve the
+        // legacy quat= output byte-for-byte.
+        public MJCFRotationFormat RotationFormat { get; set; } = MJCFRotationFormat.Quaternion;
+
+        // Unit for the orientation's angular value (axisangle / euler). Quaternion
+        // output ignores it. Defaults to Degree (MuJoCo default).
+        public MJCFAngleUnit AngleUnit { get; set; } = MJCFAngleUnit.Degree;
+
         public void WriteMJCF(XmlWriter writer)
         {
             writer.WriteStartElement("site");
@@ -42,7 +51,7 @@ namespace SW2RD.MJCF
                 writer.WriteAttributeString("name", Name);
             }
             writer.WriteAttributeString("pos", MJCFFormat.FormatTriple(Position));
-            writer.WriteAttributeString("quat", MJCFFormat.FormatQuat(Quaternion));
+            MJCFFormat.WriteOrientation(writer, Quaternion, RotationFormat, AngleUnit);
             writer.WriteAttributeString("size", MJCFFormat.FormatDouble(Size));
             writer.WriteEndElement();
         }

@@ -100,6 +100,12 @@ namespace SW2RD.MJCF
         public double[] Axis { get; set; } = new double[] { 0, 0, 1 };
         public double[] Position { get; set; } = new double[] { 0, 0, 0 };
 
+        // Unit for ANGULAR attributes (hinge range / ref). The data model stores
+        // these in degrees, so Degree emits them as-is and Radian converts to
+        // radians. Slide (prismatic) range / ref are lengths and are never
+        // converted. Defaults to Degree (MuJoCo default).
+        public MJCFAngleUnit AngleUnit { get; set; } = MJCFAngleUnit.Degree;
+
         public bool HasLimits { get; set; } = false;
         public double LowerLimit { get; set; }
         public double UpperLimit { get; set; }
@@ -144,15 +150,22 @@ namespace SW2RD.MJCF
             }
             writer.WriteAttributeString("pos", MJCFFormat.FormatTriple(Position));
 
+            // Hinge range / ref are angular and honour the angle unit; slide
+            // (prismatic) range / ref are lengths (meters) and are emitted raw
+            // regardless of the angle unit, matching MuJoCo's interpretation.
+            bool angular = Type == MJCFJointType.Hinge;
             if (HasLimits && Type != MJCFJointType.Free)
             {
+                double lower = angular ? MJCFFormat.AngleFromDegrees(LowerLimit, AngleUnit) : LowerLimit;
+                double upper = angular ? MJCFFormat.AngleFromDegrees(UpperLimit, AngleUnit) : UpperLimit;
                 writer.WriteAttributeString(
                     "range",
-                    MJCFFormat.FormatDouble(LowerLimit) + " " + MJCFFormat.FormatDouble(UpperLimit));
+                    MJCFFormat.FormatDouble(lower) + " " + MJCFFormat.FormatDouble(upper));
             }
             if (HasRef && Type != MJCFJointType.Free && Type != MJCFJointType.Ball)
             {
-                writer.WriteAttributeString("ref", MJCFFormat.FormatDouble(Ref));
+                double refValue = angular ? MJCFFormat.AngleFromDegrees(Ref, AngleUnit) : Ref;
+                writer.WriteAttributeString("ref", MJCFFormat.FormatDouble(refValue));
             }
             if (HasDamping)
             {

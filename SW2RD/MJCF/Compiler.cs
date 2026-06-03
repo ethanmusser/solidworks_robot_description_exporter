@@ -24,9 +24,12 @@ using System.Xml;
 
 namespace SW2RD.MJCF
 {
-    // Emits the <compiler ...> element. We deliberately do not write an `angle`
+    // Emits the <compiler ...> element. By default we do not write an `angle`
     // attribute, so MuJoCo's default degree units apply to angular XML attributes
-    // such as joint range/ref. The Link/Joint tab mirrors that convention.
+    // such as joint range/ref and orientation axisangle/euler. When the user
+    // selects radian output, Angle is set to Radian and we emit
+    // `angle="radian"`; the builder converts the angular quantities to match.
+    // The Link/Joint tab data model stores those values in degrees.
     //
     // Named MJCFCompiler rather than Compiler so the unqualified type does not
     // collide with the System.CodeDom.Compiler namespace (CA1724).
@@ -34,18 +37,37 @@ namespace SW2RD.MJCF
     {
         public string MeshDir { get; set; } = "meshes/";
 
+        // Angular unit for the whole model. Degree is MuJoCo's default and emits
+        // no attribute; Radian emits angle="radian". Set by MJCFBuilder.
+        public MJCFAngleUnit Angle { get; set; } = MJCFAngleUnit.Degree;
+
         // Path written into <compiler texturedir="..."> -- analogous to MeshDir.
         // Null/empty omits the attribute. MJCFBuilder sets this only when the
         // model declares texture assets.
         public string TextureDir { get; set; }
 
+        // Sequence written into <compiler eulerseq="..."> -- selects the axis
+        // order for every euler attribute in the model. Null/empty omits the
+        // attribute (MuJoCo defaults to intrinsic "xyz"). MJCFBuilder sets this
+        // to "XYZ" (extrinsic = URDF roll-pitch-yaw) only when frame
+        // orientations are emitted as euler angles.
+        public string EulerSeq { get; set; }
+
         public void WriteMJCF(XmlWriter writer)
         {
             writer.WriteStartElement("compiler");
             writer.WriteAttributeString("meshdir", MeshDir);
+            if (Angle == MJCFAngleUnit.Radian)
+            {
+                writer.WriteAttributeString("angle", "radian");
+            }
             if (!string.IsNullOrEmpty(TextureDir))
             {
                 writer.WriteAttributeString("texturedir", TextureDir);
+            }
+            if (!string.IsNullOrEmpty(EulerSeq))
+            {
+                writer.WriteAttributeString("eulerseq", EulerSeq);
             }
             writer.WriteEndElement();
         }

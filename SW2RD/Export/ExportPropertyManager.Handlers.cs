@@ -668,6 +668,16 @@ namespace SW2RD.Export
 
         void IPropertyManagerPage2Handler9.OnComboboxSelectionChanged(int Id, int Item)
         {
+            if (Id == OutputFormatComboID)
+            {
+                // Rotation format and angle units are MJCF-only; grey them out
+                // for URDF so it's clear the options don't apply. Item order
+                // matches the AddItems call in BuildSetupTab: 0 = URDF, 1 = MJCF.
+                SetRotationFormatEnabled(Item == 1);
+                SetAngleUnitEnabled(Item == 1);
+                return;
+            }
+
             if (Id == MeshFormatComboID)
             {
                 // "Fast mesh export" (per-part tessellation) only produces STL.

@@ -152,6 +152,20 @@ namespace SW2RD.Export
         // plus an angle tolerance - see MeshQualityToTolerances.
         public int MeshQualityLevel { get; set; } = 2;
 
+        // How MJCF frame orientations are serialized (axisangle / quat / euler).
+        // Set from ExportPreferences.GetRotationFormat() by the PMP before
+        // ExportRobot. Default Axis-angle (the most readable). URDF output
+        // ignores this entirely.
+        internal MJCF.MJCFRotationFormat MJCFRotationFormat { get; set; } =
+            MJCF.MJCFRotationFormat.AxisAngle;
+
+        // Angular unit for MJCF output (degrees / radians). Set from
+        // ExportPreferences.GetAngleUnit() by the PMP before ExportRobot.
+        // Default Degree (MuJoCo's own default, so no <compiler angle> is
+        // written). URDF output ignores this entirely (always radians).
+        internal MJCF.MJCFAngleUnit MJCFAngleUnit { get; set; } =
+            MJCF.MJCFAngleUnit.Degree;
+
         #endregion class variables
 
         public ExportHelper(SldWorks iSldWorksApp)
@@ -477,7 +491,7 @@ namespace SW2RD.Export
                 {
                     mjcfTree = KinematicTreeAdapter.ToCore(URDFRobot);
                 }
-                MJCFModel mjcfModel = MJCFBuilder.Build(mjcfTree, package.MJCFMeshDir, mjcfAux);
+                MJCFModel mjcfModel = MJCFBuilder.Build(mjcfTree, package.MJCFMeshDir, mjcfAux, MJCFRotationFormat, MJCFAngleUnit);
                 MJCFWriter mjcfWriter = new MJCFWriter(windowsModelFileName);
                 try
                 {

@@ -369,5 +369,70 @@ namespace SW2RD.Utilities
             }
             return new double[] { w, x, y, z };
         }
+
+        // Converts a (w, x, y, z) quaternion to MJCF axisangle form:
+        // { x, y, z, angle } where angle is in RADIANS (the writer converts
+        // to degrees) and (x, y, z) is the unit rotation axis. For the
+        // identity / near-identity rotation the axis is undefined, so we
+        // return (0, 0, 1) with angle 0 to keep the vector well-defined.
+        public static double[] QuaternionToAxisAngle(double[] wxyz)
+        {
+            if (wxyz == null || wxyz.Length < 4)
+            {
+                return new double[] { 0, 0, 1, 0 };
+            }
+            double w = wxyz[0], x = wxyz[1], y = wxyz[2], z = wxyz[3];
+
+            // Normalize defensively; the inputs are already unit quaternions
+            // in normal operation but a stray denorm would yield a bogus axis.
+            double norm = Math.Sqrt(w * w + x * x + y * y + z * z);
+            if (norm < epsilon)
+            {
+                return new double[] { 0, 0, 1, 0 };
+            }
+            w /= norm; x /= norm; y /= norm; z /= norm;
+
+            // Clamp w into [-1, 1] so Acos never returns NaN on rounding.
+            w = Envelope(w, -1.0, 1.0);
+            double angle = 2.0 * Math.Acos(w);
+            double sinHalf = Math.Sqrt(1.0 - w * w);
+            if (sinHalf < epsilon)
+            {
+                // Angle is ~0 (or ~2pi); axis is undefined. Use +Z, angle 0.
+                return new double[] { 0, 0, 1, 0 };
+            }
+            return new double[] { x / sinHalf, y / sinHalf, z / sinHalf, angle };
+        }
+
+        // Converts a (w, x, y, z) quaternion to extrinsic XYZ roll-pitch-yaw
+        // (radians), the SAME convention as GetRPY / GetRotation and URDF's
+        // rpy. Builds the rotation matrix from the quaternion and defers to
+        // GetRPY so the two paths share one definition of the angle sequence.
+        public static double[] QuaternionToRPY(double[] wxyz)
+        {
+            if (wxyz == null || wxyz.Length < 4)
+            {
+                return new double[] { 0, 0, 0 };
+            }
+            double w = wxyz[0], x = wxyz[1], y = wxyz[2], z = wxyz[3];
+            double norm = Math.Sqrt(w * w + x * x + y * y + z * z);
+            if (norm < epsilon)
+            {
+                return new double[] { 0, 0, 0 };
+            }
+            w /= norm; x /= norm; y /= norm; z /= norm;
+
+            Matrix<double> m = new DenseMatrix(3);
+            m[0, 0] = 1 - 2 * (y * y + z * z);
+            m[0, 1] = 2 * (x * y - w * z);
+            m[0, 2] = 2 * (x * z + w * y);
+            m[1, 0] = 2 * (x * y + w * z);
+            m[1, 1] = 1 - 2 * (x * x + z * z);
+            m[1, 2] = 2 * (y * z - w * x);
+            m[2, 0] = 2 * (x * z - w * y);
+            m[2, 1] = 2 * (y * z + w * x);
+            m[2, 2] = 1 - 2 * (x * x + y * y);
+            return GetRPY(m);
+        }
     }
 }

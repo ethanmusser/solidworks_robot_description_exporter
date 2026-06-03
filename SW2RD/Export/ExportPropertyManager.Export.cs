@@ -112,6 +112,12 @@ namespace SW2RD.Export
             int meshQuality = PMComboBoxMeshQuality != null
                 ? ExportPreferences.ClampMeshQuality(PMComboBoxMeshQuality.CurrentSelection)
                 : ExportPreferences.GetMeshQuality();
+            int rotationFormat = PMComboBoxRotationFormat != null
+                ? ExportPreferences.ClampRotationFormat(PMComboBoxRotationFormat.CurrentSelection)
+                : ExportPreferences.GetRotationFormat();
+            int angleUnit = PMComboBoxAngleUnit != null
+                ? ExportPreferences.ClampAngleUnit(PMComboBoxAngleUnit.CurrentSelection)
+                : ExportPreferences.GetAngleUnit();
 
             //It saves automatically when sending Okay as true;
             PMPage.Close(true);
@@ -208,7 +214,7 @@ namespace SW2RD.Export
                 bool exportSuccess = Exporter.CreateRobotFromTreeView(BaseNode);
                 if (exportSuccess)
                 {
-                    FinishExport(outputFormat, meshFormat, exportMeshes, fastMeshExport, meshQuality);
+                    FinishExport(outputFormat, meshFormat, exportMeshes, fastMeshExport, meshQuality, rotationFormat, angleUnit);
                 }
             }
             finally
@@ -410,7 +416,7 @@ namespace SW2RD.Export
         // failures use MessageBox.Show; the pre-close in-page status panel
         // is unreachable from here.
         private void FinishExport(ExportFormat outputFormat, MeshExportFormat meshFormat,
-            bool exportMeshes, bool fastMeshExport, int meshQuality)
+            bool exportMeshes, bool fastMeshExport, int meshQuality, int rotationFormat, int angleUnit)
         {
             logger.Info("Completing export");
 
@@ -458,12 +464,18 @@ namespace SW2RD.Export
                 ExportPreferences.SetLastExportMeshes(exportMeshes);
                 ExportPreferences.SetFastMeshExport(fastMeshExport);
                 ExportPreferences.SetMeshQuality(meshQuality);
+                ExportPreferences.SetRotationFormat(rotationFormat);
+                ExportPreferences.SetAngleUnit(angleUnit);
 
                 Exporter.UseTessellationMeshExport = fastMeshExport;
                 Exporter.MeshQualityLevel = meshQuality;
+                Exporter.MJCFRotationFormat = (MJCF.MJCFRotationFormat)ExportPreferences.ClampRotationFormat(rotationFormat);
+                Exporter.MJCFAngleUnit = (MJCF.MJCFAngleUnit)ExportPreferences.ClampAngleUnit(angleUnit);
 
                 logger.Info("Saving " + outputFormat + " package to " + dialog.FileName +
-                    " (fast mesh export=" + fastMeshExport + ", mesh quality=" + meshQuality + ")");
+                    " (fast mesh export=" + fastMeshExport + ", mesh quality=" + meshQuality +
+                    ", rotation format=" + (MJCF.MJCFRotationFormat)ExportPreferences.ClampRotationFormat(rotationFormat) +
+                    ", angle unit=" + (MJCF.MJCFAngleUnit)ExportPreferences.ClampAngleUnit(angleUnit) + ")");
                 Exporter.ExportRobot(exportMeshes, meshFormat, outputFormat);
             }
         }
