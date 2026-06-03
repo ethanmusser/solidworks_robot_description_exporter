@@ -476,7 +476,41 @@ namespace SW2RD.Export
                     " (fast mesh export=" + fastMeshExport + ", mesh quality=" + meshQuality +
                     ", rotation format=" + (MJCF.MJCFRotationFormat)ExportPreferences.ClampRotationFormat(rotationFormat) +
                     ", angle unit=" + (MJCF.MJCFAngleUnit)ExportPreferences.ClampAngleUnit(angleUnit) + ")");
-                Exporter.ExportRobot(exportMeshes, meshFormat, outputFormat);
+                bool exportOk = Exporter.ExportRobot(exportMeshes, meshFormat, outputFormat);
+                if (exportOk)
+                {
+                    NotifyExportComplete(dialog.FileName);
+                }
+            }
+        }
+
+        // Non-modal, auto-dismissing SolidWorks bubble tooltip announcing a
+        // completed export. Lives only on the PMPage interactive path (NOT in
+        // ExportHelper.ExportRobotCore), so the SW-attached unit tests that call
+        // ExportRobot directly never trigger it - that is the structural reason
+        // this can't reintroduce the headless-test breakage the old blocking
+        // popup caused. A tooltip failure must never fail the export, so we
+        // swallow + log. Safe to call after PMPage.Close: this is an ISldWorks
+        // call, not a PMPage control, so the "update controls before Close"
+        // invariant does not apply.
+        private void NotifyExportComplete(string outputPath)
+        {
+            try
+            {
+                System.Drawing.Rectangle area = Screen.PrimaryScreen.WorkingArea;
+                int x = area.Right - 40;
+                int y = area.Top + 120;
+                swApp.ShowBubbleTooltipAt2(
+                    x, y,
+                    (int)swArrowPosition.swArrowRightTop,
+                    "Export complete",
+                    outputPath,
+                    (int)swBitMaps.swBitMapNone, "",
+                    "", 0, 0, "", "");
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("Export-complete bubble tooltip failed: " + ex.Message);
             }
         }
 
