@@ -44,10 +44,12 @@ namespace SW2RD.Export
         private const int DefaultOutputFormat = 0; // 0 = URDF, 1 = MJCF
         private const int DefaultMeshFormat = 0;   // 0 = STL, 1 = 3DXML
         private const bool DefaultExportMeshes = true;
-        // Experimental per-part tessellation mesh export. Default OFF so the
-        // proven whole-assembly SaveAs path is the baseline until the
-        // tessellation path is validated against the reference exports.
-        private const bool DefaultFastMeshExport = false;
+        // Per-part tessellation mesh export. Default ON: validated on RAILGHOST
+        // (geometry/orientation/units/frame correct, ~10 s mesh phase vs ~44 s
+        // legacy whole-assembly hide/show restore) with per-body quality giving
+        // uniform, display-independent detail. The legacy whole-assembly SaveAs
+        // path remains available by unchecking "Fast mesh export".
+        private const bool DefaultFastMeshExport = true;
         // Mesh quality for the per-part tessellation path:
         // 0 = Coarse, 1 = Medium, 2 = Fine, 3 = Very fine. Default Fine.
         private const int DefaultMeshQuality = 2;

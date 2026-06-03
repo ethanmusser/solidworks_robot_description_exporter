@@ -171,10 +171,11 @@ namespace SW2RD.Export
             PMCheckFastMeshExport = (PropertyManagerPageCheckbox)PMSetupTab.AddControl2(
                 FastMeshExportCheckID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Checkbox,
-                "Fast mesh export (experimental)", (short)alignment, options,
-                "Export meshes by tessellating each part directly at the STL " +
-                "quality, skipping the slow hide/show of the whole assembly. " +
-                "Much faster on large assemblies. Validate output before relying on it.");
+                "Fast mesh export", (short)alignment, options,
+                "Export meshes by tessellating each part directly at the chosen " +
+                "mesh quality, skipping the slow hide/show of the whole assembly. " +
+                "Much faster on large assemblies. Uncheck to use the legacy " +
+                "whole-assembly STL export.");
             PMCheckFastMeshExport.Checked = ExportPreferences.GetFastMeshExport();
 
             PMComboBoxMeshQuality = (PropertyManagerPageCombobox)PMSetupTab.AddControl2(
