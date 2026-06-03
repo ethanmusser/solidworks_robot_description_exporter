@@ -463,6 +463,15 @@ namespace SW2RD.Export
         // regularly called anyway
         void IPropertyManagerPage2Handler9.OnCheckboxCheck(int Id, bool Checked)
         {
+            if (Id == FastMeshExportCheckID)
+            {
+                // Mesh quality only matters for the tessellation (fast) STL
+                // path, so the dropdown is enabled only when fast export is
+                // checked AND the format is STL. Re-evaluate on every toggle.
+                UpdateMeshQualityEnabled();
+                return;
+            }
+
             if (Id == CheckCollisionUsesVisualID)
             {
                 SetCollisionEditorEnabled(!Checked);
@@ -630,6 +639,9 @@ namespace SW2RD.Export
                 // paths to the same result. Item order matches the AddItems call
                 // in BuildSetupTab: 0 = STL, 1 = 3DXML.
                 SetFastMeshExportEnabled(Item == 0);
+                // Quality depends on BOTH format (STL) and the fast-export
+                // checkbox, so re-evaluate it whenever the format changes too.
+                UpdateMeshQualityEnabled();
                 return;
             }
 
