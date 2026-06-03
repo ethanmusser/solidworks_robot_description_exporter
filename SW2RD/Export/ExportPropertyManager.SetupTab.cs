@@ -192,6 +192,11 @@ namespace SW2RD.Export
             PMComboBoxMeshQuality.CurrentSelection =
                 (short)ExportPreferences.ClampMeshQuality(ExportPreferences.GetMeshQuality());
 
+            // Fast mesh export only produces STL; grey it out unless STL is the
+            // selected mesh format (CurrentSelection 0 = STL, 1 = 3DXML). Kept in
+            // sync at runtime by OnComboboxSelectionChanged(MeshFormatComboID).
+            SetFastMeshExportEnabled(PMComboBoxMeshFormat.CurrentSelection == 0);
+
             PMLabelConfigurationCache = (PropertyManagerPageLabel)PMSetupTab.AddControl2(
                 LabelConfigurationCacheID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Label,
@@ -235,6 +240,14 @@ namespace SW2RD.Export
             {
                 pageControl.Enabled = enabled;
             }
+        }
+
+        // Greys out the "Fast mesh export" checkbox when the selected mesh format
+        // can't use the tessellation path (only STL can). Called at build time
+        // and from OnComboboxSelectionChanged when the format dropdown changes.
+        private void SetFastMeshExportEnabled(bool enabled)
+        {
+            SetControlEnabled(PMCheckFastMeshExport, enabled);
         }
     }
 }

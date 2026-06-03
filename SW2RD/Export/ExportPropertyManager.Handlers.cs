@@ -621,6 +621,18 @@ namespace SW2RD.Export
 
         void IPropertyManagerPage2Handler9.OnComboboxSelectionChanged(int Id, int Item)
         {
+            if (Id == MeshFormatComboID)
+            {
+                // "Fast mesh export" (per-part tessellation) only produces STL.
+                // 3DXML always uses the legacy whole-assembly path, so grey out
+                // the checkbox for 3DXML - that leaves exactly three valid
+                // combinations (STL+fast, STL+legacy, 3DXML+legacy) and no two
+                // paths to the same result. Item order matches the AddItems call
+                // in BuildSetupTab: 0 = STL, 1 = 3DXML.
+                SetFastMeshExportEnabled(Item == 0);
+                return;
+            }
+
             if (Id == ComboInertialSourceID)
             {
                 // Map the dropdown index to the InertialSource enum

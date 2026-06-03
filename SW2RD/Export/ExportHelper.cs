@@ -359,11 +359,17 @@ namespace SW2RD.Export
             // The tessellation mesh path (Part A) reads each component's bodies
             // directly regardless of visibility, so it needs NO whole-assembly
             // hide/show at all - that is the entire point (it eliminates the
-            // graphics purge + reload that dominates the export). Only the
-            // legacy SaveAs path requires the hide-all, so gate the whole
-            // block on !UseTessellationMeshExport.
+            // graphics purge + reload that dominates the export). It ONLY writes
+            // STL, though: 3DXML still goes through the legacy Save3dxml SaveAs,
+            // which exports VISIBLE geometry and therefore REQUIRES the hide-all.
+            // So tessellation (and the hide/show skip) applies only when the
+            // chosen format is STL - if the user checks "Fast mesh export" but
+            // picks 3DXML, we must keep the hide/show or every link's 3DXML would
+            // capture the whole visible assembly.
+            bool useTessellation =
+                UseTessellationMeshExport && meshFormat == MeshExportFormat.STL;
             bool willExportAnyMesh =
-                exportSTL && RobotHasExportableMesh() && !UseTessellationMeshExport;
+                exportSTL && RobotHasExportableMesh() && !useTessellation;
 
             List<string> hiddenComponents = null;
             ModelView activeView = ActiveSWModel.ActiveView as ModelView;
