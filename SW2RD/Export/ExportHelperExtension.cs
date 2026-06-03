@@ -180,6 +180,26 @@ namespace SW2RD.Export
                 ExportErrorWhy = "";
                 URDFRobot = new Robot();
 
+                // Tier B1: the joint-creation traversal below fixes/unfixes
+                // components and re-solves the assembly once per joint. Each
+                // Fix/Unfix/Suppress would otherwise force a viewport redraw,
+                // so suppress graphics updates for the WHOLE pass and do a
+                // single GraphicsRedraw2 in the finally. Tier B2: components we
+                // fix are accumulated in sessionFixedComponents (fixed at most
+                // once across the pass) and unfixed in one bulk round trip by
+                // UnfixSessionFixedComponents, also in the finally. Both run on
+                // every exit path (early returns / exceptions) via try/finally.
+                ModelView jointPassView = ActiveSWModel.ActiveView as ModelView;
+                bool priorJointPassGraphics = true;
+                if (ComputeJointKinematics && jointPassView != null)
+                {
+                    priorJointPassGraphics = jointPassView.EnableGraphicsUpdate;
+                    jointPassView.EnableGraphicsUpdate = false;
+                }
+                sessionFixedComponents = new Dictionary<string, Component2>();
+                try
+                {
+
                 progressBar.Start(0, CommonSwOperations.GetCount(rootNode.Nodes) + 1, "Building links");
                 int count = 0;
 
@@ -277,6 +297,19 @@ namespace SW2RD.Export
 
                 progressBar.End();
                 return true;
+                }
+                finally
+                {
+                    // Restore the user's session: unfix everything WE fixed and
+                    // re-enable + redraw the viewport once. Runs on every exit
+                    // path (success, early return, exception).
+                    UnfixSessionFixedComponents();
+                    if (ComputeJointKinematics && jointPassView != null)
+                    {
+                        jointPassView.EnableGraphicsUpdate = priorJointPassGraphics;
+                        ActiveSWModel.GraphicsRedraw2();
+                    }
+                }
             }
         }
 
@@ -484,8 +517,13 @@ namespace SW2RD.Export
             if (parent != null && ComputeJointKinematics)
             {
                 logger.Info("Creating joint " + node.Link.Name);
-                bool error = CreateJoint(parent, node.Link);
-                if (error)
+                // CreateJoint returns TRUE on success / FALSE on error (it
+                // returns false only from its two ExportErrorWhy guards). The
+                // warning must therefore fire on !success - the old code warned
+                // on the success return, so every healthy export logged
+                // "Creating joint ... failed" for every joint.
+                bool success = CreateJoint(parent, node.Link);
+                if (!success)
                 {
                     logger.Warn(
                         string.Format("Creating joint from parent {0} to child {1} failed", 
@@ -1183,8 +1221,12 @@ namespace SW2RD.Export
             //Create the ref objects
             int degreesOfFreedom;
 
-            // Fix parent components so that only the actual degree of freedom can be detected.
-            List<Component2> fixedComponents = FixComponents(parent);
+            // Fix parent components so that only the actual degree of freedom
+            // can be detected. Tier B2: FixComponents records what it fixed in
+            // sessionFixedComponents and skips ancestors already fixed earlier
+            // this pass; the bulk unfix happens once in CreateRobotFromTreeView's
+            // finally (UnfixSessionFixedComponents), not per joint here.
+            FixComponents(parent);
 
             // Surpress Limit Mates to properly find degrees of freedom. They don't work with the API call
             List<Mate2> limitMates = SuppressLimitMates(child.SWMainComponent);
@@ -1274,7 +1316,6 @@ namespace SW2RD.Export
                 }
             }
 
-            UnFixComponents(fixedComponents);
             return success;
         }
 
@@ -2380,28 +2421,75 @@ namespace SW2RD.Export
             return components;
         }
 
+        // Tier B2: components WE fixed during the current CreateRobotFromTreeView
+        // joint-creation pass, keyed by Component2.Name2 (stable, unique path
+        // name - unlike GetID which is not unique here) so a shared ancestor
+        // chain is fixed at most ONCE per pass. Unfixed in bulk by
+        // UnfixSessionFixedComponents from the CreateRobotFromTreeView finally.
+        // Components the user had pre-fixed are deliberately NOT recorded here,
+        // so we never unfix them and the user's pre-export state is preserved.
+        private Dictionary<string, Component2> sessionFixedComponents;
+
         //Used to fix components to estimate the degree of freedom.
-        private List<Component2> FixComponents(Link parent)
+        //
+        // Tier B2 correctness: a node's own degree of freedom is always
+        // measured (as a child, in EstimateGlobalJointFromComponents) BEFORE it
+        // is ever fixed (as an ancestor of its own children) because CreateLink
+        // creates a node's joint before recursing into that node's children.
+        // So fixing an ancestor and leaving it fixed for the rest of the pass
+        // cannot corrupt a later DOF measurement - every later measurement is
+        // of a descendant, for which that ancestor MUST be fixed anyway.
+        private void FixComponents(Link parent)
         {
             logger.Info("Fixing components for " + parent.Name);
             List<Component2> componentsToFix = GetParentAncestorComponents(parent);
-            List<Component2> componentsToUnfix = new List<Component2>();
+            List<Component2> newlyFixed = new List<Component2>();
             foreach (Component2 comp in componentsToFix)
             {
-                logger.Info("Fixing " + comp.GetID());
-                if (!comp.IsFixed())
+                if (comp == null)
                 {
-                    componentsToUnfix.Add(comp);
+                    continue;
                 }
-                else
+                string key = comp.Name2;
+                if (key != null && sessionFixedComponents != null &&
+                    sessionFixedComponents.ContainsKey(key))
                 {
-                    logger.Info("Component " + comp.GetID() + " is already fixed");
+                    // Already fixed earlier this pass by us - leave it fixed.
+                    continue;
+                }
+                if (comp.IsFixed())
+                {
+                    // Pre-fixed by the user; never touch it (don't fix, don't
+                    // record, don't unfix later).
+                    continue;
+                }
+                newlyFixed.Add(comp);
+                if (key != null && sessionFixedComponents != null)
+                {
+                    sessionFixedComponents[key] = comp;
                 }
             }
-            CommonSwOperations.SelectComponents(ActiveSWModel, componentsToFix, true);
-            AssemblyDoc assy = (AssemblyDoc)ActiveSWModel;
-            assy.FixComponent();
-            return componentsToUnfix;
+            if (newlyFixed.Count > 0)
+            {
+                CommonSwOperations.SelectComponents(ActiveSWModel, newlyFixed, true);
+                AssemblyDoc assy = (AssemblyDoc)ActiveSWModel;
+                assy.FixComponent();
+            }
+        }
+
+        // Unfix every component WE fixed during the joint-creation pass in a
+        // single bulk select + UnfixComponent round trip, then clear the
+        // session set. No-op when nothing was fixed.
+        private void UnfixSessionFixedComponents()
+        {
+            if (sessionFixedComponents == null || sessionFixedComponents.Count == 0)
+            {
+                sessionFixedComponents = null;
+                return;
+            }
+            List<Component2> toUnfix = new List<Component2>(sessionFixedComponents.Values);
+            sessionFixedComponents = null;
+            UnFixComponents(toUnfix);
         }
 
         #endregion Joint methods
