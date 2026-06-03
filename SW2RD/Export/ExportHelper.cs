@@ -216,13 +216,16 @@ namespace SW2RD.Export
 
         // Beginning method for exporting the full package. Defaults preserve the
         // original URDF behavior so existing call sites continue to work unchanged.
-        public void ExportRobot(bool exportSTL = true,
+        // Returns true when the export wrote its output successfully; false when
+        // it bailed after surfacing its own failure dialog. Callers that don't
+        // care about success (e.g. the SW-attached unit tests) simply ignore it.
+        public bool ExportRobot(bool exportSTL = true,
             MeshExportFormat meshFormat = MeshExportFormat.STL,
             ExportFormat outputFormat = ExportFormat.URDF)
         {
             using (BeginFeatureLookupCache())
             {
-                ExportRobotCore(exportSTL, meshFormat, outputFormat);
+                return ExportRobotCore(exportSTL, meshFormat, outputFormat);
             }
         }
 
@@ -294,7 +297,7 @@ namespace SW2RD.Export
             return false;
         }
 
-        private void ExportRobotCore(bool exportSTL,
+        private bool ExportRobotCore(bool exportSTL,
             MeshExportFormat meshFormat,
             ExportFormat outputFormat)
         {
@@ -471,7 +474,7 @@ namespace SW2RD.Export
             {
                 MessageBox.Show("Exporting the model failed unexpectedly. Email your maintainer " +
                     "with the log file found at " + Logger.GetFileName());
-                return;
+                return false;
             }
 
             if (outputFormat == ExportFormat.MJCF)
@@ -515,6 +518,7 @@ namespace SW2RD.Export
             logger.Info("Resetting STL preferences");
             ResetUserPreferences();
             progressBar.End();
+            return true;
         }
 
         public void ExportRobot(KinematicTree tree,
