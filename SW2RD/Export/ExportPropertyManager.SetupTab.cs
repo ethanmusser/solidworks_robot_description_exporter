@@ -168,6 +168,29 @@ namespace SW2RD.Export
                 "rewrite only the description XML using existing meshes.");
             PMCheckExportMeshes.Checked = ExportPreferences.GetLastExportMeshes();
 
+            PMCheckFastMeshExport = (PropertyManagerPageCheckbox)PMSetupTab.AddControl2(
+                FastMeshExportCheckID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Checkbox,
+                "Fast mesh export (experimental)", (short)alignment, options,
+                "Export meshes by tessellating each part directly at the STL " +
+                "quality, skipping the slow hide/show of the whole assembly. " +
+                "Much faster on large assemblies. Validate output before relying on it.");
+            PMCheckFastMeshExport.Checked = ExportPreferences.GetFastMeshExport();
+
+            PMComboBoxMeshQuality = (PropertyManagerPageCombobox)PMSetupTab.AddControl2(
+                MeshQualityComboID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Combobox,
+                "Mesh quality", (short)alignment, options,
+                "Quality of the fast (tessellation) mesh export. The chord tolerance " +
+                "is set per part relative to that part's own size, so every part - " +
+                "and every part inside a sub-assembly - gets uniform, display-" +
+                "independent detail. Finer = smoother curves and larger files.");
+            PMComboBoxMeshQuality.Style =
+                (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
+            PMComboBoxMeshQuality.AddItems(new string[] { "Coarse", "Medium", "Fine", "Very fine" });
+            PMComboBoxMeshQuality.CurrentSelection =
+                (short)ExportPreferences.ClampMeshQuality(ExportPreferences.GetMeshQuality());
+
             PMLabelConfigurationCache = (PropertyManagerPageLabel)PMSetupTab.AddControl2(
                 LabelConfigurationCacheID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Label,

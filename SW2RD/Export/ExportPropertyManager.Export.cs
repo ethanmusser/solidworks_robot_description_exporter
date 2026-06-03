@@ -93,6 +93,26 @@ namespace SW2RD.Export
 
             UpdateValidationStatus("Status: Validation passed. Building robot...");
 
+            // Snapshot every PMPage control we still need WHILE THE PAGE IS OPEN.
+            // After PMPage.Close(true) the controls return their initialization
+            // value, not the user's runtime toggle - the output-format combobox
+            // above reads correctly only because it is read pre-close. Mesh
+            // format / export-meshes / fast-mesh-export were previously read
+            // inside FinishExport (post-close), so any value the user changed
+            // away from its default (the experimental "Fast mesh export" box is
+            // the first such control) silently reverted to the default. Capture
+            // here and thread the values through to FinishExport.
+            MeshExportFormat meshFormat = MeshExportFormat.STL;
+            if (PMComboBoxMeshFormat != null && PMComboBoxMeshFormat.CurrentSelection == 1)
+            {
+                meshFormat = MeshExportFormat.THREEDXML;
+            }
+            bool exportMeshes = PMCheckExportMeshes == null || PMCheckExportMeshes.Checked;
+            bool fastMeshExport = PMCheckFastMeshExport != null && PMCheckFastMeshExport.Checked;
+            int meshQuality = PMComboBoxMeshQuality != null
+                ? ExportPreferences.ClampMeshQuality(PMComboBoxMeshQuality.CurrentSelection)
+                : ExportPreferences.GetMeshQuality();
+
             //It saves automatically when sending Okay as true;
             PMPage.Close(true);
             AssemblyDoc assy = (AssemblyDoc)ActiveSWModel;
@@ -188,7 +208,7 @@ namespace SW2RD.Export
                 bool exportSuccess = Exporter.CreateRobotFromTreeView(BaseNode);
                 if (exportSuccess)
                 {
-                    FinishExport(outputFormat);
+                    FinishExport(outputFormat, meshFormat, exportMeshes, fastMeshExport, meshQuality);
                 }
             }
             finally
@@ -389,7 +409,8 @@ namespace SW2RD.Export
         // PMPage is already closed by the time this runs, so user-visible
         // failures use MessageBox.Show; the pre-close in-page status panel
         // is unreachable from here.
-        private void FinishExport(ExportFormat outputFormat)
+        private void FinishExport(ExportFormat outputFormat, MeshExportFormat meshFormat,
+            bool exportMeshes, bool fastMeshExport, int meshQuality)
         {
             logger.Info("Completing export");
 
@@ -425,25 +446,24 @@ namespace SW2RD.Export
                 Exporter.SavePath = Path.GetDirectoryName(dialog.FileName);
                 Exporter.PackageName = Path.GetFileName(dialog.FileName);
 
-                MeshExportFormat meshFormat = MeshExportFormat.STL;
-                if (PMComboBoxMeshFormat != null && PMComboBoxMeshFormat.CurrentSelection == 1)
-                {
-                    meshFormat = MeshExportFormat.THREEDXML;
-                }
-
-                bool exportMeshes = PMCheckExportMeshes == null || PMCheckExportMeshes.Checked;
+                // meshFormat / exportMeshes / fastMeshExport / meshQuality were
+                // captured in ExportButtonPress BEFORE PMPage.Close(true); reading
+                // the controls here (post-close) would return their init values,
+                // not the user's runtime choices.
 
                 // Persist the per-user defaults so the next export PMPage
-                // pre-populates with these same choices. The PMPage has
-                // already closed by this point so we cannot read the
-                // controls after this; capturing it before ExportRobot
-                // also avoids losing the persistence on a mid-export
-                // exception.
+                // pre-populates with these same choices.
                 ExportPreferences.SetLastOutputFormat((int)outputFormat);
                 ExportPreferences.SetLastMeshFormat((int)meshFormat);
                 ExportPreferences.SetLastExportMeshes(exportMeshes);
+                ExportPreferences.SetFastMeshExport(fastMeshExport);
+                ExportPreferences.SetMeshQuality(meshQuality);
 
-                logger.Info("Saving " + outputFormat + " package to " + dialog.FileName);
+                Exporter.UseTessellationMeshExport = fastMeshExport;
+                Exporter.MeshQualityLevel = meshQuality;
+
+                logger.Info("Saving " + outputFormat + " package to " + dialog.FileName +
+                    " (fast mesh export=" + fastMeshExport + ", mesh quality=" + meshQuality + ")");
                 Exporter.ExportRobot(exportMeshes, meshFormat, outputFormat);
             }
         }

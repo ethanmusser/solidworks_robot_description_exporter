@@ -321,7 +321,7 @@ namespace SW2RD.Export
         // subsequent link's SaveAs. Leaf-part groups are unaffected -
         // GetChildren returns nothing for a part, so the expansion is a no-op
         // and the result is just the original list.
-        private static List<Component2> ExpandWithChildren(List<Component2> components)
+        public static List<Component2> ExpandWithChildren(List<Component2> components)
         {
             List<Component2> result = new List<Component2>();
             if (components == null)

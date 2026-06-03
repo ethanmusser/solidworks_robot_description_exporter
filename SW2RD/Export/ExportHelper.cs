@@ -137,6 +137,21 @@ namespace SW2RD.Export
         private bool ComputeJointKinematics;
         private bool ComputeJointLimits;
 
+        // Experimental per-part tessellation mesh export (Part A). When true,
+        // SaveSTL reads body tessellation directly at a uniform, display-
+        // independent tolerance and transforms it into the link frame, instead
+        // of the whole-assembly SaveAs that requires hiding every non-member
+        // component. Set from ExportPreferences.GetFastMeshExport() by the PMP
+        // before ExportRobot. Default false keeps the proven SaveAs path.
+        public bool UseTessellationMeshExport { get; set; }
+
+        // Mesh quality level for the tessellation path: 0=Coarse, 1=Medium,
+        // 2=Fine, 3=Very fine. Set from ExportPreferences.GetMeshQuality() by
+        // the PMP before ExportRobot. Default Fine (2). Maps to a per-body
+        // relative chord tolerance (fraction of the body's own bbox diagonal)
+        // plus an angle tolerance - see MeshQualityToTolerances.
+        public int MeshQualityLevel { get; set; } = 2;
+
         #endregion class variables
 
         public ExportHelper(SldWorks iSldWorksApp)
@@ -341,7 +356,14 @@ namespace SW2RD.Export
             // geometry, so the hide-all becomes unnecessary) and restore them
             // afterward - deferred as higher-risk than the current approach.
             AssemblyDoc assyDoc = (AssemblyDoc)ActiveSWModel;
-            bool willExportAnyMesh = exportSTL && RobotHasExportableMesh();
+            // The tessellation mesh path (Part A) reads each component's bodies
+            // directly regardless of visibility, so it needs NO whole-assembly
+            // hide/show at all - that is the entire point (it eliminates the
+            // graphics purge + reload that dominates the export). Only the
+            // legacy SaveAs path requires the hide-all, so gate the whole
+            // block on !UseTessellationMeshExport.
+            bool willExportAnyMesh =
+                exportSTL && RobotHasExportableMesh() && !UseTessellationMeshExport;
 
             List<string> hiddenComponents = null;
             ModelView activeView = ActiveSWModel.ActiveView as ModelView;
@@ -998,6 +1020,14 @@ namespace SW2RD.Export
 
         private bool SaveSTL(Link link, string windowsMeshFilename, List<Component2> components)
         {
+            // Part A: per-part tessellation path. Reads body geometry directly
+            // at a uniform, display-independent tolerance and transforms it into
+            // the link frame - no whole-assembly hide/show, no SaveAs.
+            if (UseTessellationMeshExport)
+            {
+                return SaveSTLViaTessellation(link, windowsMeshFilename, components);
+            }
+
             int errors = 0;
             int warnings = 0;
 
@@ -1060,6 +1090,298 @@ namespace SW2RD.Export
                     DeleteTempExportFrame(exportCoordSysName);
                 }
             }
+        }
+
+        // === Part A: per-part tessellation mesh export ===
+        //
+        // Writes the link's mesh by reading each member component's solid-body
+        // tessellation directly (at a uniform, display-INDEPENDENT tolerance)
+        // and transforming the vertices into the link's coordinate frame, then
+        // emitting one binary STL. This avoids the whole-assembly SaveAs (which
+        // exports only VISIBLE geometry and therefore forces hiding every
+        // non-member component, purging + reloading their graphics - the
+        // dominant export cost). Equivalent output frame to the SaveAs path:
+        // SaveAs uses swSaveAsCoordinateSystem = the link's joint coord-sys, and
+        // here we map global -> that same coord-sys via its MathTransform.
+        //
+        // Quality: ITessellation.SurfacePlaneTolerance / SurfacePlaneAngleTolerance
+        // are driven from SW's STL deviation/angle preferences (the same values
+        // the STL quality slider controls), so the mesh matches an STL export at
+        // the chosen Fine/Coarse quality and does NOT depend on the on-screen
+        // display tessellation.
+        private bool SaveSTLViaTessellation(Link link, string windowsMeshFilename, List<Component2> components)
+        {
+            string coordsysName = link.Joint != null ? link.Joint.CoordinateSystemName : null;
+            logger.Info(link.Name + ": Exporting STL via tessellation, frame=" + coordsysName);
+
+            MathTransform linkToGlobal = string.IsNullOrEmpty(coordsysName)
+                ? null : GetCoordinateSystemTransform(coordsysName);
+            Matrix<double> globalToLink;
+            if (linkToGlobal == null)
+            {
+                logger.Warn(link.Name + ": could not resolve link coordinate system '" + coordsysName +
+                    "'; tessellation will be written in assembly-global coordinates.");
+                globalToLink = Matrix<double>.Build.DenseIdentity(4);
+            }
+            else
+            {
+                globalToLink = MathOps.GetTransformation(linkToGlobal).Inverse();
+            }
+
+            // Quality is resolved PER BODY (in the loop below) relative to that
+            // body's own bounding box, NOT from SW's swSTLDeviation pref. The
+            // pref is computed from the WHOLE-ASSEMBLY box and applied uniformly,
+            // so it leaves small parts badly faceted (the user-reported "poor
+            // quality"). Selecting the chord tolerance from each body's own size
+            // gives uniform PERCEIVED detail across every part - including parts
+            // nested inside a sub-assembly group, which ExpandWithChildren has
+            // already decomposed into their individual leaf bodies. The quality
+            // level only picks the relative fraction + angle tolerance here.
+            MeshQualityToTolerances(MeshQualityLevel, out double qualityFraction, out double angle);
+            logger.Info(link.Name + ": tessellation quality level=" + MeshQualityLevel +
+                " (bbox fraction=" + qualityFraction + ", angle=" + angle + " rad).");
+
+            // Expand sub-assembly group members to their leaf parts (mirrors the
+            // SaveAs path's ShowComponents expansion) so a group that names a
+            // sub-assembly exports the union of its descendant parts as one mesh.
+            List<Component2> expanded = CommonSwOperations.ExpandWithChildren(components);
+            List<double[]> triangles = new List<double[]>();
+            foreach (Component2 comp in expanded)
+            {
+                if (comp == null)
+                {
+                    continue;
+                }
+                EnsureComponentResolvedForTessellation(comp);
+                object bodiesObj = comp.GetBodies3((int)swBodyType_e.swSolidBody, out _);
+                if (!(bodiesObj is object[] bodies) || bodies.Length == 0)
+                {
+                    continue;
+                }
+
+                // Leaf-part-local -> assembly-global, then global -> link frame.
+                Matrix<double> compToGlobal = MathOps.GetTransformation(comp.GetTotalTransform(true));
+                Matrix<double> compToLink = globalToLink * compToGlobal;
+
+                foreach (object bodyObj in bodies)
+                {
+                    if (bodyObj is Body2 body)
+                    {
+                        double deviation = ComputeBodyChordTolerance(body, qualityFraction);
+                        AppendBodyTessellation(body, compToLink, deviation, angle, triangles);
+                    }
+                }
+            }
+
+            WriteBinaryStl(windowsMeshFilename, triangles);
+            logger.Info(link.Name + ": tessellation wrote " + triangles.Count +
+                " triangle(s) to " + windowsMeshFilename);
+            if (triangles.Count == 0)
+            {
+                logger.Warn(link.Name + ": tessellation produced ZERO triangles - the resulting mesh " +
+                    "is empty and will not load in MuJoCo. Check that the link's components are resolved " +
+                    "(not lightweight/suppressed) and contain solid bodies.");
+                return false;
+            }
+            return true;
+        }
+
+        // Tessellate one solid body at the given absolute tolerances and append
+        // its triangles (transformed into the link frame) to `triangles`.
+        private void AppendBodyTessellation(Body2 body, Matrix<double> compToLink,
+            double deviation, double angle, List<double[]> triangles)
+        {
+            Tessellation tess = (Tessellation)body.GetTessellation(null);
+            if (tess == null)
+            {
+                return;
+            }
+            tess.NeedFaceFacetMap = false;
+            tess.NeedVertexNormal = false;
+            tess.NeedVertexParams = false;
+            tess.NeedEdgeFinMap = false;
+            tess.ImprovedQuality = true;
+            tess.SurfacePlaneTolerance = deviation;
+            tess.SurfacePlaneAngleTolerance = angle;
+            if (!tess.Tessellate())
+            {
+                logger.Warn("Tessellate() returned false for a body; skipping it.");
+                return;
+            }
+
+            int facetCount = tess.GetFacetCount();
+            for (int f = 0; f < facetCount; f++)
+            {
+                // Each facet has 3 fins (half-edges) forming a closed loop:
+                // fin0 = (a,b), fin1 = (b,c) or (c,b). Recover the 3 vertices.
+                if (!(tess.GetFacetFins(f) is int[] fins) || fins.Length < 3)
+                {
+                    continue;
+                }
+                if (!(tess.GetFinVertices(fins[0]) is int[] e0) || e0.Length < 2 ||
+                    !(tess.GetFinVertices(fins[1]) is int[] e1) || e1.Length < 2)
+                {
+                    continue;
+                }
+                int a = e0[0];
+                int b = e0[1];
+                int c = (e1[0] != a && e1[0] != b) ? e1[0] : e1[1];
+                if (!(tess.GetVertexPoint(a) is double[] pa) ||
+                    !(tess.GetVertexPoint(b) is double[] pb) ||
+                    !(tess.GetVertexPoint(c) is double[] pc) ||
+                    pa.Length < 3 || pb.Length < 3 || pc.Length < 3)
+                {
+                    continue;
+                }
+                double[] la = TransformPoint(compToLink, pa);
+                double[] lb = TransformPoint(compToLink, pb);
+                double[] lc = TransformPoint(compToLink, pc);
+                triangles.Add(new double[]
+                {
+                    la[0], la[1], la[2],
+                    lb[0], lb[1], lb[2],
+                    lc[0], lc[1], lc[2],
+                });
+            }
+        }
+
+        // Resolves a lightweight leaf so its solid bodies can be read for
+        // tessellation. swExtRefOpenReadOnly is forced true around the export
+        // (ExportPropertyManager), so this does NOT check out or modify the part
+        // file in PDM. Left resolved for the rest of the session (memory only).
+        private void EnsureComponentResolvedForTessellation(Component2 comp)
+        {
+            try
+            {
+                int state = comp.GetSuppression2();
+                if (state == (int)swComponentSuppressionState_e.swComponentLightweight ||
+                    state == (int)swComponentSuppressionState_e.swComponentFullyLightweight)
+                {
+                    logger.Info("Resolving lightweight leaf '" + comp.Name2 + "' for tessellation.");
+                    comp.SetSuppression2((int)swComponentSuppressionState_e.swComponentFullyResolved);
+                }
+            }
+            catch (Exception e)
+            {
+                logger.Warn("Could not check/resolve component suppression before tessellation", e);
+            }
+        }
+
+        // Absolute clamps on the per-body chord tolerance (meters). The lower
+        // bound stops a tiny body from generating a runaway triangle count; the
+        // upper bound stops a very large body from coming out visibly faceted
+        // even at Coarse.
+        private const double MinBodyChordTolerance = 1.0e-5;  // 0.01 mm
+        private const double MaxBodyChordTolerance = 5.0e-3;  // 5 mm
+
+        // Maps the mesh-quality level (0=Coarse..3=Very fine) to a relative
+        // chord-tolerance fraction (of each body's bbox diagonal) and an angle
+        // tolerance (radians). Finer levels -> smaller fraction + tighter angle.
+        private static void MeshQualityToTolerances(int level, out double fraction, out double angleRad)
+        {
+            switch (level)
+            {
+                case 0: // Coarse
+                    fraction = 0.010;
+                    angleRad = 30.0 * Math.PI / 180.0;
+                    break;
+                case 1: // Medium
+                    fraction = 0.005;
+                    angleRad = 20.0 * Math.PI / 180.0;
+                    break;
+                case 3: // Very fine
+                    fraction = 0.001;
+                    angleRad = 8.0 * Math.PI / 180.0;
+                    break;
+                case 2: // Fine (default)
+                default:
+                    fraction = 0.002;
+                    angleRad = 12.0 * Math.PI / 180.0;
+                    break;
+            }
+        }
+
+        // Per-body chord (surface-plane) tolerance in meters: the body's own
+        // bounding-box diagonal times the quality fraction, clamped. Using the
+        // body's OWN size keeps perceived detail uniform regardless of how big
+        // the part is or where it sits in the assembly. Falls back to the Fine-
+        // level absolute clamp midpoint if the body box can't be read.
+        private double ComputeBodyChordTolerance(Body2 body, double fraction)
+        {
+            double diagonal = 0.0;
+            try
+            {
+                if (body.GetBodyBox() is double[] box && box.Length >= 6)
+                {
+                    double dx = box[3] - box[0];
+                    double dy = box[4] - box[1];
+                    double dz = box[5] - box[2];
+                    diagonal = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                }
+            }
+            catch (Exception e)
+            {
+                logger.Warn("GetBodyBox failed; using minimum chord tolerance for this body", e);
+            }
+            if (!(diagonal > 0.0))
+            {
+                return MinBodyChordTolerance;
+            }
+            return MathOps.Envelope(diagonal * fraction, MinBodyChordTolerance, MaxBodyChordTolerance);
+        }
+
+        // Transforms a 3D point by a 4x4 homogeneous matrix (column-vector
+        // convention matching MathOps.GetTransformation: p' = M * p).
+        private static double[] TransformPoint(Matrix<double> m, double[] p)
+        {
+            double x = p[0], y = p[1], z = p[2];
+            return new double[]
+            {
+                m[0, 0] * x + m[0, 1] * y + m[0, 2] * z + m[0, 3],
+                m[1, 0] * x + m[1, 1] * y + m[1, 2] * z + m[1, 3],
+                m[2, 0] * x + m[2, 1] * y + m[2, 2] * z + m[2, 3],
+            };
+        }
+
+        // Writes a binary STL (zeroed 80-byte header - so CorrectSTLMesh is not
+        // needed - little-endian uint count, then 50 bytes per triangle).
+        // Vertices are in meters (SW API geometry is always SI), matching the
+        // SaveAs path's swExportStlUnits = meters.
+        private static void WriteBinaryStl(string filename, List<double[]> triangles)
+        {
+            using (FileStream fs = new FileStream(filename, FileMode.Create, FileAccess.Write))
+            using (BinaryWriter bw = new BinaryWriter(fs))
+            {
+                bw.Write(new byte[80]);
+                bw.Write((uint)triangles.Count);
+                foreach (double[] t in triangles)
+                {
+                    double[] n = ComputeTriangleNormal(t);
+                    bw.Write((float)n[0]); bw.Write((float)n[1]); bw.Write((float)n[2]);
+                    for (int i = 0; i < 9; i++)
+                    {
+                        bw.Write((float)t[i]);
+                    }
+                    bw.Write((ushort)0);
+                }
+            }
+        }
+
+        // Unit facet normal from triangle winding (v1-v0) x (v2-v0). Zero vector
+        // for degenerate triangles; STL consumers recompute normals regardless.
+        private static double[] ComputeTriangleNormal(double[] t)
+        {
+            double ux = t[3] - t[0], uy = t[4] - t[1], uz = t[5] - t[2];
+            double vx = t[6] - t[0], vy = t[7] - t[1], vz = t[8] - t[2];
+            double nx = uy * vz - uz * vy;
+            double ny = uz * vx - ux * vz;
+            double nz = ux * vy - uy * vx;
+            double len = Math.Sqrt(nx * nx + ny * ny + nz * nz);
+            if (len < 1e-15)
+            {
+                return new double[] { 0.0, 0.0, 0.0 };
+            }
+            return new double[] { nx / len, ny / len, nz / len };
         }
 
         public void ExportLink(bool zIsUp)
