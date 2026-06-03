@@ -176,7 +176,7 @@ namespace SW2RD.URDF
                 EnsureVisualGroupsInitialized();
                 if (VisualGroups.Count == 0)
                 {
-                    VisualGroups.Add(new MeshGroup(MeshGroup.DefaultVisualName(Name))
+                    VisualGroups.Add(new MeshGroup(MeshGroup.DefaultVisualName())
                     {
                         Components = new List<Component2>(incoming),
                     });
@@ -233,7 +233,7 @@ namespace SW2RD.URDF
                 }
                 if (CollisionGroups.Count == 0)
                 {
-                    CollisionGroups.Add(new MeshGroup(MeshGroup.DefaultCollisionName(Name))
+                    CollisionGroups.Add(new MeshGroup(MeshGroup.DefaultCollisionName())
                     {
                         Components = new List<Component2>(incoming),
                     });
@@ -368,7 +368,7 @@ namespace SW2RD.URDF
                 && SWComponentPIDs != null
                 && SWComponentPIDs.Count > 0)
             {
-                VisualGroups.Add(new MeshGroup(MeshGroup.DefaultVisualName(Name))
+                VisualGroups.Add(new MeshGroup(MeshGroup.DefaultVisualName())
                 {
                     ComponentPIDs = new List<byte[]>(SWComponentPIDs),
                     Components = new List<Component2>(),
@@ -383,7 +383,7 @@ namespace SW2RD.URDF
                 && CollisionComponentPIDs != null
                 && CollisionComponentPIDs.Count > 0)
             {
-                CollisionGroups.Add(new MeshGroup(MeshGroup.DefaultCollisionName(Name))
+                CollisionGroups.Add(new MeshGroup(MeshGroup.DefaultCollisionName())
                 {
                     ComponentPIDs = new List<byte[]>(CollisionComponentPIDs),
                     Components = new List<Component2>(),

@@ -221,6 +221,15 @@ namespace SW2RD.Export
         // SolidWorks UI thread, so a plain bool is safe here.
         private bool suppressGroupListboxRefresh;
 
+        // Guard against re-entrancy when SyncVisualGroupNameTextbox /
+        // SyncCollisionGroupNameTextbox programmatically write the active
+        // group's name into PMTextBox*GroupName. That write fires
+        // OnTextboxChanged, which would otherwise re-enter the rename
+        // handler and write the (just-loaded) name straight back into the
+        // group. The flag is set true around those programmatic loads, so
+        // the rename handler only fires for real user keystrokes.
+        private bool suppressGroupNameTextboxEvents;
+
         // ID of the tab that is currently active in the PMP. Drives the
         // "viewer highlight follows the active tab" behavior: when this
         // is e.g. VisualTabID, only the Visual SelectionBox's mark is

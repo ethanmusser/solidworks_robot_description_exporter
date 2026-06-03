@@ -513,7 +513,7 @@ namespace SW2RD.Test
         {
             // A link with two visual groups should produce two <mesh> entries
             // in <asset> and two <geom class="visual"> children of the body.
-            // Geom names disambiguate by index ("<link>_visual_1", _2, ...).
+            // Each geom is named after its mesh asset ("<link>_<group>").
             Link baseLink = new Link(null) { Name = "base_link" };
             Link child = new Link(baseLink) { Name = "multi_visual" };
             child.Joint.Name = "j1";
@@ -548,11 +548,11 @@ namespace SW2RD.Test
             Body childBody = model.RootBody.Children[0];
             Assert.Equal(2, childBody.Geoms.Count);
             Assert.All(childBody.Geoms, g => Assert.Equal(GeomRole.Visual, g.Role));
-            // Geom names follow the role-disambiguated pattern when there are
-            // multiple visual groups so they remain unique in MuJoCo.
+            // Geom names match their mesh asset names so the <geom> reads the
+            // way the user named the group.
             string[] geomNames = new string[] { childBody.Geoms[0].Name, childBody.Geoms[1].Name };
-            Assert.Contains("multi_visual_visual_1", geomNames);
-            Assert.Contains("multi_visual_visual_2", geomNames);
+            Assert.Contains("multi_visual_outer", geomNames);
+            Assert.Contains("multi_visual_inner", geomNames);
         }
 
         [Fact]
@@ -965,11 +965,14 @@ namespace SW2RD.Test
             link.MigrateLegacyComponents();
 
             Assert.Single(link.VisualGroups);
-            Assert.Equal("legacy_link_visual", link.VisualGroups[0].Name);
+            // Default group names are link-INDEPENDENT ("visual"/"collision");
+            // the export pipeline prepends the link name when building the
+            // mesh / geom name, so embedding it here too would double it.
+            Assert.Equal("visual", link.VisualGroups[0].Name);
             Assert.Equal(2, link.VisualGroups[0].ComponentPIDs.Count);
 
             Assert.Single(link.CollisionGroups);
-            Assert.Equal("legacy_link_collision", link.CollisionGroups[0].Name);
+            Assert.Equal("collision", link.CollisionGroups[0].Name);
             Assert.Single(link.CollisionGroups[0].ComponentPIDs);
 
             // Idempotent: a second call should not duplicate the migration.

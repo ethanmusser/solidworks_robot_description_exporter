@@ -51,16 +51,18 @@ namespace SW2RD.Export
             // group before we create a new one.
             CommitActiveVisualGroupSelection(node);
 
-            string requestedName = (PMTextBoxVisualGroupName.Text ?? "").Trim();
-            string newName = !string.IsNullOrEmpty(requestedName)
-                ? requestedName
-                : NextDefaultGroupName(node.Link.VisualGroups, MeshGroup.DefaultVisualName(node.Link.Name));
+            // The group-name textbox now reflects / renames the active group
+            // in place, so a new group always gets an auto default name; the
+            // user renames it afterward via the textbox (which now shows this
+            // default, selected and ready to edit).
+            string newName = NextDefaultGroupName(
+                node.Link.VisualGroups, MeshGroup.DefaultVisualName());
             node.Link.VisualGroups.Add(new MeshGroup(newName));
-            PMTextBoxVisualGroupName.Text = "";
 
             activeVisualGroupIndex = node.Link.VisualGroups.Count - 1;
             RefreshVisualGroupsListbox(node);
             LoadActiveVisualGroupIntoSelectionBox(node);
+            SyncVisualGroupNameTextbox(node);
         }
 
         private void RemoveSelectedVisualGroupFromForm()
@@ -91,6 +93,7 @@ namespace SW2RD.Export
             }
             RefreshVisualGroupsListbox(node);
             LoadActiveVisualGroupIntoSelectionBox(node);
+            SyncVisualGroupNameTextbox(node);
         }
 
         private void AddCollisionGroupFromForm()
@@ -104,16 +107,17 @@ namespace SW2RD.Export
 
             CommitActiveCollisionGroupSelection(node);
 
-            string requestedName = (PMTextBoxCollisionGroupName.Text ?? "").Trim();
-            string newName = !string.IsNullOrEmpty(requestedName)
-                ? requestedName
-                : NextDefaultGroupName(node.Link.CollisionGroups, MeshGroup.DefaultCollisionName(node.Link.Name));
+            // See AddVisualGroupFromForm: the textbox renames the active group
+            // in place, so new groups get an auto default name and the textbox
+            // is populated with it for immediate rename.
+            string newName = NextDefaultGroupName(
+                node.Link.CollisionGroups, MeshGroup.DefaultCollisionName());
             node.Link.CollisionGroups.Add(new MeshGroup(newName));
-            PMTextBoxCollisionGroupName.Text = "";
 
             activeCollisionGroupIndex = node.Link.CollisionGroups.Count - 1;
             RefreshCollisionGroupsListbox(node);
             LoadActiveCollisionGroupIntoSelectionBox(node);
+            SyncCollisionGroupNameTextbox(node);
         }
 
         private void RemoveSelectedCollisionGroupFromForm()
@@ -144,6 +148,7 @@ namespace SW2RD.Export
             }
             RefreshCollisionGroupsListbox(node);
             LoadActiveCollisionGroupIntoSelectionBox(node);
+            SyncCollisionGroupNameTextbox(node);
         }
 
         // Commits the visual SelectionBox's current contents into the active
@@ -621,6 +626,61 @@ namespace SW2RD.Export
             if (activeCollisionGroupIndex >= 0 && activeCollisionGroupIndex < node.Link.CollisionGroups.Count)
             {
                 PMListBoxCollisionGroups.CurrentSelection = (short)activeCollisionGroupIndex;
+            }
+        }
+
+        // Loads the active visual group's name into the group-name textbox
+        // so the user can rename it in place. Mirrors LoadActiveSiteIntoForm's
+        // name fill. Wrapped in suppressGroupNameTextboxEvents so the
+        // programmatic write doesn't re-enter the rename handler and bounce
+        // the just-loaded name straight back into the group.
+        private void SyncVisualGroupNameTextbox(LinkNode node)
+        {
+            if (PMTextBoxVisualGroupName == null)
+            {
+                return;
+            }
+            bool prior = suppressGroupNameTextboxEvents;
+            suppressGroupNameTextboxEvents = true;
+            try
+            {
+                string name = "";
+                if (node != null && node.Link.VisualGroups != null &&
+                    activeVisualGroupIndex >= 0 &&
+                    activeVisualGroupIndex < node.Link.VisualGroups.Count)
+                {
+                    name = node.Link.VisualGroups[activeVisualGroupIndex].Name ?? "";
+                }
+                PMTextBoxVisualGroupName.Text = name;
+            }
+            finally
+            {
+                suppressGroupNameTextboxEvents = prior;
+            }
+        }
+
+        private void SyncCollisionGroupNameTextbox(LinkNode node)
+        {
+            if (PMTextBoxCollisionGroupName == null)
+            {
+                return;
+            }
+            bool prior = suppressGroupNameTextboxEvents;
+            suppressGroupNameTextboxEvents = true;
+            try
+            {
+                string name = "";
+                if (node != null && node.Link.CollisionGroups != null &&
+                    activeCollisionGroupIndex >= 0 &&
+                    activeCollisionGroupIndex < node.Link.CollisionGroups.Count)
+                {
+                    name = node.Link.CollisionGroups[activeCollisionGroupIndex].Name ?? "";
+                }
+                PMTextBoxCollisionGroupName.Text = name;
+            }
+            finally
+            {
+                suppressGroupNameTextboxEvents = prior;
             }
         }
 

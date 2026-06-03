@@ -437,6 +437,8 @@ namespace SW2RD.Export
             // selection box population calls ClearSelection2.
             RefreshVisualGroupsListbox(node);
             RefreshCollisionGroupsListbox(node);
+            SyncVisualGroupNameTextbox(node);
+            SyncCollisionGroupNameTextbox(node);
             RefreshSitesListbox(node);
             LoadActiveSiteIntoForm(node);
 

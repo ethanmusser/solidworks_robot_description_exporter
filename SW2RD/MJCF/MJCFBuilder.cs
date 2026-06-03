@@ -261,10 +261,13 @@ namespace SW2RD.MJCF
             // MuJoCo represent a concave shape as a union of convex hulls
             // (one hull per group).
             //
-            // Geom names disambiguate role and group index so a body with
-            //   * one visual + one collision -> "<link>_visual" / "<link>_collision"
-            //   * N visuals (N > 1)          -> "<link>_visual_1..N"
-            // remain unique even when collision reuses a visual mesh asset.
+            // Geoms are named after their group's mesh asset (meshRef.Name,
+            // i.e. "<link>_<group>") so the <geom> name matches the <mesh>
+            // it references and reads the way the user named the group. The
+            // only collision is the collision-reuses-visual fallback, where a
+            // collision geom points at a visual mesh asset and would share its
+            // name; EmitCollisionGeoms appends "_collision" in exactly that
+            // case to keep geom names unique across the model.
             if (aux != null)
             {
                 EmitVisualGeoms(body, asset, link, aux);
@@ -413,7 +416,6 @@ namespace SW2RD.MJCF
             // <geom>.
             string materialName = EnsureLinkMaterial(asset, link);
 
-            int visualIndex = 0;
             foreach (MeshAssetRef meshRef in aux.VisualMeshes)
             {
                 if (meshRef == null || string.IsNullOrEmpty(meshRef.Name))
@@ -421,14 +423,12 @@ namespace SW2RD.MJCF
                     continue;
                 }
                 asset.Add(new MeshAsset(meshRef.Name, meshRef.File));
-                string geomName = (visualCount == 1)
-                    ? link.Name + "_visual"
-                    : link.Name + "_visual_" + (visualIndex + 1);
-                body.Geoms.Add(new Geom(geomName, meshRef.Name, GeomRole.Visual)
+                // Name the geom after its mesh asset ("<link>_<group>") so the
+                // <geom> name matches the group / mesh the user configured.
+                body.Geoms.Add(new Geom(meshRef.Name, meshRef.Name, GeomRole.Visual)
                 {
                     Material = materialName,
                 });
-                visualIndex++;
             }
         }
 
@@ -438,8 +438,6 @@ namespace SW2RD.MJCF
             {
                 return;
             }
-            int collisionCount = aux.CollisionMeshes.Count;
-            int collisionIndex = 0;
             foreach (MeshAssetRef meshRef in aux.CollisionMeshes)
             {
                 if (meshRef == null || string.IsNullOrEmpty(meshRef.Name))
@@ -447,16 +445,41 @@ namespace SW2RD.MJCF
                     continue;
                 }
                 asset.Add(new MeshAsset(meshRef.Name, meshRef.File));
-                string geomName = (collisionCount == 1)
-                    ? link.Name + "_collision"
-                    : link.Name + "_collision_" + (collisionIndex + 1);
+                // Name the geom after its mesh asset ("<link>_<group>"), same
+                // as the visual side. In the collision-reuses-visual fallback
+                // the collision mesh asset IS a visual asset, so its name
+                // already belongs to a visual geom emitted above; append
+                // "_collision" in that case so the two geoms stay distinct
+                // (MuJoCo requires geom names unique across the model).
+                string geomName = meshRef.Name;
+                if (GeomNameExists(body, geomName))
+                {
+                    geomName = meshRef.Name + "_collision";
+                }
                 // Collision geoms intentionally carry neither rgba nor
                 // material; they inherit the rgba from
                 // <default class="collision"> so all collision hulls
                 // render at a uniform tint regardless of link.
                 body.Geoms.Add(new Geom(geomName, meshRef.Name, GeomRole.Collision));
-                collisionIndex++;
             }
+        }
+
+        // True if the body already has a geom with the given name. Used to
+        // disambiguate collision geoms that reuse a visual mesh asset.
+        private static bool GeomNameExists(Body body, string name)
+        {
+            if (body?.Geoms == null)
+            {
+                return false;
+            }
+            foreach (Geom g in body.Geoms)
+            {
+                if (g != null && string.Equals(g.Name, name, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private static void EmitSites(Body body, LinkAuxiliary aux)
