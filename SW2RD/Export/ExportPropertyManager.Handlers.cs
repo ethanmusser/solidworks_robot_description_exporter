@@ -386,12 +386,25 @@ namespace SW2RD.Export
             return true;
         }
 
-        // Returns the Feature.Name of the single object held by the
+        // Returns the persisted name of the single object held by the
         // SelectionBox with the given mark, or empty string if none.
         // SelectionBoxes are configured SingleEntityOnly = true so we
         // only read the first entry. Defensive against null
         // SelectionManager / non-Feature objects so a bad mark doesn't
         // throw out of the SW dispatch.
+        //
+        // For a feature that lives inside a top-level component (e.g. a
+        // coordinate system or reference axis created in a part and used
+        // in the assembly), Feature.Name returns only the LOCAL feature
+        // name ("Coordinate System1"), which is not resolvable at the
+        // assembly level. The rest of the pipeline encodes sub-component
+        // references as "<FeatureName> <Component2.Name2>" (see
+        // ResolveFeatureReference / GetComponentRefGeoNames /
+        // FindRefGeoNames). We mirror that encoding here by appending the
+        // owning component's Name2 in angle brackets, so the stored name
+        // round-trips through export resolution AND rehydrates back into
+        // the SelectionBox. Top-level (assembly-scope) features have no
+        // owning component and keep their bare name.
         private string ReadMarkedFeatureName(int mark)
         {
             try
@@ -408,7 +421,31 @@ namespace SW2RD.Export
                 }
                 object obj = selMgr.GetSelectedObject6(1, mark);
                 Feature feature = obj as Feature;
-                return feature?.Name ?? string.Empty;
+                if (feature == null)
+                {
+                    return string.Empty;
+                }
+
+                // GetSelectedObjectsComponent4 returns the component the
+                // selected entity belongs to, or null for a feature that
+                // lives directly in the active (assembly) document.
+                Component2 owningComponent = null;
+                try
+                {
+                    owningComponent = selMgr.GetSelectedObjectsComponent4(1, mark) as Component2;
+                }
+                catch (Exception componentEx)
+                {
+                    logger.Warn("ReadMarkedFeatureName(mark=" + mark +
+                        ") could not resolve owning component: " + componentEx.Message);
+                }
+
+                string componentName = owningComponent?.Name2;
+                if (!string.IsNullOrEmpty(componentName))
+                {
+                    return feature.Name + " <" + componentName + ">";
+                }
+                return feature.Name;
             }
             catch (Exception ex)
             {

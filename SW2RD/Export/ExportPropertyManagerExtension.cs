@@ -645,22 +645,98 @@ namespace SW2RD.Export
         // a try/catch so a missing feature (deleted from the assembly
         // since the configuration was last saved) just leaves the
         // SelectionBox empty rather than throwing out of FillPropertyManager.
+        //
+        // The persisted name may be a bare assembly-level feature name
+        // ("Coordinate System1") or a sub-component reference encoded as
+        // "<FeatureName> <Component2.Name2>" (the convention produced by
+        // ReadMarkedFeatureName and consumed by ResolveFeatureReference).
+        // SelectByID2 does NOT understand the "<...>" display form, so we
+        // translate it to SolidWorks' own component-qualified selection id
+        // ("FeatureName@Component@...") before selecting.
         private void SelectFeatureIntoMark(string featureName, string typeName, int mark)
         {
+            string selectionId = ToSelectByIdName(featureName);
             bool prior = suppressGroupListboxRefresh;
             suppressGroupListboxRefresh = true;
             try
             {
                 ActiveSWModel.Extension.SelectByID2(
-                    featureName, typeName, 0, 0, 0, true, mark, null, 0);
+                    selectionId, typeName, 0, 0, 0, true, mark, null, 0);
             }
             catch (Exception ex)
             {
-                logger.Warn("SelectByID2 for " + typeName + " '" + featureName + "' failed: " + ex.Message);
+                logger.Warn("SelectByID2 for " + typeName + " '" + selectionId + "' failed: " + ex.Message);
             }
             finally
             {
                 suppressGroupListboxRefresh = prior;
+            }
+        }
+
+        // Converts a persisted reference-geometry name into the selection
+        // id SelectByID2 expects. A bare top-level name passes through
+        // unchanged. A sub-component reference "<FeatureName> <Comp.Name2>"
+        // becomes the SolidWorks component-qualified id
+        // "FeatureName@<reversed component path>@<assembly doc name>":
+        // SOLIDWORKS qualifies a feature inside a component by listing the
+        // entity, then each component instance from innermost to outermost
+        // (the reverse of Component2.Name2's "/"-separated parent/child
+        // order), then the top-level document name (no extension). For the
+        // common single-level case (Name2 = "Part-1") this is
+        // "FeatureName@Part-1@Assembly".
+        private string ToSelectByIdName(string persistedName)
+        {
+            if (string.IsNullOrEmpty(persistedName))
+            {
+                return persistedName;
+            }
+            int indexFirst = persistedName.IndexOf('<');
+            int indexLast = (indexFirst < 0) ? -1 : persistedName.IndexOf('>', indexFirst);
+            if (indexFirst < 0 || indexLast <= indexFirst)
+            {
+                return persistedName;
+            }
+
+            string featureName = persistedName.Substring(0, indexFirst).Trim();
+            string componentName = persistedName
+                .Substring(indexFirst + 1, indexLast - indexFirst - 1)
+                .Trim();
+            if (string.IsNullOrEmpty(componentName))
+            {
+                return featureName;
+            }
+
+            string[] pathSegments = componentName.Split('/');
+            Array.Reverse(pathSegments);
+            string qualified = featureName + "@" + string.Join("@", pathSegments);
+
+            string assemblyName = GetActiveDocumentSelectionName();
+            if (!string.IsNullOrEmpty(assemblyName))
+            {
+                qualified += "@" + assemblyName;
+            }
+            return qualified;
+        }
+
+        // The top-level document name SOLIDWORKS uses as the trailing
+        // segment of a component-qualified selection id: the file name
+        // without extension. Falls back to the window title for an unsaved
+        // document.
+        private string GetActiveDocumentSelectionName()
+        {
+            try
+            {
+                string path = ActiveSWModel?.GetPathName();
+                if (!string.IsNullOrEmpty(path))
+                {
+                    return System.IO.Path.GetFileNameWithoutExtension(path);
+                }
+                return ActiveSWModel?.GetTitle();
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("GetActiveDocumentSelectionName failed: " + ex.Message);
+                return null;
             }
         }
 
