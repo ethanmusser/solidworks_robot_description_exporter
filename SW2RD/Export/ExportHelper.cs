@@ -111,6 +111,16 @@ namespace SW2RD.Export
         private readonly Dictionary<string, double[]> referenceAxisCache =
             new Dictionary<string, double[]>();
         private int featureLookupCacheDepth;
+        // When set, WithComponentConfiguration reads in the part doc's
+        // CURRENT active configuration instead of switching to the
+        // component's referenced configuration. ShowConfiguration2 mutates
+        // (and rebuilds) the part document; doing that while the export
+        // PropertyManager page is open closes/crashes the page. The live
+        // axis/coord-sys preview (PreviewAxisDirection) is contractually
+        // side-effect-free, so it sets this flag for its duration. The
+        // export pipeline leaves it false so config-dependent geometry is
+        // resolved in the correct configuration.
+        private bool suppressConfigSwitchForFeatureLookup;
 
         // Native SW DragArrowManipulator used as the PropertyManager
         // joint axis direction overlay. We use a manipulator (not raw

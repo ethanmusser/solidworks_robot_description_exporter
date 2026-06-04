@@ -1426,6 +1426,13 @@ namespace SW2RD.Export
         {
             if (partDoc == null || partDoc == ActiveSWModel) return action();
 
+            // Live preview path: never mutate the part document. Switching
+            // configuration via ShowConfiguration2 while the PropertyManager
+            // page is open closes/crashes the page, and a preview only needs
+            // a best-effort transform in whatever configuration is currently
+            // active. Export resolution leaves the flag false.
+            if (suppressConfigSwitchForFeatureLookup) return action();
+
             string savedConfig = null;
             bool switched = false;
             try
@@ -1651,47 +1658,61 @@ namespace SW2RD.Export
                 return empty;
             }
 
-            logger.Info("PreviewAxisDirection: GetCoordinateSystemTransform ENTER");
-            MathTransform coordsysTransform = GetCoordinateSystemTransform(coordsysName);
-            logger.Info("PreviewAxisDirection: GetCoordinateSystemTransform RETURNED (null=" + (coordsysTransform == null) + ")");
-            if (coordsysTransform == null)
-            {
-                return empty;
-            }
-            double[] origin = MathOps.GetXYZ(coordsysTransform);
-
-            double[] axis;
+            // PreviewAxisDirection is contractually side-effect-free and
+            // runs while the PropertyManager page is open. Suppress the
+            // ShowConfiguration2 document mutation in WithComponentConfiguration
+            // for the duration; a preview overlay in the part's current
+            // configuration is acceptable and avoids closing the PM page.
+            bool priorSuppress = suppressConfigSwitchForFeatureLookup;
+            suppressConfigSwitchForFeatureLookup = true;
             try
             {
-                logger.Info("PreviewAxisDirection: EstimateAxis ENTER");
-                axis = EstimateAxis(axisName);
-                logger.Info("PreviewAxisDirection: EstimateAxis RETURNED (null=" + (axis == null) + ")");
-            }
-            catch (Exception ex)
-            {
-                logger.Warn("PreviewAxisDirection: EstimateAxis(" + axisName + ") failed: " + ex.Message);
-                return empty;
-            }
+                logger.Info("PreviewAxisDirection: GetCoordinateSystemTransform ENTER");
+                MathTransform coordsysTransform = GetCoordinateSystemTransform(coordsysName);
+                logger.Info("PreviewAxisDirection: GetCoordinateSystemTransform RETURNED (null=" + (coordsysTransform == null) + ")");
+                if (coordsysTransform == null)
+                {
+                    return empty;
+                }
+                double[] origin = MathOps.GetXYZ(coordsysTransform);
 
-            if (axis == null ||
-                (Math.Abs(axis[0]) < 1e-12 && Math.Abs(axis[1]) < 1e-12 && Math.Abs(axis[2]) < 1e-12))
-            {
-                return empty;
-            }
+                double[] axis;
+                try
+                {
+                    logger.Info("PreviewAxisDirection: EstimateAxis ENTER");
+                    axis = EstimateAxis(axisName);
+                    logger.Info("PreviewAxisDirection: EstimateAxis RETURNED (null=" + (axis == null) + ")");
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn("PreviewAxisDirection: EstimateAxis(" + axisName + ") failed: " + ex.Message);
+                    return empty;
+                }
 
-            if (flipped)
-            {
-                axis[0] = -axis[0];
-                axis[1] = -axis[1];
-                axis[2] = -axis[2];
-            }
+                if (axis == null ||
+                    (Math.Abs(axis[0]) < 1e-12 && Math.Abs(axis[1]) < 1e-12 && Math.Abs(axis[2]) < 1e-12))
+                {
+                    return empty;
+                }
 
-            return new AxisPreview
+                if (flipped)
+                {
+                    axis[0] = -axis[0];
+                    axis[1] = -axis[1];
+                    axis[2] = -axis[2];
+                }
+
+                return new AxisPreview
+                {
+                    IsValid = true,
+                    OriginGlobal = origin,
+                    AxisGlobal = axis,
+                };
+            }
+            finally
             {
-                IsValid = true,
-                OriginGlobal = origin,
-                AxisGlobal = axis,
-            };
+                suppressConfigSwitchForFeatureLookup = priorSuppress;
+            }
         }
 
         // Resolves a SW reference axis Feature.Name to its global-frame
