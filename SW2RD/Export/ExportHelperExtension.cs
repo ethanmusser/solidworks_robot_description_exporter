@@ -216,6 +216,11 @@ namespace SW2RD.Export
                 // Origin_global per top-level body and silently overrode any
                 // user-set body coord-sys).
                 LinkNode topLevelBaseNode;
+                // The world's resolved global-origin coord-sys name, captured
+                // out of the WorldNode branch so the base link can be localized
+                // against it once it is built (see the LocalizeJoint call after
+                // CreateLink). Null on the legacy LinkNode-rooted path.
+                string worldGlobalOriginName = null;
                 if (rootNode is WorldNode worldNode)
                 {
                     // Stash the WorldNode so ExportRobot can pick up
@@ -227,6 +232,7 @@ namespace SW2RD.Export
                     ActiveWorldNode = worldNode;
 
                     string resolvedGlobalName = ResolveAndGenerateGlobalOrigin(worldNode);
+                    worldGlobalOriginName = resolvedGlobalName;
 
                     List<LinkNode> topLevels = new List<LinkNode>();
                     foreach (LinkNode child in worldNode.Nodes)
@@ -294,6 +300,25 @@ namespace SW2RD.Export
                 }
                 URDFRobot.SetBaseLink(baseLink);
                 topLevelBaseNode.Link = baseLink;
+
+                // CreateLink builds the base link with a null parent, so its
+                // joint origin was never localized. Under a World node the base
+                // link can sit anywhere relative to the world's global-origin
+                // frame, so stamp the world->base_link offset now. The MJCF
+                // top-level body reads Link.Joint.Origin for its pos/quat, so
+                // without this a body whose frame differs from the global
+                // origin (e.g. a vehicle resting on top of a ground plane)
+                // spawns at the world origin instead of its modelled pose -
+                // and a Free attachment then free-floats from the wrong spot.
+                // When the base frame coincides with the global origin this
+                // resolves to identity, matching the welded-at-world default,
+                // so welded/origin-coincident examples are unaffected.
+                if (worldGlobalOriginName != null &&
+                    baseLink.Joint != null &&
+                    !string.IsNullOrEmpty(baseLink.Joint.CoordinateSystemName))
+                {
+                    LocalizeJoint(baseLink.Joint, worldGlobalOriginName);
+                }
 
                 progressBar.End();
                 return true;
