@@ -23,7 +23,7 @@ THE SOFTWARE.
 using SW2RD.Configuration;
 using SW2RD.Core;
 using SW2RD.Export;
-using SW2RD.URDF;
+using SW2RD.Input;
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -119,7 +119,7 @@ namespace SW2RD.Test
         {
             JointModel childJoint = new JointModel(
                 "joint1", "revolute", "base_link", "child_link",
-                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(0, 0, 0)),
                 new Vector3Model(0, 0, 1),
                 new JointLimitModel(null, 1.25, null, 2.5),
                 "joint_coordsys", "joint_axis", false,
@@ -141,19 +141,23 @@ namespace SW2RD.Test
                 Array.Empty<SiteModel>(),
                 null, new[] { child });
 
-            SW2RD.URDF.Link legacyRoot = KinematicTreeAdapter.ToLegacyLink(root, null);
-            SW2RD.URDF.Joint legacyJoint = legacyRoot.Children[0].Joint;
+            SW2RD.Input.Link legacyRoot = KinematicTreeAdapter.ToLegacyLink(root, null);
+            SW2RD.Input.Joint legacyJoint = legacyRoot.Children[0].Joint;
 
+            // The canonical limits are radians; the legacy edit model is
+            // degrees, so the angular Upper/Velocity are converted on the way
+            // out. Effort would be a torque (unconverted) but is unset here.
             Assert.Null(legacyJoint.Limit.LowerOrNull);
-            Assert.Equal(1.25, legacyJoint.Limit.UpperOrNull);
+            Assert.Equal(1.25 * 180.0 / Math.PI, legacyJoint.Limit.UpperOrNull.Value, 9);
             Assert.Null(legacyJoint.Limit.EffortOrNull);
-            Assert.Equal(2.5, legacyJoint.Limit.VelocityOrNull);
+            Assert.Equal(2.5 * 180.0 / Math.PI, legacyJoint.Limit.VelocityOrNull.Value, 9);
 
+            // Round-tripping back to canonical recovers the original radians.
             JointModel roundTrippedJoint = KinematicTreeAdapter.ToCore(legacyRoot).Children[0].Joint;
             Assert.Null(roundTrippedJoint.Limit.Lower);
-            Assert.Equal(1.25, roundTrippedJoint.Limit.Upper);
+            Assert.Equal(1.25, roundTrippedJoint.Limit.Upper.Value, 9);
             Assert.Null(roundTrippedJoint.Limit.Effort);
-            Assert.Equal(2.5, roundTrippedJoint.Limit.Velocity);
+            Assert.Equal(2.5, roundTrippedJoint.Limit.Velocity.Value, 9);
         }
 
         [Fact]
@@ -161,7 +165,7 @@ namespace SW2RD.Test
         {
             JointModel childJoint = new JointModel(
                 "joint1", "continuous", "base_link", "child_link",
-                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(0, 0, 0)),
                 new Vector3Model(0, 0, 1),
                 Limit: null,
                 CoordinateSystemName: "joint_coordsys",
@@ -182,8 +186,8 @@ namespace SW2RD.Test
                 Array.Empty<SiteModel>(),
                 null, new[] { child });
 
-            SW2RD.URDF.Link legacyRoot = KinematicTreeAdapter.ToLegacyLink(root, null);
-            SW2RD.URDF.Joint legacyJoint = legacyRoot.Children[0].Joint;
+            SW2RD.Input.Link legacyRoot = KinematicTreeAdapter.ToLegacyLink(root, null);
+            SW2RD.Input.Joint legacyJoint = legacyRoot.Children[0].Joint;
 
             Assert.Equal("revolute", legacyJoint.Type);
             Assert.Null(legacyJoint.Limit.LowerOrNull);
@@ -221,8 +225,8 @@ namespace SW2RD.Test
         [Fact]
         public void TestLinkNodeConfigRoundTripPreservesJointProperties()
         {
-            SW2RD.URDF.Link baseLink = new SW2RD.URDF.Link(null) { Name = "base_link" };
-            SW2RD.URDF.Link child = new SW2RD.URDF.Link(baseLink) { Name = "child_link" };
+            SW2RD.Input.Link baseLink = new SW2RD.Input.Link(null) { Name = "base_link" };
+            SW2RD.Input.Link child = new SW2RD.Input.Link(baseLink) { Name = "child_link" };
             child.Joint.Name = "joint1";
             child.Joint.Type = "revolute";
             child.Joint.Limit.SetLower(-90.0);
@@ -250,15 +254,18 @@ namespace SW2RD.Test
             Assert.Equal(0.4, joint.Dynamics.DampingOrNull);
             Assert.Equal(0.2, joint.Dynamics.FrictionOrNull);
             Assert.Equal(0.01, joint.Armature);
-            Assert.Equal(15.0, joint.Reference);
+            // Reference is a hinge angle, so it round-trips through the
+            // degree<->radian conversion; compare with tolerance rather than
+            // exact bit-equality.
+            Assert.Equal(15.0, joint.Reference.Value, 9);
             Assert.False(joint.AutoComputeLimits);
         }
 
         [Fact]
         public void TestLinkNodeConfigRoundTripPreservesBlankEffortAndVelocity()
         {
-            SW2RD.URDF.Link baseLink = new SW2RD.URDF.Link(null) { Name = "base_link" };
-            SW2RD.URDF.Link child = new SW2RD.URDF.Link(baseLink) { Name = "child_link" };
+            SW2RD.Input.Link baseLink = new SW2RD.Input.Link(null) { Name = "base_link" };
+            SW2RD.Input.Link child = new SW2RD.Input.Link(baseLink) { Name = "child_link" };
             child.Joint.Name = "joint1";
             child.Joint.Type = "revolute";
             child.Joint.Limit.SetLower(-90.0);
@@ -306,7 +313,7 @@ namespace SW2RD.Test
             // AutoDeriveAxis is false.
             JointModel legacyAxis = new JointModel(
                 "joint1", "revolute", "base_link", "child_link",
-                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(0, 0, 0)),
                 new Vector3Model(0, 0, 1),
                 Limit: null,
                 CoordinateSystemName: "joint_coordsys",
@@ -332,8 +339,8 @@ namespace SW2RD.Test
                         Array.Empty<LinkModel>())
                 });
 
-            SW2RD.URDF.Link legacyRoot = SW2RD.Export.KinematicTreeAdapter.ToLegacyLink(root, null);
-            SW2RD.URDF.Link legacyChild = legacyRoot.Children[0];
+            SW2RD.Input.Link legacyRoot = SW2RD.Export.KinematicTreeAdapter.ToLegacyLink(root, null);
+            SW2RD.Input.Link legacyChild = legacyRoot.Children[0];
 
             Assert.True(legacyChild.Joint.AutoDeriveAxis);
             Assert.Equal(string.Empty, legacyChild.Joint.AxisName);
@@ -596,7 +603,7 @@ namespace SW2RD.Test
         {
             JointModel childJoint = new JointModel(
                 "joint1", "revolute", "base_link", "child_link",
-                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(0, 0, 0)),
                 new Vector3Model(0, 0, 1),
                 Limit: null,
                 CoordinateSystemName: "joint_coordsys",
@@ -636,7 +643,7 @@ namespace SW2RD.Test
             JointModel childJoint = new JointModel(
                 "joint1", "revolute", "base_link", "child_link",
                 new PoseModel(new Vector3Model(0.1, 0.2, 0.3),
-                    new RpyModel(0.4, 0.5, 0.6)),
+                    TestRotations.Quat(0.4, 0.5, 0.6)),
                 new Vector3Model(0, 0, 1),
                 new JointLimitModel(-3.14, 3.14, 100.0, 1.0),
                 "joint_coordsys", "joint_axis", true,
@@ -648,7 +655,7 @@ namespace SW2RD.Test
 
             InertialModel childInertial = new InertialModel(
                 new PoseModel(new Vector3Model(0.01, 0.02, 0.03),
-                    new RpyModel(0, 0, 0)),
+                    TestRotations.Quat(0, 0, 0)),
                 1.5,
                 new InertiaTensorModel(0.01, 0.001, 0.002, 0.02, 0.003, 0.03));
 
@@ -664,7 +671,7 @@ namespace SW2RD.Test
             LinkModel root = new LinkModel(
                 "base_link",
                 new InertialModel(
-                    new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
+                    new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(0, 0, 0)),
                     0.5,
                     new InertiaTensorModel(0.001, 0, 0, 0.001, 0, 0.001)),
                 new MaterialModel("", new RgbaModel(1, 1, 1, 1), ""),

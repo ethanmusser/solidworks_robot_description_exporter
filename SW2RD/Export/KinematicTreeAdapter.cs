@@ -21,7 +21,7 @@ THE SOFTWARE.
 */
 
 using SW2RD.Core;
-using SW2RD.URDF;
+using SW2RD.Input;
 using SW2RD.Utilities;
 using System;
 using System.Collections.Generic;
@@ -38,73 +38,6 @@ namespace SW2RD.Export
     public static class KinematicTreeAdapter
     {
         private static readonly log4net.ILog logger = Logger.GetLogger();
-
-        /// <summary>
-        /// Converts a KinematicTree (multi-tree, world-aware) into the legacy
-        /// Robot graph used by the URDF writer. Picks the FIRST top-level body
-        /// as the URDF base_link, since URDF describes a single robot in
-        /// isolation.
-        ///
-        /// Warns (logger.Warn) on three URDF degradation cases:
-        /// 1. <c>tree.TopLevelBodies.Count &gt; 1</c> - additional bodies are dropped.
-        /// 2. The first top-level body has <c>WorldAttachment.Free</c> - URDF
-        ///    cannot express a floating base in a way the common loaders honor.
-        /// 3. The world has any non-empty visual / collision / sites - URDF
-        ///    has no analog to MJCF's worldbody-direct geometry.
-        ///
-        /// All three warnings are advisory; the URDF is still produced for
-        /// the first welded body.
-        /// </summary>
-        public static Robot ToLegacyRobot(KinematicTree tree)
-        {
-            if (tree == null)
-            {
-                throw new ArgumentNullException(nameof(tree));
-            }
-
-            IReadOnlyList<LinkModel> topLevels = tree.TopLevelBodies ?? Array.Empty<LinkModel>();
-            if (topLevels.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    "KinematicTree has no top-level bodies; cannot synthesize a URDF Robot.");
-            }
-
-            LinkModel chosen = topLevels[0];
-            if (topLevels.Count > 1)
-            {
-                List<string> dropped = new List<string>();
-                for (int i = 1; i < topLevels.Count; i++)
-                {
-                    dropped.Add(topLevels[i]?.Name ?? "<null>");
-                }
-                logger.Warn("URDF: model has " + topLevels.Count + " top-level bodies; URDF describes a single " +
-                    "robot in isolation, so only '" + (chosen.Name ?? "") +
-                    "' will be written as <robot>'s base_link. Dropped: " +
-                    string.Join(", ", dropped) + ". Use MJCF or pair with an external SDFormat/.world file " +
-                    "if you need multiple bodies.");
-            }
-
-            if (chosen.WorldAttachment == WorldAttachmentModel.Free)
-            {
-                logger.Warn("URDF: top-level body '" + (chosen.Name ?? "") +
-                    "' has WorldAttachment=Free; URDF cannot express a floating base in a way most loaders " +
-                    "honor. Emitting a fixed-base URDF instead.");
-            }
-
-            if (LinkHasGeometry(tree.WorldBody))
-            {
-                logger.Warn("URDF: world-level visual/collision/site geometry is dropped on URDF export. " +
-                    "URDF describes the robot only; pair with an SDFormat .world file or use MJCF if you need " +
-                    "scene geometry.");
-            }
-
-            Robot robot = new Robot
-            {
-                Name = tree.Name ?? "",
-            };
-            robot.SetBaseLink(ToLegacyLink(chosen, null));
-            return robot;
-        }
 
         /// <summary>
         /// Convenience wrapper for callers that only have a single-tree
@@ -125,27 +58,6 @@ namespace SW2RD.Export
             string globalOrigin = robot.BaseLink?.Joint?.CoordinateSystemName ?? "";
             LinkModel worldBody = CreateWorldBody(new[] { topLevel });
             return new KinematicTree(robot.Name ?? "", globalOrigin, worldBody);
-        }
-
-        private static bool LinkHasGeometry(LinkModel link)
-        {
-            if (link == null)
-            {
-                return false;
-            }
-            if (link.VisualGroups != null && link.VisualGroups.Count > 0)
-            {
-                return true;
-            }
-            if (link.CollisionGroups != null && link.CollisionGroups.Count > 0)
-            {
-                return true;
-            }
-            if (link.Sites != null && link.Sites.Count > 0)
-            {
-                return true;
-            }
-            return false;
         }
 
         private static LinkModel CreateWorldBody(IReadOnlyList<LinkModel> topLevelBodies)
@@ -359,6 +271,11 @@ namespace SW2RD.Export
                 return;
             }
 
+            // Angularity keys off the canonical (source) type, which still
+            // carries "revolute"/"continuous" before NormalizeJointTypeForUi
+            // collapses continuous->revolute for the UI.
+            bool angular = Joint.UsesAngularUnits(source.Type);
+
             target.Name = source.Name ?? "";
             target.Type = NormalizeJointTypeForUi(source.Type);
             target.Parent.Name = source.ParentLinkName ?? "";
@@ -368,7 +285,7 @@ namespace SW2RD.Export
             target.AxisFlipped = source.AxisFlipped;
             target.AutoComputeLimits = source.AutoComputeLimits;
             target.AutoDeriveAxis = source.AutoDeriveAxis;
-            target.Reference = source.Reference;
+            target.Reference = angular ? RadiansToDegrees(source.Reference) : source.Reference;
             target.Armature = source.Armature;
 
             // Legacy "Automatically Generate" axis sentinel migration on
@@ -390,22 +307,26 @@ namespace SW2RD.Export
             }
             if (source.Limit != null)
             {
-                target.Limit.SetLower(source.Limit.Lower);
-                target.Limit.SetUpper(source.Limit.Upper);
+                // rad -> deg for angular position/velocity; effort (torque)
+                // and prismatic (meters) pass through.
+                target.Limit.SetLower(angular ? RadiansToDegrees(source.Limit.Lower) : source.Limit.Lower);
+                target.Limit.SetUpper(angular ? RadiansToDegrees(source.Limit.Upper) : source.Limit.Upper);
                 target.Limit.SetEffort(source.Limit.Effort);
-                target.Limit.SetVelocity(source.Limit.Velocity);
+                target.Limit.SetVelocity(angular ? RadiansToDegrees(source.Limit.Velocity) : source.Limit.Velocity);
             }
             // Damping / Friction live on Joint.Dynamics in the legacy
             // graph; null on the source means the writer should omit the
-            // attribute, otherwise we set the underlying URDFAttribute
-            // value directly.
+            // attribute, otherwise we set it (converting damping back to the
+            // legacy per-degree basis for angular joints).
             if (source.Damping.HasValue)
             {
-                target.Dynamics.Damping = source.Damping.Value;
+                target.Dynamics.SetDamping(angular
+                    ? DampingPerRadianToPerDegree(source.Damping)
+                    : source.Damping);
             }
             if (source.Friction.HasValue)
             {
-                target.Dynamics.Friction = source.Friction.Value;
+                target.Dynamics.SetFriction(source.Friction);
             }
         }
 
@@ -422,6 +343,10 @@ namespace SW2RD.Export
             return jointType ?? "";
         }
 
+        // Canonical -> legacy pose. The canonical rotation is a quaternion;
+        // the legacy Origin stores roll-pitch-yaw (radians, extrinsic XYZ),
+        // so we convert through MathOps.QuaternionToRPY which shares the
+        // angle-sequence definition with MathOps.GetRPY.
         private static void ApplyPose(PoseModel source, Origin target)
         {
             if (source == null || target == null)
@@ -434,7 +359,11 @@ namespace SW2RD.Export
             }
             if (source.Rotation != null)
             {
-                target.SetRPY(new[] { source.Rotation.Roll, source.Rotation.Pitch, source.Rotation.Yaw });
+                double[] rpy = MathOps.QuaternionToRPY(new[]
+                {
+                    source.Rotation.W, source.Rotation.X, source.Rotation.Y, source.Rotation.Z,
+                });
+                target.SetRPY(rpy);
             }
         }
 
@@ -531,8 +460,19 @@ namespace SW2RD.Export
                 return null;
             }
             double[] axis = joint.Axis?.GetXYZ() ?? new[] { 0.0, 0.0, 0.0 };
+            bool angular = Joint.UsesAngularUnits(joint.Type);
             double? damping = joint.Dynamics?.DampingOrNull;
             double? friction = joint.Dynamics?.FrictionOrNull;
+            double? reference = joint.Reference;
+            if (angular)
+            {
+                // deg -> rad for the angular scalars. Friction (static
+                // friction force/torque) and Armature (rotor inertia) are not
+                // angle-dependent and pass through. Effort is handled inside
+                // ToCoreLimit (also angle-independent).
+                damping = DampingPerDegreeToPerRadian(damping);
+                reference = DegreesToRadians(reference);
+            }
             return new JointModel(
                 joint.Name ?? "",
                 joint.Type ?? "",
@@ -540,7 +480,7 @@ namespace SW2RD.Export
                 joint.Child?.Name ?? "",
                 ToCorePose(joint.Origin),
                 new Vector3Model(axis[0], axis[1], axis[2]),
-                ToCoreLimit(joint.Limit),
+                ToCoreLimit(joint.Limit, angular),
                 joint.CoordinateSystemName ?? "",
                 joint.AxisName ?? "",
                 joint.AxisFlipped,
@@ -548,7 +488,7 @@ namespace SW2RD.Export
                 damping,
                 friction,
                 joint.Armature,
-                joint.Reference,
+                reference,
                 joint.AutoDeriveAxis);
         }
 
@@ -561,7 +501,7 @@ namespace SW2RD.Export
         // accessors because individual URDFAttribute.Value entries can
         // be null on a partially-populated Limit (e.g. the Effort and
         // Velocity attributes default to null in the constructor).
-        private static JointLimitModel ToCoreLimit(Limit limit)
+        private static JointLimitModel ToCoreLimit(Limit limit, bool angular)
         {
             if (limit == null)
             {
@@ -574,6 +514,15 @@ namespace SW2RD.Export
             if (!lower.HasValue && !upper.HasValue && !effort.HasValue && !velocity.HasValue)
             {
                 return null;
+            }
+            if (angular)
+            {
+                // Lower/Upper (position) and Velocity convert deg -> rad for
+                // angular joints. Effort is a torque (N*m) and is not
+                // angle-dependent, so it passes through.
+                lower = DegreesToRadians(lower);
+                upper = DegreesToRadians(upper);
+                velocity = DegreesToRadians(velocity);
             }
             return new JointLimitModel(lower, upper, effort, velocity);
         }
@@ -624,6 +573,9 @@ namespace SW2RD.Export
             return (InertialSourceModel)(int)source;
         }
 
+        // Legacy -> canonical pose. The legacy Origin stores roll-pitch-yaw
+        // (radians, extrinsic XYZ); the canonical PoseModel stores a unit
+        // quaternion, so we convert through MathOps.RPYToQuaternion.
         private static PoseModel ToCorePose(Origin origin)
         {
             if (origin == null)
@@ -632,9 +584,10 @@ namespace SW2RD.Export
             }
             double[] xyz = origin.GetXYZ();
             double[] rpy = origin.GetRPY();
+            double[] q = MathOps.RPYToQuaternion(rpy);
             return new PoseModel(
                 new Vector3Model(xyz[0], xyz[1], xyz[2]),
-                new RpyModel(rpy[0], rpy[1], rpy[2]));
+                new QuaternionModel(q[0], q[1], q[2], q[3]));
         }
 
         private static InertialModel EmptyInertial()
@@ -646,7 +599,35 @@ namespace SW2RD.Export
         {
             return new PoseModel(
                 new Vector3Model(0, 0, 0),
-                new RpyModel(0, 0, 0));
+                QuaternionModel.Identity);
+        }
+
+        // --- Angular unit conversions (legacy degree-basis <-> canonical radian-basis) ---
+        // The legacy Joint/Limit/Dynamics model carries angular quantities in
+        // degrees (the SolidWorks PMP convention); the canonical JointModel is
+        // radians. These nullable wrappers convert only when the joint is
+        // angular (revolute/continuous); linear (prismatic) values are meters
+        // and pass through untouched.
+        private static double? DegreesToRadians(double? degrees)
+        {
+            return degrees.HasValue ? (double?)Joint.DegreesToRadians(degrees.Value) : null;
+        }
+
+        private static double? RadiansToDegrees(double? radians)
+        {
+            return radians.HasValue ? (double?)Joint.RadiansToDegrees(radians.Value) : null;
+        }
+
+        private static double? DampingPerDegreeToPerRadian(double? perDegree)
+        {
+            return perDegree.HasValue
+                ? (double?)Joint.AngularDampingPerDegreeToPerRadian(perDegree.Value)
+                : null;
+        }
+
+        private static double? DampingPerRadianToPerDegree(double? perRadian)
+        {
+            return perRadian.HasValue ? (double?)(perRadian.Value * Math.PI / 180.0) : null;
         }
     }
 }

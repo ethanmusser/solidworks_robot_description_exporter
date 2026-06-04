@@ -167,7 +167,7 @@ namespace SW2RD.Test
         {
             LinkModel child = SimpleLink("child").WithJoint(new JointModel(
                 "child_joint", "fixed", "base_link", "child",
-                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(Rpy[0], Rpy[1], Rpy[2])),
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(Rpy[0], Rpy[1], Rpy[2])),
                 new Vector3Model(0, 0, 1),
                 Limit: null,
                 CoordinateSystemName: "Origin_global",
@@ -260,7 +260,7 @@ namespace SW2RD.Test
         {
             JointModel joint = new JointModel(
                 "", "", "", "",
-                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(0, 0, 0)),
                 new Vector3Model(0, 0, 1),
                 Limit: null,
                 CoordinateSystemName: coordSys,

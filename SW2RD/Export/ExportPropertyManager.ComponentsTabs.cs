@@ -23,7 +23,7 @@ THE SOFTWARE.
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
-using SW2RD.URDF;
+using SW2RD.Input;
 using System;
 
 namespace SW2RD.Export

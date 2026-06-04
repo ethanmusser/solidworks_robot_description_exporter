@@ -23,7 +23,7 @@ THE SOFTWARE.
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
-using SW2RD.URDF;
+using SW2RD.Input;
 using SW2RD.Utilities;
 using System;
 using System.Collections.Generic;
@@ -1040,51 +1040,6 @@ namespace SW2RD.Export
             }
         }
 
-        private void ImportLegacyConfigurationFromForm()
-        {
-            if (!ConfigurationSerialization.HasLegacyConfiguration(ActiveSWModel))
-            {
-                MessageBox.Show("This model does not contain an importable legacy SW2URDF configuration.");
-                UpdateSetupConfigurationActions();
-                return;
-            }
-
-            DialogResult answer = MessageBox.Show(
-                "Import the legacy SW2URDF configuration from this model?\r\n\r\n" +
-                "This replaces the current in-page tree. The imported configuration will not be saved as SW2RD JSON " +
-                "until you click OK or export.",
-                "Import Legacy Configuration",
-                MessageBoxButtons.YesNo);
-            if (answer != DialogResult.Yes)
-            {
-                return;
-            }
-
-            LinkNode imported = ConfigurationSerialization.LoadLegacyBaseNodeFromModel(
-                ActiveSWModel, out bool abortProcess);
-            if (abortProcess)
-            {
-                MessageBox.Show("An error occurred importing the legacy configuration. Please resolve the issue " +
-                    "or delete the legacy configuration from the FeatureManager.");
-                return;
-            }
-            if (imported == null)
-            {
-                MessageBox.Show("No importable legacy SW2URDF configuration was found.");
-                UpdateSetupConfigurationActions();
-                return;
-            }
-
-            ReplaceConfigTree(imported);
-            UpdateSetupConfigurationActions();
-
-            if (PMLabelValidationStatus != null)
-            {
-                PMLabelValidationStatus.Caption =
-                    "Status: Imported legacy configuration. Click OK or Export to save it as SW2RD JSON.";
-            }
-        }
-
         private void ReplaceConfigTree(LinkNode baseNode)
         {
             bool prior = suppressGroupListboxRefresh;
@@ -1189,7 +1144,7 @@ namespace SW2RD.Export
                 ("Robot Description Reference", "SKETCH", 0, 0, 0, true, 0, null, 0);
             ActiveSWModel.FeatureManager.MoveToFolder("Robot Description Export Items", "", false);
             ActiveSWModel.Extension.SelectByID2
-                (ConfigurationSerialization.UrdfConfigurationSwAttributeName, "ATTRIBUTE", 0, 0, 0, true, 0, null, 0);
+                (ConfigurationSerialization.ConfigurationSwAttributeName, "ATTRIBUTE", 0, 0, 0, true, 0, null, 0);
             ActiveSWModel.FeatureManager.MoveToFolder("Robot Description Export Items", "", false);
             SelectFeatures(node);
             ActiveSWModel.FeatureManager.MoveToFolder("Robot Description Export Items", "", false);

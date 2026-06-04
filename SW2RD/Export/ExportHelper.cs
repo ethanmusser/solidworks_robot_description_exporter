@@ -26,7 +26,7 @@ using SolidWorks.Interop.swconst;
 using SW2RD.Core;
 using SW2RD.MJCF;
 using SW2RD.ROS;
-using SW2RD.URDF;
+using SW2RD.Input;
 using SW2RD.Utilities;
 using System;
 using System.Collections.Generic;
@@ -508,8 +508,19 @@ namespace SW2RD.Export
             else
             {
                 logger.Info("Writing URDF file to " + windowsModelFileName);
+                // URDF mesh filenames (package:// URIs) are stamped onto the
+                // URDFRobot's MeshGroups by ExportFiles, so the canonical tree
+                // is built from URDFRobot rather than ActiveWorldNode.
+                KinematicTree urdfTree = KinematicTreeAdapter.ToCore(URDFRobot);
                 URDFWriter uWriter = new URDFWriter(windowsModelFileName);
-                URDFRobot.WriteURDF(uWriter.writer);
+                try
+                {
+                    URDFBuilder.Write(urdfTree, uWriter.writer);
+                }
+                finally
+                {
+                    uWriter.writer.Close();
+                }
             }
 
             logger.Info("Copying log file");
@@ -519,15 +530,6 @@ namespace SW2RD.Export
             ResetUserPreferences();
             progressBar.End();
             return true;
-        }
-
-        public void ExportRobot(KinematicTree tree,
-            bool exportSTL = true,
-            MeshExportFormat meshFormat = MeshExportFormat.STL,
-            ExportFormat outputFormat = ExportFormat.URDF)
-        {
-            URDFRobot = KinematicTreeAdapter.ToLegacyRobot(tree);
-            ExportRobot(exportSTL, meshFormat, outputFormat);
         }
 
         // ROS-specific package files (CMakeLists, package.xml, launch files, joint
@@ -1444,6 +1446,17 @@ namespace SW2RD.Export
             URDFRobot.BaseLink.Visual.Geometry.Mesh.Filename = meshFileName;
             URDFRobot.BaseLink.Collision.Geometry.Mesh.Filename = meshFileName;
 
+            // Single-part export uses the Visual/Collision template directly
+            // rather than the multi-group lists. The records-native URDFBuilder
+            // reads only MeshGroups, so publish the mesh into a single visual
+            // group and let the collision fall back to visual.
+            URDFRobot.BaseLink.VisualGroups = new List<MeshGroup>
+            {
+                new MeshGroup(MeshGroup.DefaultVisualName()) { MeshFilename = meshFileName },
+            };
+            URDFRobot.BaseLink.CollisionGroups = new List<MeshGroup>();
+            URDFRobot.BaseLink.CollisionUsesVisual = true;
+
             URDFRobot.BaseLink.Visual.Material.Texture.Filename =
                 package.TexturesDirectory + Path.GetFileName(URDFRobot.BaseLink.Visual.Material.Texture.wFilename);
             string textureSavePath =
@@ -1455,9 +1468,16 @@ namespace SW2RD.Export
             }
 
             //Writing URDF to file
+            KinematicTree urdfTree = KinematicTreeAdapter.ToCore(URDFRobot);
             URDFWriter uWriter = new URDFWriter(windowsURDFFileName);
-            //mRobot.addLink(mLink);
-            URDFRobot.WriteURDF(uWriter.writer);
+            try
+            {
+                URDFBuilder.Write(urdfTree, uWriter.writer);
+            }
+            finally
+            {
+                uWriter.writer.Close();
+            }
 
             ResetUserPreferences();
         }

@@ -142,7 +142,7 @@ namespace SW2RD.Test
             // numeric-zero short-circuit works.
             JointModel zeroOrigin = new JointModel(
                 "", "", "", "",
-                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(0, 0, 0)),
                 new Vector3Model(0, 0, 1),
                 Limit: null,
                 CoordinateSystemName: "different_name",
@@ -168,7 +168,7 @@ namespace SW2RD.Test
             // attributes (SuppressTransform false).
             JointModel offsetJoint = new JointModel(
                 "", "", "", "",
-                new PoseModel(new Vector3Model(1.0, 2.0, 3.0), new RpyModel(0, 0, 0)),
+                new PoseModel(new Vector3Model(1.0, 2.0, 3.0), TestRotations.Quat(0, 0, 0)),
                 new Vector3Model(0, 0, 1),
                 Limit: null,
                 CoordinateSystemName: "different_name",
@@ -282,7 +282,7 @@ namespace SW2RD.Test
         {
             JointModel joint = new JointModel(
                 "", "", "", "",
-                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(0, 0, 0)),
                 new Vector3Model(0, 0, 1),
                 Limit: null,
                 CoordinateSystemName: coordSys,

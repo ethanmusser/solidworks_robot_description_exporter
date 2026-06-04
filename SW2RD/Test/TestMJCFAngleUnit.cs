@@ -153,17 +153,20 @@ namespace SW2RD.Test
         {
             LinkModel hinge = SimpleLink("hinge_child").WithJoint(new JointModel(
                 "hinge_joint", "revolute", "base_link", "hinge_child",
-                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(Rpy[0], Rpy[1], Rpy[2])),
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(Rpy[0], Rpy[1], Rpy[2])),
                 new Vector3Model(0, 0, 1),
-                Limit: new JointLimitModel(-90.0, 90.0, null, null),
+                // Canonical model is radians; +/-90 deg and a 15 deg ref are
+                // stored as radians here. The Degree-unit writer converts them
+                // back to 90/15 on emit; the Radian-unit writer emits as-is.
+                Limit: new JointLimitModel(-Math.PI / 2.0, Math.PI / 2.0, null, null),
                 CoordinateSystemName: "Origin_global",
                 AxisName: "",
                 AxisFlipped: false,
-                Reference: 15.0));
+                Reference: 15.0 * Deg2Rad));
 
             LinkModel slide = SimpleLink("slide_child").WithJoint(new JointModel(
                 "slide_joint", "prismatic", "base_link", "slide_child",
-                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(0, 0, 0)),
                 new Vector3Model(1, 0, 0),
                 Limit: new JointLimitModel(-0.1, 0.2, null, null),
                 CoordinateSystemName: "Origin_global",
@@ -252,7 +255,7 @@ namespace SW2RD.Test
         {
             JointModel joint = new JointModel(
                 "", "", "", "",
-                new PoseModel(new Vector3Model(0, 0, 0), new RpyModel(0, 0, 0)),
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(0, 0, 0)),
                 new Vector3Model(0, 0, 1),
                 Limit: null,
                 CoordinateSystemName: coordSys,

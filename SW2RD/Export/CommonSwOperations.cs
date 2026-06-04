@@ -23,7 +23,7 @@ THE SOFTWARE.
 using log4net;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
-using SW2RD.URDF;
+using SW2RD.Input;
 using SW2RD.Utilities;
 using System.Collections.Generic;
 using System.Text;

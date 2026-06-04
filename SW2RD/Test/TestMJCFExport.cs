@@ -20,8 +20,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+using SW2RD.Core;
 using SW2RD.MJCF;
-using SW2RD.URDF;
+using SW2RD.Input;
 using SW2RD.Export;
 using SW2RD.Utilities;
 using System;
@@ -142,8 +143,11 @@ namespace SW2RD.Test
             Assert.Equal(0.0, child.Joint.Axis[1], 9);
             Assert.Equal(1.0, child.Joint.Axis[2], 9);
             Assert.True(child.Joint.HasLimits);
-            Assert.Equal(-1.0, child.Joint.LowerLimit, 9);
-            Assert.Equal(1.0, child.Joint.UpperLimit, 9);
+            // The edit-model limits are degrees; the canonical/MJCF model
+            // stores radians (the writer converts back to degrees at emit time
+            // in the default Degree unit).
+            Assert.Equal(-1.0 * Math.PI / 180.0, child.Joint.LowerLimit, 9);
+            Assert.Equal(1.0 * Math.PI / 180.0, child.Joint.UpperLimit, 9);
 
             // Inertial element on the child.
             Assert.NotNull(child.Inertial);
@@ -261,8 +265,9 @@ namespace SW2RD.Test
             Assert.NotNull(childBody.Joint);
             Assert.Equal(MJCFJointType.Hinge, childBody.Joint.Type);
             Assert.True(childBody.Joint.HasLimits);
-            Assert.Equal(-0.25, childBody.Joint.LowerLimit, 9);
-            Assert.Equal(0.75, childBody.Joint.UpperLimit, 9);
+            // Edit-model degrees -> canonical radians.
+            Assert.Equal(-0.25 * Math.PI / 180.0, childBody.Joint.LowerLimit, 9);
+            Assert.Equal(0.75 * Math.PI / 180.0, childBody.Joint.UpperLimit, 9);
             Assert.False(childBody.Joint.HasEffort);
 
             string xml = WriteMJCFToString(model);
@@ -296,8 +301,11 @@ namespace SW2RD.Test
 
             Assert.NotNull(childBody.Joint);
             Assert.True(childBody.Joint.HasLimits);
-            Assert.Equal(-90.0, childBody.Joint.LowerLimit, 9);
-            Assert.Equal(90.0, childBody.Joint.UpperLimit, 9);
+            // Angular range is degrees in the edit model, radians in the
+            // canonical/MJCF model; effort (N*m) is not an angle and is
+            // carried through unconverted.
+            Assert.Equal(-90.0 * Math.PI / 180.0, childBody.Joint.LowerLimit, 9);
+            Assert.Equal(90.0 * Math.PI / 180.0, childBody.Joint.UpperLimit, 9);
             Assert.True(childBody.Joint.HasEffort);
             Assert.Equal(12.0, childBody.Joint.Effort, 9);
             Assert.True(childBody.Joint.HasDamping);
@@ -307,7 +315,8 @@ namespace SW2RD.Test
             Assert.True(childBody.Joint.HasArmature);
             Assert.Equal(0.01, childBody.Joint.Armature, 9);
             Assert.True(childBody.Joint.HasRef);
-            Assert.Equal(15.0, childBody.Joint.Ref, 9);
+            // ref is a hinge angle: degrees in the edit model, radians here.
+            Assert.Equal(15.0 * Math.PI / 180.0, childBody.Joint.Ref, 9);
 
             string xml = WriteMJCFToString(model);
             Assert.Contains("range=\"-90 90\"", xml);
@@ -913,19 +922,13 @@ namespace SW2RD.Test
                 new MeshGroup("multi_hull_upper") { MeshFilename = "package://x/meshes/multi_hull_upper.STL" },
                 new MeshGroup("multi_hull_lower") { MeshFilename = "package://x/meshes/multi_hull_lower.STL" },
             };
+            // Explicit collision groups (not reusing visual) so the writer
+            // emits one <collision> per collision group.
+            link.CollisionUsesVisual = false;
 
-            string xml;
-            using (StringWriter sw = new StringWriter())
-            {
-                XmlWriterSettings settings = new XmlWriterSettings { Indent = true, OmitXmlDeclaration = true };
-                using (XmlWriter writer = XmlWriter.Create(sw, settings))
-                {
-                    writer.WriteStartDocument();
-                    link.WriteURDF(writer);
-                    writer.WriteEndDocument();
-                }
-                xml = sw.ToString();
-            }
+            Robot robot = new Robot { Name = "multi_robot" };
+            robot.SetBaseLink(link);
+            string xml = WriteURDFToString(robot);
 
             // Both visual mesh filenames should appear distinctly.
             Assert.Contains("multi_outer.STL", xml);
@@ -1013,12 +1016,16 @@ namespace SW2RD.Test
 
         private static string WriteURDFToString(Robot robot)
         {
+            // URDF is now written from the canonical KinematicTree by
+            // URDFBuilder; the legacy edit-model Robot is converted at the
+            // adapter boundary (degrees -> radians, rpy -> quaternion).
+            KinematicTree tree = KinematicTreeAdapter.ToCore(robot);
             using (StringWriter sw = new StringWriter())
             {
                 XmlWriterSettings settings = new XmlWriterSettings { Indent = true };
                 using (XmlWriter writer = XmlWriter.Create(sw, settings))
                 {
-                    robot.WriteURDF(writer);
+                    URDFBuilder.Write(tree, writer);
                 }
                 return sw.ToString();
             }

@@ -23,7 +23,7 @@ THE SOFTWARE.
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
-using SW2RD.URDF;
+using SW2RD.Input;
 using SW2RD.Utilities;
 using System;
 using System.Collections.Generic;
@@ -61,10 +61,6 @@ namespace SW2RD.Export
 
                 case ButtonClearSavedConfigurationID:
                     ClearSavedConfigurationFromForm();
-                    break;
-
-                case ButtonImportLegacyConfigurationID:
-                    ImportLegacyConfigurationFromForm();
                     break;
 
                 case SitesAddButtonID:
