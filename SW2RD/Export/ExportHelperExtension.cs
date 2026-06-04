@@ -25,7 +25,7 @@ using MathNet.Numerics.LinearAlgebra.Double;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
-using SW2RD.URDF;
+using SW2RD.Input;
 using SW2RD.Utilities;
 using System;
 using System.Collections.Generic;
@@ -2292,10 +2292,10 @@ namespace SW2RD.Export
                     {
                         bool angularLimit = swMate.Type == (int)swMateType_e.swMateANGLE;
                         double minimumVariation = angularLimit
-                            ? SW2RD.URDF.Joint.RadiansToDegrees(swMate.MinimumVariation)
+                            ? SW2RD.Input.Joint.RadiansToDegrees(swMate.MinimumVariation)
                             : swMate.MinimumVariation;
                         double maximumVariation = angularLimit
-                            ? SW2RD.URDF.Joint.RadiansToDegrees(swMate.MaximumVariation)
+                            ? SW2RD.Input.Joint.RadiansToDegrees(swMate.MaximumVariation)
                             : swMate.MaximumVariation;
 
                         // Unclear if flipped is the right thing we want to be checking here.

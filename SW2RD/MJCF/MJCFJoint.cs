@@ -101,9 +101,9 @@ namespace SW2RD.MJCF
         public double[] Position { get; set; } = new double[] { 0, 0, 0 };
 
         // Unit for ANGULAR attributes (hinge range / ref). The data model stores
-        // these in degrees, so Degree emits them as-is and Radian converts to
-        // radians. Slide (prismatic) range / ref are lengths and are never
-        // converted. Defaults to Degree (MuJoCo default).
+        // these in canonical RADIANS, so Radian emits them as-is and Degree
+        // converts to degrees. Slide (prismatic) range / ref are lengths and are
+        // never converted. Defaults to Degree (MuJoCo default).
         public MJCFAngleUnit AngleUnit { get; set; } = MJCFAngleUnit.Degree;
 
         public bool HasLimits { get; set; } = false;
@@ -156,15 +156,15 @@ namespace SW2RD.MJCF
             bool angular = Type == MJCFJointType.Hinge;
             if (HasLimits && Type != MJCFJointType.Free)
             {
-                double lower = angular ? MJCFFormat.AngleFromDegrees(LowerLimit, AngleUnit) : LowerLimit;
-                double upper = angular ? MJCFFormat.AngleFromDegrees(UpperLimit, AngleUnit) : UpperLimit;
+                double lower = angular ? MJCFFormat.AngleFromRadians(LowerLimit, AngleUnit) : LowerLimit;
+                double upper = angular ? MJCFFormat.AngleFromRadians(UpperLimit, AngleUnit) : UpperLimit;
                 writer.WriteAttributeString(
                     "range",
                     MJCFFormat.FormatDouble(lower) + " " + MJCFFormat.FormatDouble(upper));
             }
             if (HasRef && Type != MJCFJointType.Free && Type != MJCFJointType.Ball)
             {
-                double refValue = angular ? MJCFFormat.AngleFromDegrees(Ref, AngleUnit) : Ref;
+                double refValue = angular ? MJCFFormat.AngleFromRadians(Ref, AngleUnit) : Ref;
                 writer.WriteAttributeString("ref", MJCFFormat.FormatDouble(refValue));
             }
             if (HasDamping)

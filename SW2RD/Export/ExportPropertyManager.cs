@@ -23,7 +23,7 @@ THE SOFTWARE.
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
-using SW2RD.URDF;
+using SW2RD.Input;
 using SW2RD.Utilities;
 using System;
 using System.Collections.Generic;
@@ -109,7 +109,6 @@ namespace SW2RD.Export
         private PropertyManagerPageCombobox PMComboBoxAngleUnit;
         private PropertyManagerPageLabel PMLabelConfigurationCache;
         private PropertyManagerPageButton PMButtonClearSavedConfiguration;
-        private PropertyManagerPageButton PMButtonImportLegacyConfiguration;
 
         // Per-joint properties (Limits / Dynamics / Reference / Armature) and
         // the per-joint "auto-compute lower/upper from limit mate" toggle.
@@ -419,7 +418,7 @@ namespace SW2RD.Export
         private const int ComboBoxWorldAttachmentID = 150;
         private const int LabelConfigurationCacheID = 151;
         private const int ButtonClearSavedConfigurationID = 152;
-        private const int ButtonImportLegacyConfigurationID = 153;
+        // 153 retired (was ButtonImportLegacyConfigurationID); legacy import removed.
         private const int FastMeshExportCheckID = 154;
         private const int MeshQualityComboID = 155;
         private const int LabelRotationFormatID = 156;

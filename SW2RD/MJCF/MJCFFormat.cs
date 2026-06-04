@@ -32,22 +32,13 @@ namespace SW2RD.MJCF
     internal static class MJCFFormat
     {
         private const double RadiansToDegrees = 180.0 / Math.PI;
-        private const double DegreesToRadians = Math.PI / 180.0;
 
-        // Converts an angle stored internally in RADIANS to the chosen MJCF
-        // output unit. Used for orientation angles (axisangle / euler), whose
-        // source is the canonical radian quaternion.
+        // Converts an angle stored internally in RADIANS (the canonical unit
+        // for both orientation angles and hinge-joint range / ref) to the
+        // chosen MJCF output unit.
         public static double AngleFromRadians(double radians, MJCFAngleUnit unit)
         {
             return unit == MJCFAngleUnit.Radian ? radians : radians * RadiansToDegrees;
-        }
-
-        // Converts an angle stored internally in DEGREES to the chosen MJCF
-        // output unit. Used for hinge-joint range / ref, which the data model
-        // carries in degrees (the Joint Properties UI convention).
-        public static double AngleFromDegrees(double degrees, MJCFAngleUnit unit)
-        {
-            return unit == MJCFAngleUnit.Radian ? degrees * DegreesToRadians : degrees;
         }
 
         public static readonly NumberFormatInfo Number =

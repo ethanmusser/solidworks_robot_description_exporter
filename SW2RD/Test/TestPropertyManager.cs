@@ -1,6 +1,6 @@
 using SW2RD.SW;
 using SW2RD.Export;
-using SW2RD.URDF;
+using SW2RD.Input;
 using System.Reflection;
 using System.Runtime.Serialization;
 using Xunit;

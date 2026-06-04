@@ -20,9 +20,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+using SW2RD.Core;
 using SW2RD.Export;
-using SW2RD.URDF;
+using SW2RD.Input;
 using System.IO;
+using System.Linq;
 using System.Xml;
 using System.Xml.Linq;
 using Xunit;
@@ -138,18 +140,34 @@ namespace SW2RD.Test
             return joint;
         }
 
+        // URDF is now emitted from the canonical KinematicTree by URDFBuilder.
+        // Build a minimal two-link robot carrying the joint, convert it at the
+        // adapter boundary, write the URDF, and return the single <joint>
+        // element so the joint-type-resolution assertions can inspect it.
         private static XElement WriteJointToElement(Joint joint)
         {
+            Link baseLink = new Link(null) { Name = joint.Parent.Name };
+            Link child = new Link(baseLink) { Name = joint.Child.Name };
+            child.Joint = joint;
+            baseLink.Children.Add(child);
+
+            Robot robot = new Robot { Name = "joint_validation" };
+            robot.SetBaseLink(baseLink);
+            KinematicTree tree = KinematicTreeAdapter.ToCore(robot);
+
+            string xml;
             using (StringWriter stringWriter = new StringWriter())
-            using (XmlWriter writer = XmlWriter.Create(stringWriter, new XmlWriterSettings
             {
-                OmitXmlDeclaration = true,
-            }))
-            {
-                joint.WriteURDF(writer);
-                writer.Flush();
-                return XElement.Parse(stringWriter.ToString());
+                using (XmlWriter writer = XmlWriter.Create(stringWriter, new XmlWriterSettings
+                {
+                    Indent = true,
+                }))
+                {
+                    URDFBuilder.Write(tree, writer);
+                }
+                xml = stringWriter.ToString();
             }
+            return XDocument.Parse(xml).Descendants("joint").Single();
         }
     }
 }

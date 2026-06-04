@@ -79,6 +79,23 @@ namespace SW2RD.Core
         bool StlQualityFine = false,
         WorldAttachmentModel WorldAttachment = WorldAttachmentModel.Welded);
 
+    /// <remarks>
+    /// All angular quantities on this record are canonical RADIANS, and all
+    /// linear quantities are canonical METERS (SI). Specifically:
+    /// <list type="bullet">
+    /// <item><see cref="JointLimitModel.Lower"/> / <see cref="JointLimitModel.Upper"/>
+    /// are radians for revolute/continuous joints and meters for prismatic
+    /// (slide) joints.</item>
+    /// <item><see cref="Reference"/> (MJCF <c>ref</c>) is radians for hinge
+    /// joints and meters for slide joints.</item>
+    /// <item><see cref="Damping"/> is radian-based for hinge joints
+    /// (N*m*s/rad) and meter-based for slide joints (N*s/m).
+    /// <see cref="Friction"/> follows the same per-type unit.</item>
+    /// </list>
+    /// Conversions from the degree/RPY input model happen exclusively at the
+    /// <c>KinematicTreeAdapter</c> boundary; writers consume these values
+    /// as-is.
+    /// </remarks>
     public sealed record JointModel(
         string Name,
         string Type,
@@ -117,25 +134,48 @@ namespace SW2RD.Core
         double Mass,
         InertiaTensorModel Inertia);
 
+    /// <remarks>
+    /// <see cref="Lower"/> / <see cref="Upper"/> are radians for
+    /// revolute/continuous joints and meters for prismatic (slide) joints.
+    /// <see cref="Velocity"/> is rad/s or m/s respectively. <see cref="Effort"/>
+    /// is N*m or N.
+    /// </remarks>
     public sealed record JointLimitModel(
         double? Lower,
         double? Upper,
         double? Effort,
         double? Velocity);
 
+    /// <summary>
+    /// A rigid pose in the canonical model: position in METERS and rotation
+    /// as a unit quaternion (w, x, y, z). Storing rotation as a quaternion
+    /// keeps the canonical representation free of any Euler-sequence ambiguity;
+    /// writers convert to their own convention (URDF rpy, MJCF quat/euler/axisangle)
+    /// at emit time.
+    /// </summary>
     public sealed record PoseModel(
         Vector3Model Position,
-        RpyModel Rotation);
+        QuaternionModel Rotation);
 
     public sealed record Vector3Model(
         double X,
         double Y,
         double Z);
 
-    public sealed record RpyModel(
-        double Roll,
-        double Pitch,
-        double Yaw);
+    /// <summary>
+    /// Unit quaternion in (w, x, y, z) order - the canonical rotation
+    /// representation for <see cref="PoseModel"/>. Matches the MuJoCo
+    /// quaternion ordering; <c>MathOps.RPYToQuaternion</c> /
+    /// <c>QuaternionToRPY</c> bridge it to URDF roll-pitch-yaw.
+    /// </summary>
+    public sealed record QuaternionModel(
+        double W,
+        double X,
+        double Y,
+        double Z)
+    {
+        public static QuaternionModel Identity => new QuaternionModel(1, 0, 0, 0);
+    }
 
     public sealed record RgbaModel(
         double Red,

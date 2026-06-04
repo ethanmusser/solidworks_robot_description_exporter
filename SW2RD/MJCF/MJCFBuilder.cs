@@ -21,7 +21,7 @@ THE SOFTWARE.
 */
 
 using SW2RD.Core;
-using SW2RD.URDF;
+using SW2RD.Input;
 using SW2RD.Export;
 using SW2RD.Utilities;
 using System;
@@ -125,10 +125,10 @@ namespace SW2RD.MJCF
                 if (!IsWorldOffsetIdentity(tree.GlobalOriginCoordinateSystemName, topLevel))
                 {
                     Vector3Model pos = topLevel.Joint?.Origin?.Position ?? new Vector3Model(0, 0, 0);
-                    RpyModel rpy = topLevel.Joint?.Origin?.Rotation ?? new RpyModel(0, 0, 0);
+                    QuaternionModel rot = topLevel.Joint?.Origin?.Rotation ?? QuaternionModel.Identity;
                     body.SuppressTransform = false;
                     body.Position = new[] { pos.X, pos.Y, pos.Z };
-                    body.Quaternion = MathOps.RPYToQuaternion(new[] { rpy.Roll, rpy.Pitch, rpy.Yaw });
+                    body.Quaternion = new[] { rot.W, rot.X, rot.Y, rot.Z };
                 }
                 else
                 {
@@ -183,9 +183,9 @@ namespace SW2RD.MJCF
                 return true;
             }
             Vector3Model pos = origin.Position ?? new Vector3Model(0, 0, 0);
-            RpyModel rpy = origin.Rotation ?? new RpyModel(0, 0, 0);
+            QuaternionModel rot = origin.Rotation ?? QuaternionModel.Identity;
             return pos.X == 0.0 && pos.Y == 0.0 && pos.Z == 0.0
-                && rpy.Roll == 0.0 && rpy.Pitch == 0.0 && rpy.Yaw == 0.0;
+                && rot.W == 1.0 && rot.X == 0.0 && rot.Y == 0.0 && rot.Z == 0.0;
         }
 
         // Emits world-direct <geom> and <site> elements. Reuses the
@@ -255,9 +255,9 @@ namespace SW2RD.MJCF
                 // body frame; that's the pos/quat we stamp on the child
                 // <body>.
                 Vector3Model pos = link.Joint.Origin.Position ?? new Vector3Model(0, 0, 0);
-                RpyModel rpy = link.Joint.Origin.Rotation ?? new RpyModel(0, 0, 0);
+                QuaternionModel rot = link.Joint.Origin.Rotation ?? QuaternionModel.Identity;
                 body.Position = new[] { pos.X, pos.Y, pos.Z };
-                body.Quaternion = MathOps.RPYToQuaternion(new[] { rpy.Roll, rpy.Pitch, rpy.Yaw });
+                body.Quaternion = new[] { rot.W, rot.X, rot.Y, rot.Z };
             }
 
             body.Inertial = BuildInertial(link);
@@ -398,10 +398,11 @@ namespace SW2RD.MJCF
 
             if (urdfJoint.Damping.HasValue)
             {
+                // Canonical damping is already per-radian (hinge) / per-meter
+                // (slide), matching MuJoCo's SI convention, so no unit
+                // conversion is needed here.
                 mjJoint.HasDamping = true;
-                mjJoint.Damping = mjJoint.Type == MJCFJointType.Hinge
-                    ? urdfJoint.Damping.Value * 180.0 / Math.PI
-                    : urdfJoint.Damping.Value;
+                mjJoint.Damping = urdfJoint.Damping.Value;
             }
             if (urdfJoint.Friction.HasValue)
             {
