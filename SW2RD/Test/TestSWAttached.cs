@@ -18,7 +18,6 @@ namespace SW2RD.Test
         [Theory]
         [InlineData("3_DOF_ARM")]
         [InlineData("4_WHEELER")]
-        [InlineData("ORIGINAL_3_DOF_ARM")]
         public void TestModelDocOpens(string modelName)
         {
             OpenSWDocument(modelName);

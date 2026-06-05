@@ -26,6 +26,7 @@ using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
 using SW2RD.Input;
+using SW2RD.UI;
 using SW2RD.Utilities;
 using System;
 using System.Collections.Generic;
@@ -242,7 +243,7 @@ namespace SW2RD.Export
                     if (topLevels.Count == 0)
                     {
                         ExportErrorWhy = "World has no top-level body. Add at least one child to the World node before exporting.";
-                        MessageBox.Show(ExportErrorWhy);
+                        UserNotifier.Show(ExportErrorWhy);
                         logger.Warn(ExportErrorWhy);
                         progressBar.End();
                         return false;
@@ -293,7 +294,7 @@ namespace SW2RD.Export
                 Link baseLink = CreateLink(topLevelBaseNode, 1);
                 if (baseLink == null || !string.IsNullOrWhiteSpace(ExportErrorWhy))
                 {
-                    MessageBox.Show(ExportErrorWhy);
+                    UserNotifier.Show(ExportErrorWhy);
                     logger.Warn(ExportErrorWhy);
                     progressBar.End();
                     return false;

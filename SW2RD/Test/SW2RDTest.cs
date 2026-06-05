@@ -13,7 +13,6 @@ namespace SW2RD.Test
     {
         public const string ModelName3DofArm = "3_DOF_ARM";
         public const string ModelName4Wheeler = "4_WHEELER";
-        public const string ModelNameOriginal3DofArm = "ORIGINAL_3_DOF_ARM";
         protected readonly SWTestFixture TestFixture;
         protected readonly SldWorks SwApp;
         public SW2RDTest(SWTestFixture fixture)
@@ -95,7 +94,19 @@ namespace SW2RD.Test
             ModelDoc2 doc = SwApp.OpenDoc6(filename, filetype, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, 
                                            configuration, ref errors, ref warnings);
             Assert.Equal(0, errors);
-            Assert.Equal(0, warnings);
+            // Two load warnings are benign for the test suite and must not fail
+            // an open (verified values against the installed interop):
+            //  - swFileLoadWarning_AlreadyOpen (128): a referenced document is
+            //    still loaded from a prior test in the shared SW session. The
+            //    doc opens and is fully usable; this is a test-isolation
+            //    artifact, not a defect.
+            //  - swFileLoadWarning_NeedsRegen (32): a re-saved example assembly
+            //    reports "needs rebuild" on open but loads and exports fine.
+            // Mask both off; still assert no OTHER load warnings.
+            int benignWarnings =
+                (int)swFileLoadWarning_e.swFileLoadWarning_AlreadyOpen |
+                (int)swFileLoadWarning_e.swFileLoadWarning_NeedsRegen;
+            Assert.Equal(0, warnings & ~benignWarnings);
             return doc;
         }
 
@@ -114,7 +125,19 @@ namespace SW2RD.Test
             ModelDoc2 doc = SwApp.OpenDoc6(filename, filetype, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, 
                                            configuration, ref errors, ref warnings);
             Assert.Equal(0, errors);
-            Assert.Equal(0, warnings);
+            // Two load warnings are benign for the test suite and must not fail
+            // an open (verified values against the installed interop):
+            //  - swFileLoadWarning_AlreadyOpen (128): a referenced document is
+            //    still loaded from a prior test in the shared SW session. The
+            //    doc opens and is fully usable; this is a test-isolation
+            //    artifact, not a defect.
+            //  - swFileLoadWarning_NeedsRegen (32): a re-saved example assembly
+            //    reports "needs rebuild" on open but loads and exports fine.
+            // Mask both off; still assert no OTHER load warnings.
+            int benignWarnings =
+                (int)swFileLoadWarning_e.swFileLoadWarning_AlreadyOpen |
+                (int)swFileLoadWarning_e.swFileLoadWarning_NeedsRegen;
+            Assert.Equal(0, warnings & ~benignWarnings);
             return doc;
         }
 

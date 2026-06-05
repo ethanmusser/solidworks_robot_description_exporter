@@ -1,0 +1,571 @@
+{
+  "SchemaVersion": 1,
+  "Format": "MJCF",
+  "ModelName": "3_DOF_ARM - MJCF",
+  "Tree": {
+    "Name": "3_DOF_ARM - MJCF",
+    "GlobalOriginCoordinateSystemName": "Origin_global",
+    "WorldBody": {
+      "Name": "world",
+      "Inertial": {
+        "Origin": {
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "W": 1,
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          }
+        },
+        "Mass": 0,
+        "Inertia": {
+          "Ixx": 0,
+          "Ixy": 0,
+          "Ixz": 0,
+          "Iyy": 0,
+          "Iyz": 0,
+          "Izz": 0
+        }
+      },
+      "Material": {
+        "Name": "",
+        "Color": {
+          "Red": 1,
+          "Green": 1,
+          "Blue": 1,
+          "Alpha": 1
+        },
+        "TextureFilename": ""
+      },
+      "VisualGroups": [
+        {
+          "Name": "world",
+          "MeshFilename": "package://3_DOF_ARM - MJCF/meshes/world_visual.STL",
+          "Components": [
+            {
+              "DisplayName": "",
+              "PersistentId": "aEIAAAUAAAD//v8cMwBfAEQATwBGAF8AQQBSAE0AXwBHAFIATwBVAE4ARAAtADEAQAAzAF8ARABPAEYAXwBBAFIATQAEAAAAEAAAAAEAAAABAAAAOwAAAA=="
+            }
+          ]
+        }
+      ],
+      "CollisionGroups": [],
+      "CollisionUsesVisual": true,
+      "InertialSource": "Visual",
+      "InertialComponents": [],
+      "Sites": [],
+      "Joint": null,
+      "Children": [
+        {
+          "Name": "base_link",
+          "Inertial": {
+            "Origin": {
+              "Position": {
+                "X": 0.0024911538461538378,
+                "Y": 2.3455800790171429E-18,
+                "Z": 0.0030558741258741254
+              },
+              "Rotation": {
+                "W": 1,
+                "X": 0,
+                "Y": 0,
+                "Z": 0
+              }
+            },
+            "Mass": 0.39819686884250638,
+            "Inertia": {
+              "Ixx": 0.00027482554358833095,
+              "Ixy": 5.4480408636988162E-36,
+              "Ixz": -1.7342497442774744E-36,
+              "Iyy": 0.00027482554358833095,
+              "Iyz": -4.2472491893661935E-21,
+              "Izz": 0.00048740828272741406
+            }
+          },
+          "Material": {
+            "Name": "",
+            "Color": {
+              "Red": 0.52941176470588236,
+              "Green": 0.5490196078431373,
+              "Blue": 0.5490196078431373,
+              "Alpha": 1
+            },
+            "TextureFilename": ""
+          },
+          "VisualGroups": [
+            {
+              "Name": "base",
+              "MeshFilename": "package://3_DOF_ARM - MJCF/meshes/base_link_visual.STL",
+              "Components": [
+                {
+                  "DisplayName": "",
+                  "PersistentId": "aEIAAAUAAAD//v8aMwBfAEQATwBGAF8AQQBSAE0AXwBCAEEAUwBFAC0AMQBAADMAXwBEAE8ARgBfAEEAUgBNAAQAAAAQAAAAAQAAAAEAAAARAAAA"
+                }
+              ]
+            }
+          ],
+          "CollisionGroups": [],
+          "CollisionUsesVisual": true,
+          "InertialSource": "Visual",
+          "InertialComponents": [],
+          "Sites": [],
+          "Joint": {
+            "Name": "",
+            "Type": "",
+            "ParentLinkName": "",
+            "ChildLinkName": "",
+            "Origin": {
+              "Position": {
+                "X": 0,
+                "Y": 0,
+                "Z": 0
+              },
+              "Rotation": {
+                "W": 1,
+                "X": 0,
+                "Y": 0,
+                "Z": 0
+              }
+            },
+            "Axis": {
+              "X": 0,
+              "Y": 0,
+              "Z": 0
+            },
+            "Limit": null,
+            "CoordinateSystemName": "Origin_global",
+            "AxisName": "",
+            "AxisFlipped": false,
+            "AutoComputeLimits": true,
+            "Damping": null,
+            "Friction": null,
+            "Armature": null,
+            "Reference": null,
+            "AutoDeriveAxis": false
+          },
+          "Children": [
+            {
+              "Name": "prox_link",
+              "Inertial": {
+                "Origin": {
+                  "Position": {
+                    "X": 6.9477168401873728E-10,
+                    "Y": -0.088146058727858523,
+                    "Z": 2.5840333432031182E-10
+                  },
+                  "Rotation": {
+                    "W": 1,
+                    "X": 0,
+                    "Y": 0,
+                    "Z": 0
+                  }
+                },
+                "Mass": 0.35794148711992479,
+                "Inertia": {
+                  "Ixx": 0.0011491799722556494,
+                  "Ixy": 2.0686484907833703E-11,
+                  "Ixz": 3.0296066544896073E-10,
+                  "Iyy": 0.00018330675490257439,
+                  "Iyz": 5.6928753144054529E-12,
+                  "Izz": 0.0011543969525622535
+                }
+              },
+              "Material": {
+                "Name": "",
+                "Color": {
+                  "Red": 0.89803921568627454,
+                  "Green": 0.91764705882352937,
+                  "Blue": 0.92941176470588238,
+                  "Alpha": 1
+                },
+                "TextureFilename": ""
+              },
+              "VisualGroups": [
+                {
+                  "Name": "prox",
+                  "MeshFilename": "package://3_DOF_ARM - MJCF/meshes/prox_link_visual.STL",
+                  "Components": [
+                    {
+                      "DisplayName": "",
+                      "PersistentId": "aEIAAAUAAAD//v8dMwBfAEQATwBGAF8AQQBSAE0AXwBTAEUARwBNAEUATgBUAC0AMQBAADMAXwBEAE8ARgBfAEEAUgBNAAQAAAAQAAAAAQAAAAEAAAAUAAAA"
+                    }
+                  ]
+                }
+              ],
+              "CollisionGroups": [],
+              "CollisionUsesVisual": true,
+              "InertialSource": "Visual",
+              "InertialComponents": [],
+              "Sites": [],
+              "Joint": {
+                "Name": "prox_joint",
+                "Type": "revolute",
+                "ParentLinkName": "base_link",
+                "ChildLinkName": "prox_link",
+                "Origin": {
+                  "Position": {
+                    "X": 0.0024911538461538374,
+                    "Y": 0,
+                    "Z": 0
+                  },
+                  "Rotation": {
+                    "W": 0.5,
+                    "X": -0.50000000000000011,
+                    "Y": 0.5,
+                    "Z": -0.49999999999999989
+                  }
+                },
+                "Axis": {
+                  "X": 0,
+                  "Y": -1,
+                  "Z": 0
+                },
+                "Limit": null,
+                "CoordinateSystemName": "Origin_prox_joint",
+                "AxisName": "Axis_prox_joint",
+                "AxisFlipped": true,
+                "AutoComputeLimits": true,
+                "Damping": null,
+                "Friction": null,
+                "Armature": null,
+                "Reference": null,
+                "AutoDeriveAxis": false
+              },
+              "Children": [
+                {
+                  "Name": "dist_link",
+                  "Inertial": {
+                    "Origin": {
+                      "Position": {
+                        "X": 6.9477172477069664E-10,
+                        "Y": -0.10106366155186175,
+                        "Z": -2.5840335426963179E-10
+                      },
+                      "Rotation": {
+                        "W": 1,
+                        "X": 0,
+                        "Y": 0,
+                        "Z": 0
+                      }
+                    },
+                    "Mass": 0.35794148711992468,
+                    "Inertia": {
+                      "Ixx": 0.0011491799722556496,
+                      "Ixy": -2.0686485027325971E-11,
+                      "Ixz": -3.0296066550321845E-10,
+                      "Iyy": 0.00018330675490257418,
+                      "Iyz": 5.6928754904411438E-12,
+                      "Izz": 0.0011543969525622535
+                    }
+                  },
+                  "Material": {
+                    "Name": "",
+                    "Color": {
+                      "Red": 0.89803921568627454,
+                      "Green": 0.91764705882352937,
+                      "Blue": 0.92941176470588238,
+                      "Alpha": 1
+                    },
+                    "TextureFilename": ""
+                  },
+                  "VisualGroups": [
+                    {
+                      "Name": "dist",
+                      "MeshFilename": "package://3_DOF_ARM - MJCF/meshes/dist_link_visual.STL",
+                      "Components": [
+                        {
+                          "DisplayName": "",
+                          "PersistentId": "aEIAAAUAAAD//v8dMwBfAEQATwBGAF8AQQBSAE0AXwBTAEUARwBNAEUATgBUAC0AMgBAADMAXwBEAE8ARgBfAEEAUgBNAAQAAAAQAAAAAQAAAAEAAAAVAAAA"
+                        }
+                      ]
+                    }
+                  ],
+                  "CollisionGroups": [],
+                  "CollisionUsesVisual": true,
+                  "InertialSource": "Visual",
+                  "InertialComponents": [],
+                  "Sites": [],
+                  "Joint": {
+                    "Name": "dist_joint",
+                    "Type": "revolute",
+                    "ParentLinkName": "prox_link",
+                    "ChildLinkName": "dist_link",
+                    "Origin": {
+                      "Position": {
+                        "X": 0,
+                        "Y": -0.18920972027972024,
+                        "Z": 0
+                      },
+                      "Rotation": {
+                        "W": 0.70710678118654757,
+                        "X": -0.70710678118654746,
+                        "Y": 0,
+                        "Z": 0
+                      }
+                    },
+                    "Axis": {
+                      "X": 1,
+                      "Y": 0,
+                      "Z": 0
+                    },
+                    "Limit": null,
+                    "CoordinateSystemName": "Origin_dist_joint",
+                    "AxisName": "Axis_dist_joint",
+                    "AxisFlipped": true,
+                    "AutoComputeLimits": true,
+                    "Damping": null,
+                    "Friction": null,
+                    "Armature": null,
+                    "Reference": null,
+                    "AutoDeriveAxis": false
+                  },
+                  "Children": [
+                    {
+                      "Name": "effector_link",
+                      "Inertial": {
+                        "Origin": {
+                          "Position": {
+                            "X": -2.7939208948402059E-16,
+                            "Y": -2.2204460492503131E-16,
+                            "Z": 0.012249499404682035
+                          },
+                          "Rotation": {
+                            "W": 1,
+                            "X": 0,
+                            "Y": 0,
+                            "Z": 0
+                          }
+                        },
+                        "Mass": 0.22998448490993803,
+                        "Inertia": {
+                          "Ixx": 3.5454342935125145E-05,
+                          "Ixy": 1.3615872721325826E-20,
+                          "Ixz": -8.3747986758159661E-20,
+                          "Iyy": 3.4937159545877026E-05,
+                          "Iyz": 3.7655478947582196E-19,
+                          "Izz": 4.6580388184107096E-05
+                        }
+                      },
+                      "Material": {
+                        "Name": "",
+                        "Color": {
+                          "Red": 0.77647058823529413,
+                          "Green": 0.75686274509803919,
+                          "Blue": 0.73725490196078436,
+                          "Alpha": 1
+                        },
+                        "TextureFilename": ""
+                      },
+                      "VisualGroups": [
+                        {
+                          "Name": "effector",
+                          "MeshFilename": "package://3_DOF_ARM - MJCF/meshes/effector_link_effector.STL",
+                          "Components": [
+                            {
+                              "DisplayName": "",
+                              "PersistentId": "aEIAAAUAAAD//v8iMwBfAEQATwBGAF8AQQBSAE0AXwBFAE4ARABfAEUARgBGAEUAQwBUAE8AUgAtADEAQAAzAF8ARABPAEYAXwBBAFIATQAEAAAAEAAAAAEAAAABAAAAEgAAAA=="
+                            }
+                          ]
+                        },
+                        {
+                          "Name": "gripper",
+                          "MeshFilename": "package://3_DOF_ARM - MJCF/meshes/effector_link_gripper.STL",
+                          "Components": [
+                            {
+                              "DisplayName": "",
+                              "PersistentId": "aEIAAAUAAAD//v8dMwBfAEQATwBGAF8AQQBSAE0AXwBHAFIASQBQAFAARQBSAC0AMQBAADMAXwBEAE8ARgBfAEEAUgBNAAQAAAAQAAAAAQAAAAEAAABAAAAA"
+                            }
+                          ]
+                        }
+                      ],
+                      "CollisionGroups": [],
+                      "CollisionUsesVisual": true,
+                      "InertialSource": "Visual",
+                      "InertialComponents": [],
+                      "Sites": [
+                        {
+                          "Name": "gripper",
+                          "CoordinateSystemName": "Origin_gripper",
+                          "Pose": {
+                            "Position": {
+                              "X": 0,
+                              "Y": 0,
+                              "Z": 0
+                            },
+                            "Rotation": {
+                              "W": 1,
+                              "X": 0,
+                              "Y": 0,
+                              "Z": 0
+                            }
+                          }
+                        }
+                      ],
+                      "Joint": {
+                        "Name": "effector_joint",
+                        "Type": "revolute",
+                        "ParentLinkName": "dist_link",
+                        "ChildLinkName": "effector_link",
+                        "Origin": {
+                          "Position": {
+                            "X": 0,
+                            "Y": -0.17999999999999999,
+                            "Z": 0
+                          },
+                          "Rotation": {
+                            "W": 0.70710678118654757,
+                            "X": 0.70710678118654746,
+                            "Y": 0,
+                            "Z": 0
+                          }
+                        },
+                        "Axis": {
+                          "X": 0,
+                          "Y": 0,
+                          "Z": 1
+                        },
+                        "Limit": null,
+                        "CoordinateSystemName": "Origin_effector_joint",
+                        "AxisName": "Axis_effector_joint",
+                        "AxisFlipped": true,
+                        "AutoComputeLimits": false,
+                        "Damping": null,
+                        "Friction": null,
+                        "Armature": null,
+                        "Reference": null,
+                        "AutoDeriveAxis": false
+                      },
+                      "Children": [],
+                      "IsFixedFrame": false,
+                      "StlQualityFine": false,
+                      "WorldAttachment": "Welded"
+                    }
+                  ],
+                  "IsFixedFrame": false,
+                  "StlQualityFine": false,
+                  "WorldAttachment": "Welded"
+                }
+              ],
+              "IsFixedFrame": false,
+              "StlQualityFine": false,
+              "WorldAttachment": "Welded"
+            }
+          ],
+          "IsFixedFrame": false,
+          "StlQualityFine": false,
+          "WorldAttachment": "Welded"
+        }
+      ],
+      "IsFixedFrame": false,
+      "StlQualityFine": false,
+      "WorldAttachment": "Welded"
+    }
+  },
+  "MeshDir": "../meshes/",
+  "Auxiliary": {
+    "effector_link": {
+      "VisualMeshes": [
+        {
+          "Name": "effector_link_effector",
+          "File": "effector_link_effector.STL"
+        },
+        {
+          "Name": "effector_link_gripper",
+          "File": "effector_link_gripper.STL"
+        }
+      ],
+      "CollisionMeshes": [
+        {
+          "Name": "effector_link_effector",
+          "File": "effector_link_effector.STL"
+        },
+        {
+          "Name": "effector_link_gripper",
+          "File": "effector_link_gripper.STL"
+        }
+      ],
+      "Sites": [
+        {
+          "Name": "gripper",
+          "Position": [
+            0,
+            0,
+            0.058964466094065221
+          ],
+          "Quaternion": [
+            0.70710678118654757,
+            1.0558238739218183E-16,
+            -1.0558238739218182E-16,
+            -0.70710678118654746
+          ]
+        }
+      ]
+    },
+    "dist_link": {
+      "VisualMeshes": [
+        {
+          "Name": "dist_link_visual",
+          "File": "dist_link_visual.STL"
+        }
+      ],
+      "CollisionMeshes": [
+        {
+          "Name": "dist_link_visual",
+          "File": "dist_link_visual.STL"
+        }
+      ],
+      "Sites": []
+    },
+    "prox_link": {
+      "VisualMeshes": [
+        {
+          "Name": "prox_link_visual",
+          "File": "prox_link_visual.STL"
+        }
+      ],
+      "CollisionMeshes": [
+        {
+          "Name": "prox_link_visual",
+          "File": "prox_link_visual.STL"
+        }
+      ],
+      "Sites": []
+    },
+    "base_link": {
+      "VisualMeshes": [
+        {
+          "Name": "base_link_visual",
+          "File": "base_link_visual.STL"
+        }
+      ],
+      "CollisionMeshes": [
+        {
+          "Name": "base_link_visual",
+          "File": "base_link_visual.STL"
+        }
+      ],
+      "Sites": []
+    },
+    "\u003Cworld\u003E": {
+      "VisualMeshes": [
+        {
+          "Name": "world_visual",
+          "File": "world_visual.STL"
+        }
+      ],
+      "CollisionMeshes": [
+        {
+          "Name": "world_visual",
+          "File": "world_visual.STL"
+        }
+      ],
+      "Sites": []
+    }
+  },
+  "MjcfRotationFormat": "AxisAngle",
+  "MjcfAngleUnit": "Degree"
+}
