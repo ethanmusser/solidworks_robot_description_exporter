@@ -66,16 +66,10 @@ namespace SW2RD.Export
             PMListBoxSites = (PropertyManagerPageListbox)PMSitesGroup.AddControl2(
                 SitesListBoxID, (short)controlType, "", (short)alignment, options,
                 "Sites already added to this link. Select one to edit it.");
-            PMListBoxSites.Height = 50;
-
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
-            PMButtonSiteAdd = (PropertyManagerPageButton)PMSitesGroup.AddControl2(
-                SitesAddButtonID, (short)controlType, "New Site", 0, options,
-                "Create a new site on this link and make it active.");
-
-            PMButtonSiteRemove = (PropertyManagerPageButton)PMSitesGroup.AddControl2(
-                SitesRemoveButtonID, (short)controlType, "Delete Selected Site", 0, options,
-                "Delete the highlighted site from this link.");
+            // Match the link-tree box height (PMTree.Height = 163) so the
+            // site list is readable when a link has several sites, rather
+            // than a cramped two-row box.
+            PMListBoxSites.Height = 163;
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             PMSitesGroup.AddControl2(
@@ -116,6 +110,18 @@ namespace SW2RD.Export
             PMSelectionSiteCoordSys.Height = 18;
             PMSelectionSiteCoordSys.SetSelectionFilters(coordSysFilterObj);
             PMSelectionSiteCoordSys.Mark = SiteCoordSysSelectionMark;
+
+            // Add / Remove buttons live AFTER the name + coord-system editors
+            // so the user reads the section top-to-bottom (pick a site row ->
+            // edit its name -> pick its coord system -> add another / delete).
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
+            PMButtonSiteAdd = (PropertyManagerPageButton)PMSitesGroup.AddControl2(
+                SitesAddButtonID, (short)controlType, "New Site", 0, options,
+                "Create a new site on this link and make it active.");
+
+            PMButtonSiteRemove = (PropertyManagerPageButton)PMSitesGroup.AddControl2(
+                SitesRemoveButtonID, (short)controlType, "Delete Selected Site", 0, options,
+                "Delete the highlighted site from this link.");
         }
 
         private void AddSiteFromForm()
