@@ -181,7 +181,7 @@ namespace SW2RD.Test
         }
 
         [Theory]
-        [InlineData(ModelName3DofArm, 4)]
+        [InlineData(ModelName3DofArm, 5)]
         public void TestGetCountLink(string modelName, int expected)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
@@ -195,7 +195,7 @@ namespace SW2RD.Test
         }
 
         [Theory]
-        [InlineData(ModelName3DofArm, 3)]
+        [InlineData(ModelName3DofArm, 4)]
         public void TestGetCountNodeCollection(string modelName, int expected)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
@@ -309,11 +309,23 @@ namespace SW2RD.Test
         public void TestLoadSWComponent(string modelName)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
-            LinkNode baseNode = ConfigurationSerialization.LoadBaseNodeFromModel(doc, out bool abortProcess);
-            Assert.False(abortProcess);
-            baseNode.Link.SWMainComponentPID = baseNode.Link.SWComponentPIDs[0];
-            Component2 component = CommonSwOperations.LoadSWComponent(doc, baseNode.Link.SWMainComponentPID);
+            AssemblyDoc assyDoc = (AssemblyDoc)doc;
+
+            // The base node of a world-rooted assembly carries no component, and
+            // the modern config stores components per mesh-group rather than in
+            // the legacy combined Link.SWComponentPIDs list, so we cannot rely on
+            // a config-populated PID here. Instead exercise the round trip
+            // directly: take a real component from the assembly, save its PID,
+            // and load it back. This is exactly the save/load path LoadSWComponent
+            // is responsible for.
+            object[] componentObjs = assyDoc.GetComponents(false);
+            Component2 source = componentObjs.Cast<Component2>().First();
+            byte[] pid = CommonSwOperations.SaveSWComponent(doc, source);
+            Assert.NotNull(pid);
+
+            Component2 component = CommonSwOperations.LoadSWComponent(doc, pid);
             Assert.NotNull(component);
+            Assert.Equal(source.Name2, component.Name2);
 
             SwApp.CloseAllDocuments(true);
         }
