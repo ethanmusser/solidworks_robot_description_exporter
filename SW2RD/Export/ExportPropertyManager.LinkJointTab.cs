@@ -73,83 +73,19 @@ namespace SW2RD.Export
                 TextBoxJointNameID, (short)controlType, "", (short)alignment, options,
                 "Enter the name of the joint");
 
-            // Build the global / joint coord-system selectors and the
-            // joint-axis selector + reverse-direction button.
+            // Build the joint coord-system selector and the joint-axis
+            // selector + reverse-direction button.
             object coordSysFilterObj = new swSelectType_e[] { swSelectType_e.swSelCOORDSYS };
             object axisFilterObj = new swSelectType_e[] { swSelectType_e.swSelDATUMAXES };
 
-            BuildGlobalCoordsysControls(coordSysFilterObj);
-            BuildWorldAttachmentControls();
             BuildJointCoordsysControls(coordSysFilterObj);
-            BuildJointAxisControls(axisFilterObj);
+            // Joint type is built BEFORE the joint-axis row so it renders
+            // above it: the axis row greys out based on the joint type, so the
+            // controlling dropdown reads more naturally above the control it
+            // affects (group-box children render in declaration order).
             BuildJointTypeControls();
+            BuildJointAxisControls(axisFilterObj);
             BuildJointPropertiesControls();
-        }
-
-        // World attachment combobox (Welded / Free) for top-level bodies.
-        // Only enabled when the active node is a top-level body (immediate
-        // child of the WorldNode); disabled for the WorldNode itself and
-        // for nested links. URDF export ignores this field; MJCF emits a
-        // <freejoint/> on the body when set to Free.
-        private void BuildWorldAttachmentControls()
-        {
-            int controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
-            int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            int options = (int)swAddControlOptions_e.swControlOptions_Visible +
-                (int)swAddControlOptions_e.swControlOptions_Enabled;
-            string tip = "How a top-level body attaches to the world. Welded = body is rigidly fixed; Free = MJCF emits a <freejoint/> on the body so it floats with 6 DoF. URDF ignores this and always emits a fixed-base base_link.";
-            PMLabelWorldAttachment = (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(
-                LabelWorldAttachmentID, (short)controlType,
-                "World attachment", (short)alignment, options, tip);
-
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Combobox;
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMComboBoxWorldAttachment = (PropertyManagerPageCombobox)PMLinkJointGroup.AddControl2(
-                ComboBoxWorldAttachmentID, (short)controlType,
-                "World attachment", (short)alignment, options, tip);
-            PMComboBoxWorldAttachment.Style =
-                (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
-            // Order MUST match WorldAttachmentModel (Welded = 0, Free = 1)
-            // so the combobox index can be cast directly to the enum.
-            PMComboBoxWorldAttachment.AddItems(new string[] { "Welded", "Free" });
-        }
-
-        // Global Origin coord system label + single-entity SelectionBox.
-        // Picking a coord system in the SW tree commits its name through
-        // OnSelectionboxListChanged; FillPropertyManager / OnTabClicked
-        // rehydrate the box via SelectByID2 + Mark when the user revisits
-        // the tab. Empty box = "Automatically Generate" semantics at
-        // export time.
-        private void BuildGlobalCoordsysControls(object coordSysFilterObj)
-        {
-            int controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
-            int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            int options = (int)swAddControlOptions_e.swControlOptions_Visible +
-                (int)swAddControlOptions_e.swControlOptions_Enabled;
-            string tip = "Pick the reference coordinate system that defines the global origin. Leave empty to auto-generate one at the assembly origin.";
-            PMLabelGlobalCoordsys = (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(
-                IDLabelGlobalCoordsys, (short)controlType,
-                "Global origin coordinate system", (short)alignment, options, tip);
-
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
-            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMSelectionGlobalCoordsys = (PropertyManagerPageSelectionbox)PMLinkJointGroup.AddControl2(
-                SelectionGlobalCoordsysID, (short)controlType,
-                "Pick global origin coordinate system", (short)alignment, options, tip);
-            // SingleEntityOnly = true matches SW's coord-system and mate
-            // pickers: a new pick overwrites the prior contents in place.
-            // Height = 18 is the SW-native single-row selectionbox height.
-            //
-            // AllowSelectInMultipleBoxes = false keeps each feature picker
-            // bound to one semantic role. The *SelectionMark constants in
-            // ExportPropertyManager.cs are unique bitmasks, so each picker
-            // also receives only selections made for its own mark.
-            PMSelectionGlobalCoordsys.AllowSelectInMultipleBoxes = false;
-            PMSelectionGlobalCoordsys.SingleEntityOnly = true;
-            PMSelectionGlobalCoordsys.AllowMultipleSelectOfSameEntity = false;
-            PMSelectionGlobalCoordsys.Height = 18;
-            PMSelectionGlobalCoordsys.SetSelectionFilters(coordSysFilterObj);
-            PMSelectionGlobalCoordsys.Mark = GlobalCoordSysSelectionMark;
         }
 
         private void BuildJointCoordsysControls(object coordSysFilterObj)
@@ -157,34 +93,35 @@ namespace SW2RD.Export
             int controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             // Visible | Enabled at create time; EnableControls flips both
-            // off for the base node which has no joint to anchor.
+            // off for the WorldNode... actually the WorldNode uses this same
+            // picker for the global origin too, so it is enabled for every
+            // real node (see EnableControls).
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            // The "Link coordinate system" picker doubles as both the
-            // joint-origin coord-sys (nested links) and the world->body
-            // offset coord-sys (top-level bodies). The label is
-            // generic/role-neutral on purpose so it reads correctly for
-            // either case; the underlying field on the data model is the
-            // same Link.Joint.CoordinateSystemName in both. The picker is
-            // disabled on the WorldNode itself (the WorldNode owns the
-            // Global Origin picker, not this one).
-            string tip = "Pick the reference coordinate system that defines this body's frame. For a top-level body it is the world->body offset; for a nested link it is the joint origin. Leave empty to auto-generate one from the parent/child kinematic chain.";
+            // The single "Coordinate system" picker is role-polymorphic: it
+            // is the global origin coord-sys for the WorldNode, the
+            // world->body offset coord-sys for a top-level body, and the
+            // joint-origin coord-sys for a nested link. All three roles
+            // persist to the SAME field (Link.Joint.CoordinateSystemName;
+            // WorldNode.GlobalOriginCoordinateSystemName is a thin proxy for
+            // it), so one box serves every role. The caption is updated
+            // per-role in FillPropertyManager.
+            string tip = "Pick the reference coordinate system that defines this link's frame. For the world it is the global origin; for a top-level body it is the world->body offset; for a nested link it is the joint origin. Leave empty to auto-generate one from the kinematic chain.";
             PMLabelCoordSys = (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(
                 LabelCoordSysID, (short)controlType,
-                "Link coordinate system", (short)alignment, options, tip);
+                "Coordinate system", (short)alignment, options, tip);
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             PMSelectionJointCoordsys = (PropertyManagerPageSelectionbox)PMLinkJointGroup.AddControl2(
                 SelectionJointCoordsysID, (short)controlType,
-                "Pick link coordinate system", (short)alignment, options, tip);
-            // SW-native single-entity overwrite UX - see
-            // PMSelectionGlobalCoordsys above for the full rationale,
-            // including why AllowSelectInMultipleBoxes is FALSE
-            // (semantic exclusivity: the same coord-sys can never be
-            // both the global origin and a joint origin in the data
-            // model, so the picker must move the entity out of the
-            // sibling box on a fresh pick).
+                "Pick coordinate system", (short)alignment, options, tip);
+            // SW-native single-entity overwrite UX: a new pick overwrites the
+            // prior contents in place (Height = 18 single-row,
+            // SingleEntityOnly = true), matching SW's own coord-system / mate
+            // pickers. AllowSelectInMultipleBoxes = false keeps the picker
+            // bound to its single mark (the bit-unique *SelectionMark
+            // constants ensure no cross-talk with the axis box).
             PMSelectionJointCoordsys.AllowSelectInMultipleBoxes = false;
             PMSelectionJointCoordsys.SingleEntityOnly = true;
             PMSelectionJointCoordsys.AllowMultipleSelectOfSameEntity = false;
@@ -219,7 +156,7 @@ namespace SW2RD.Export
                 SelectionJointAxisID, (short)controlType, "Pick joint axis",
                 (short)alignment, options, tip);
             // SW-native single-entity overwrite UX - see
-            // PMSelectionGlobalCoordsys above for the full rationale.
+            // PMSelectionJointCoordsys above for the full rationale.
             // AllowSelectInMultipleBoxes = FALSE keeps the joint axis
             // pick exclusive to this box (different selection filter
             // from the coord-sys pickers, but the semantic-exclusivity
@@ -261,8 +198,12 @@ namespace SW2RD.Export
                 (short)alignment, options, tip);
             PMComboBoxJointType.Style =
                 (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
-            PMComboBoxJointType.AddItems(new string[] {
-                "", "fixed", "revolute", "prismatic" });
+            // Items are NOT hard-coded here: this single dropdown is
+            // role-aware and its contents change per active node
+            // (top-level body: fixed / free; nested link: (blank) / fixed /
+            // revolute / prismatic; world: empty + disabled). FillProperty
+            // Manager repopulates via PopulateJointTypeComboForRole on every
+            // link switch.
         }
 
         // Joint Properties section: per-joint Limits / Dynamics / Reference
@@ -294,7 +235,7 @@ namespace SW2RD.Export
                 "Auto-compute Lower/Upper from limit mate",
                 (short)alignment, options,
                 "When checked, Lower and Upper are derived from the SolidWorks limit mate on this joint at export time, overwriting any values typed below. Uncheck to use the values typed below verbatim.");
-            PMCheckAutoComputeLimits.Checked = true;
+            PMCheckAutoComputeLimits.Checked = false;
 
             PMLabelJointLower = AddJointPropertyLabel(LabelJointLowerID,
                 "Lower [deg or m]",

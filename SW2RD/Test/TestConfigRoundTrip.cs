@@ -347,13 +347,13 @@ namespace SW2RD.Test
         }
 
         [Fact]
-        public void TestRoundTripDefaultsAutoComputeLimitsTrueWhenMissing()
+        public void TestRoundTripDefaultsAutoComputeLimitsFalseWhenMissing()
         {
-            // Older Config documents (pre-Joint-properties feature) do
-            // not carry the AutoComputeLimits field. The JointModel
-            // record default is `true`; System.Text.Json must respect
-            // that when the JSON field is missing, otherwise old configs
-            // would silently flip to "manual limits" on first reload.
+            // Config documents that do not carry the AutoComputeLimits
+            // field bind to the JointModel record default, which is now
+            // `false` (new joints require the user to opt in to limit-mate
+            // derivation). System.Text.Json must respect that record
+            // default when the JSON field is missing.
             string json = "{ \"SchemaVersion\": " + Config.CurrentSchemaVersion + ", " +
                 "\"ExporterVersion\": \"\", \"SavedAtUtc\": \"2024-01-01T00:00:00Z\", " +
                 "\"Tree\": { \"Name\": \"x\", " +
@@ -379,7 +379,7 @@ namespace SW2RD.Test
 
             Config read = ConfigJsonSerializer.Deserialize(json);
             JointModel joint = FirstTopLevel(read.Tree).Children[0].Joint;
-            Assert.True(joint.AutoComputeLimits);
+            Assert.False(joint.AutoComputeLimits);
             Assert.False(joint.AutoDeriveAxis);
             Assert.Null(joint.Damping);
             Assert.Null(joint.Friction);

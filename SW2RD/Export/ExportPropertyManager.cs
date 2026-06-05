@@ -123,7 +123,10 @@ namespace SW2RD.Export
         // commits via OnSelectionboxListChanged, and SelectByID2 on
         // FillPropertyManager / OnTabClicked rehydrates the box).
         private PropertyManagerPageCombobox PMComboBoxJointType;
-        private PropertyManagerPageSelectionbox PMSelectionGlobalCoordsys;
+        // Single role-polymorphic coordinate-system picker (global origin for
+        // the WorldNode, world->body offset for a top-level body, joint
+        // origin for a nested link). All three roles persist to
+        // Link.Joint.CoordinateSystemName.
         private PropertyManagerPageSelectionbox PMSelectionJointCoordsys;
         private PropertyManagerPageSelectionbox PMSelectionJointAxis;
         // "Auto-derive axis from kinematic chain" toggle. When checked,
@@ -337,20 +340,15 @@ namespace SW2RD.Export
         private PropertyManagerPageLabel PMLabelAxes;
         private PropertyManagerPageLabel PMLabelCoordSys;
         private PropertyManagerPageLabel PMLabelJointType;
-        private PropertyManagerPageLabel PMLabelGlobalCoordsys;
         private PropertyManagerPageLabel PMLabelInertialSource;
         private PropertyManagerPageLabel PMLabelVisualComponents;
         private PropertyManagerPageLabel PMLabelCollisionComponents;
         private PropertyManagerPageLabel PMLabelInertialComponents;
 
-        // World attachment combobox (Welded / Free) on the Link/Joint tab.
-        // Only enabled when the active node is a top-level body (immediate
-        // child of the WorldNode). Welded -> body is rigidly fixed to the
-        // world; Free -> MJCF emits a <freejoint/> on the body. URDF
-        // ignores this field (the first top-level body is always written
-        // as a fixed-base base_link, with a warning if Free was selected).
-        private PropertyManagerPageLabel PMLabelWorldAttachment;
-        private PropertyManagerPageCombobox PMComboBoxWorldAttachment;
+        // The world attachment (Welded / Free) for a top-level body is now
+        // carried by the single role-aware PMComboBoxJointType dropdown (it
+        // shows "fixed" / "free" when a top-level body is active). There is
+        // no longer a separate world-attachment combobox.
 
         private PropertyManagerPageWindowFromHandle PMTree;
 
@@ -386,7 +384,8 @@ namespace SW2RD.Export
         private const int ButtonExportID = 17;
         private const int LabelAxesID = 20;
         private const int LabelCoordSysID = 21;
-        private const int IDLabelGlobalCoordsys = 25;
+        // 25 retired (was IDLabelGlobalCoordsys); the global-origin coord-sys
+        // picker was merged into the single PMSelectionJointCoordsys box.
         private const int LabelChildCountID = 26;
         private const int OutputFormatComboID = 31;
         private const int MeshFormatComboID = 32;
@@ -431,7 +430,8 @@ namespace SW2RD.Export
         private const int CollisionGroupID = 93;
         private const int InertialGroupID = 94;
         private const int SitesGroupID = 95;
-        private const int SelectionGlobalCoordsysID = 100;
+        // 100 retired (was SelectionGlobalCoordsysID); merged into
+        // SelectionJointCoordsysID (the single coordinate-system picker).
         private const int SelectionJointCoordsysID = 101;
         private const int SelectionJointAxisID = 102;
         private const int SelectionSiteCoordSysID = 103;
@@ -480,8 +480,9 @@ namespace SW2RD.Export
         private const int LabelCollisionComponentsHeaderID = 146;
         private const int LabelSiteCoordSysHeaderID = 147;
         private const int LabelActiveLinkTreeID = 148;
-        private const int LabelWorldAttachmentID = 149;
-        private const int ComboBoxWorldAttachmentID = 150;
+        // 149 retired (was LabelWorldAttachmentID) and 150 retired (was
+        // ComboBoxWorldAttachmentID); the world-attachment combobox was merged
+        // into the single role-aware joint-type dropdown (ComboBoxJointTypeID).
         private const int LabelConfigurationCacheID = 151;
         // 152 retired (was ButtonClearSavedConfigurationID); the Clear Saved
         // Configuration action moved to a dedicated ribbon command (see
@@ -515,12 +516,15 @@ namespace SW2RD.Export
         // (Select_Multiple_Objects_for_Selection_Boxes_Example_CSharp.htm)
         // which uses mark = 1 / mark2 = 2 for two adjacent boxes. -1 is
         // SW's "no mark" sentinel and must never be assigned to a box.
-        // Bits currently consumed (0..6); a future agent adding an eighth
-        // SelectionBox should claim bit 7 (= 128) and so on.
+        // Bits currently consumed: 0, 1, 2, 4, 5, 6. Bit 3 (value 8) is
+        // FREE - it was the global-origin coord-sys mark, retired when the
+        // global + joint coord-sys pickers were merged into the single
+        // PMSelectionJointCoordsys box (bit 4). A future agent adding a new
+        // SelectionBox should reclaim bit 3 (= 8) first, then bit 7 (= 128).
         private const int VisualSelectionMark = 1 << 0;          // 1
         private const int CollisionSelectionMark = 1 << 1;       // 2
         private const int InertialSelectionMark = 1 << 2;        // 4
-        private const int GlobalCoordSysSelectionMark = 1 << 3;  // 8
+        // bit 3 (1 << 3 = 8) free - see comment above
         private const int JointCoordSysSelectionMark = 1 << 4;   // 16
         private const int JointAxisSelectionMark = 1 << 5;       // 32
         private const int SiteCoordSysSelectionMark = 1 << 6;    // 64

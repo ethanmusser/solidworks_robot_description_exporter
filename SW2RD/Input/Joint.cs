@@ -97,8 +97,9 @@ namespace SW2RD.Input
         public bool AxisFlipped;
 
         // Per-joint gate for "auto-derive Lower/Upper from a SolidWorks
-        // limit mate at export time". Default true so new joints keep the
-        // historical behavior.
+        // limit mate at export time". Defaults false so new joints require
+        // the user to opt in to limit-mate derivation (or type limits
+        // explicitly).
         public bool AutoComputeLimits;
 
         // MJCF <joint ref> (joint position assumed by the model when MuJoCo
@@ -119,7 +120,7 @@ namespace SW2RD.Input
 
         public Joint()
         {
-            AutoComputeLimits = true;
+            AutoComputeLimits = false;
             Name = "";
             Type = "";
             Origin = new Origin(false);

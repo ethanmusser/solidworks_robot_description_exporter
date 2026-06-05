@@ -232,12 +232,14 @@ namespace SW2RD.Export
                 }
                 else if (previousRole == NodeRole.TopLevelBody)
                 {
-                    // World attachment combo: also written through on
-                    // every dropdown change via OnComboboxSelectionChanged;
-                    // this node-switch save is the safety net.
-                    if (PMComboBoxWorldAttachment != null)
+                    // The unified joint-type dropdown carries the world
+                    // attachment for a top-level body ("fixed" = 0 -> Welded,
+                    // "free" = 1 -> Free). Also written through on every
+                    // dropdown change via OnComboboxSelectionChanged; this
+                    // node-switch save is the safety net.
+                    if (PMComboBoxJointType != null)
                     {
-                        short worldAttachmentChoice = PMComboBoxWorldAttachment.CurrentSelection;
+                        short worldAttachmentChoice = PMComboBoxJointType.CurrentSelection;
                         previouslySelectedNode.Link.WorldAttachment =
                             (worldAttachmentChoice == 1)
                                 ? SW2RD.Core.WorldAttachmentModel.Free
@@ -449,20 +451,16 @@ namespace SW2RD.Export
             // Enable pass first means every load runs against settled
             // controls. The role-based EnableControls overload
             // distinguishes World / TopLevelBody / NestedLink so the
-            // World attachment combo + Link coord-sys + Global Origin
-            // pickers all get the right enabled state.
+            // coord-sys picker + joint-type dropdown get the right enabled
+            // state.
             NodeRole nodeRole = ResolveNodeRole(node);
             EnableControls(nodeRole);
 
-            // Preload World attachment combobox for top-level bodies.
-            // The combobox order matches WorldAttachmentModel (Welded=0,
-            // Free=1) so we cast the enum directly to the index. For
-            // Non-top-level nodes leave the current index in place because
-            // the control is disabled and the value is not editable.
-            if (PMComboBoxWorldAttachment != null && nodeRole == NodeRole.TopLevelBody)
-            {
-                PMComboBoxWorldAttachment.CurrentSelection = (short)(int)node.Link.WorldAttachment;
-            }
+            // Repopulate the single role-aware joint-type dropdown and
+            // restore its selection from the active node (world attachment
+            // for a top-level body, joint type for a nested link, empty for
+            // the World root).
+            PopulateJointTypeComboForRole(node, nodeRole);
 
             // Repopulate only the SelectionBox marks owned by the active
             // page-1 section so the SOLIDWORKS viewer highlights the entities
@@ -509,7 +507,9 @@ namespace SW2RD.Export
                 PMTextBoxJointName.Text = node.Link.Joint.Name;
                 PMLabelParentLink.Caption = node.Parent.Name;
 
-                SelectComboBox(PMComboBoxJointType, node.Link.Joint.Type);
+                // Joint type selection is handled by
+                // PopulateJointTypeComboForRole above (the single role-aware
+                // dropdown); no separate select needed here.
 
                 // Auto-derive axis toggle: the SelectionBox is disabled
                 // (and remains empty) when the toggle is on; otherwise
@@ -519,7 +519,9 @@ namespace SW2RD.Export
                 {
                     PMCheckAutoDeriveAxis.Checked = node.Link.Joint.AutoDeriveAxis;
                 }
-                SetAxisPickerEnabled(!node.Link.Joint.AutoDeriveAxis);
+                // Grey the whole axis row when this nested joint is "fixed"
+                // (axis irrelevant); otherwise honor the auto-derive toggle.
+                UpdateAxisRowEnabledState(node);
 
                 // Restore the persisted "Reverse Direction" toggle for this
                 // joint and (re)render the overlay arrow in the model view so
@@ -580,41 +582,19 @@ namespace SW2RD.Export
         // OnTabClicked (when the user activates the Link/Joint tab).
         // Empty / sentinel names are no-ops; the SelectionBox stays
         // empty, which is the canonical UI state for "auto-generate".
-        private void LoadActiveGlobalCoordsysIntoSelectionBox(LinkNode node)
-        {
-            if (node == null || PMSelectionGlobalCoordsys == null)
-            {
-                return;
-            }
-            // Always clear the mark first so the previous link's pick
-            // doesn't bleed into a non-base node where this loader
-            // returns early. Without the clear, mark 21 would retain
-            // stale content across base->non-base navigation.
-            CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionGlobalCoordsys.Mark);
-            // Only the base node's joint owns the global coord-sys.
-            if (!node.IsBaseNode)
-            {
-                return;
-            }
-            string name = node.Link?.Joint?.CoordinateSystemName;
-            if (!IsRealFeatureName(name))
-            {
-                return;
-            }
-            SelectFeatureIntoMark(name, "COORDSYS", PMSelectionGlobalCoordsys.Mark);
-        }
-
-        private void LoadActiveJointCoordsysIntoSelectionBox(LinkNode node)
+        // Rehydrates the single coordinate-system picker for ANY node role.
+        // The persisted name lives on Link.Joint.CoordinateSystemName for the
+        // World (global origin), top-level bodies (world->body offset), and
+        // nested links (joint origin) alike, so one loader serves every role.
+        private void LoadActiveCoordsysIntoSelectionBox(LinkNode node)
         {
             if (node == null || PMSelectionJointCoordsys == null)
             {
                 return;
             }
+            // Always clear the mark first so the previous link's pick doesn't
+            // bleed into a node whose coord-sys is unset.
             CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionJointCoordsys.Mark);
-            if (node.IsBaseNode)
-            {
-                return;
-            }
             string name = node.Link?.Joint?.CoordinateSystemName;
             if (!IsRealFeatureName(name))
             {
@@ -826,7 +806,7 @@ namespace SW2RD.Export
         {
             if (PMCheckAutoComputeLimits != null)
             {
-                PMCheckAutoComputeLimits.Checked = true;
+                PMCheckAutoComputeLimits.Checked = false;
             }
             if (PMTextBoxJointLower != null) PMTextBoxJointLower.Text = "";
             if (PMTextBoxJointUpper != null) PMTextBoxJointUpper.Text = "";
@@ -922,13 +902,21 @@ namespace SW2RD.Export
         private void EnableControls(NodeRole role)
         {
             bool enableJointInputs = role == NodeRole.NestedLink;
-            bool enableLinkCoordSys = role == NodeRole.TopLevelBody || role == NodeRole.NestedLink;
-            bool enableGlobalOrigin = role == NodeRole.World || role == NodeRole.WorldOrTopLevelLegacy;
-            bool enableWorldAttachment = role == NodeRole.TopLevelBody;
+            // The single coordinate-system picker is enabled for every real
+            // node: it is the global origin for the World, the world->body
+            // offset for a top-level body, and the joint origin for a nested
+            // link. All three persist to Link.Joint.CoordinateSystemName.
+            bool enableCoordSys = true;
+            // The unified joint-type dropdown is enabled for top-level bodies
+            // (fixed / free world attachment) and nested links (fixed /
+            // revolute / prismatic), and disabled for the World root.
+            bool enableJointType = role == NodeRole.TopLevelBody || role == NodeRole.NestedLink;
 
-            // Per-joint inputs (joint name, axis, type, joint properties).
-            // Greyed out on the World node and on top-level bodies; visible
-            // at all times so the layout doesn't reflow under the user.
+            // Per-joint inputs (joint name, axis, joint properties). Greyed
+            // out on the World node and on top-level bodies; visible at all
+            // times so the layout doesn't reflow under the user. The joint
+            // TYPE dropdown is NOT in this set - it is enabled for top-level
+            // bodies too (fixed / free), so it has its own enable rule below.
             PropertyManagerPageControl[] pmJointControls =
                 new PropertyManagerPageControl[] {
                     (PropertyManagerPageControl)PMTextBoxJointName,
@@ -937,8 +925,6 @@ namespace SW2RD.Export
                     (PropertyManagerPageControl)PMCheckAutoDeriveAxis,
                     (PropertyManagerPageControl)PMSelectionJointAxis,
                     (PropertyManagerPageControl)PMBitmapAxisFlip,
-                    (PropertyManagerPageControl)PMComboBoxJointType,
-                    (PropertyManagerPageControl)PMLabelJointType,
                     (PropertyManagerPageControl)PMLabelJointProperties,
                     (PropertyManagerPageControl)PMCheckAutoComputeLimits,
                     (PropertyManagerPageControl)PMLabelJointLower,
@@ -958,48 +944,35 @@ namespace SW2RD.Export
                     (PropertyManagerPageControl)PMLabelJointReference,
                     (PropertyManagerPageControl)PMTextBoxJointReference };
 
-            // World-only controls. Enabled when the active node is the
-            // WorldNode root.
-            PropertyManagerPageControl[] pmGlobalOriginControls = new PropertyManagerPageControl[] {
-                (PropertyManagerPageControl)PMSelectionGlobalCoordsys,
-                (PropertyManagerPageControl)PMLabelGlobalCoordsys};
-
-            // Reference-coord-system controls. Enabled on top-level bodies
-            // (where the picker doubles as the world->body offset coord-sys)
-            // and on nested links (where it's the joint-origin coord-sys).
-            // Disabled only on the WorldNode itself.
-            PropertyManagerPageControl[] pmJointOriginControls = new PropertyManagerPageControl[] {
+            // The single coordinate-system picker. Enabled for every real
+            // node (global origin / world->body offset / joint origin).
+            PropertyManagerPageControl[] pmCoordSysControls = new PropertyManagerPageControl[] {
                 (PropertyManagerPageControl)PMSelectionJointCoordsys,
                 (PropertyManagerPageControl)PMLabelCoordSys};
 
-            // World-attachment combo (Welded / Free). Enabled on top-level
-            // bodies only. The control may be null if the build script that
-            // owns it hasn't run for this PM session - guard accordingly.
-            PropertyManagerPageControl worldAttachmentLabel =
-                PMLabelWorldAttachment as PropertyManagerPageControl;
-            PropertyManagerPageControl worldAttachmentCombo =
-                PMComboBoxWorldAttachment as PropertyManagerPageControl;
+            // The unified joint-type dropdown + its label. Enabled for
+            // top-level bodies and nested links, disabled for the World root.
+            PropertyManagerPageControl jointTypeCombo =
+                PMComboBoxJointType as PropertyManagerPageControl;
+            PropertyManagerPageControl jointTypeLabel =
+                PMLabelJointType as PropertyManagerPageControl;
 
-            foreach (PropertyManagerPageControl control in pmGlobalOriginControls)
+            foreach (PropertyManagerPageControl control in pmCoordSysControls)
             {
-                control.Enabled = enableGlobalOrigin;
-            }
-            foreach (PropertyManagerPageControl control in pmJointOriginControls)
-            {
-                control.Enabled = enableLinkCoordSys;
+                control.Enabled = enableCoordSys;
             }
             foreach (PropertyManagerPageControl control in pmJointControls)
             {
                 control.Enabled = enableJointInputs;
             }
-            SetAutoComputeLimitEditorEnabled(enableJointInputs && !(PMCheckAutoComputeLimits?.Checked ?? true));
-            if (worldAttachmentLabel != null)
+            SetAutoComputeLimitEditorEnabled(enableJointInputs && !(PMCheckAutoComputeLimits?.Checked ?? false));
+            if (jointTypeCombo != null)
             {
-                worldAttachmentLabel.Enabled = enableWorldAttachment;
+                jointTypeCombo.Enabled = enableJointType;
             }
-            if (worldAttachmentCombo != null)
+            if (jointTypeLabel != null)
             {
-                worldAttachmentCombo.Enabled = enableWorldAttachment;
+                jointTypeLabel.Enabled = enableJointType;
             }
         }
 
@@ -1029,6 +1002,85 @@ namespace SW2RD.Export
                 return NodeRole.TopLevelBody;
             }
             return NodeRole.NestedLink;
+        }
+
+        // Item ordering for the nested-link joint-type dropdown. NOTE: no
+        // leading empty item - SolidWorks comboboxes silently DROP empty
+        // string entries from AddItems, so a leading "" would shift every
+        // real item up by one slot in the live control versus this array.
+        // Incompleteness (an unset joint) is tracked in the data model
+        // (Joint.Type == "") and surfaced by validation, not by a blank combo
+        // row. Used by PopulateJointTypeComboForRole.
+        private static readonly string[] NestedJointTypeItems =
+            new string[] { "fixed", "revolute", "prismatic" };
+
+        // Item ordering for the top-level-body joint-type dropdown. Index
+        // MUST line up with WorldAttachmentModel (Welded = 0 -> "fixed",
+        // Free = 1 -> "free") so the combobox index casts straight to the
+        // enum in OnComboboxSelectionChanged / SaveActiveNode.
+        private static readonly string[] TopLevelJointTypeItems =
+            new string[] { "fixed", "free" };
+
+        // Repopulates the single role-aware joint-type dropdown and restores
+        // its selection for the active node. World -> empty (disabled via
+        // EnableControls); TopLevelBody -> {fixed, free} from WorldAttachment;
+        // NestedLink -> {fixed, revolute, prismatic} from Joint.Type.
+        private void PopulateJointTypeComboForRole(LinkNode node, NodeRole role)
+        {
+            if (PMComboBoxJointType == null)
+            {
+                return;
+            }
+            PMComboBoxJointType.Clear();
+            if (role == NodeRole.TopLevelBody)
+            {
+                // {fixed, free} has no empty item, so index == enum value.
+                PMComboBoxJointType.AddItems(TopLevelJointTypeItems);
+                PMComboBoxJointType.CurrentSelection =
+                    (node.Link.WorldAttachment == SW2RD.Core.WorldAttachmentModel.Free)
+                        ? (short)1 : (short)0;
+            }
+            else if (role == NodeRole.NestedLink)
+            {
+                PMComboBoxJointType.AddItems(NestedJointTypeItems);
+                // Select by matching the ACTUAL combobox item text rather than
+                // by index into NestedJointTypeItems. SolidWorks may drop
+                // empty entries (and the live order is the source of truth),
+                // so resolving the index from get_ItemText is immune to any
+                // add-time reshuffling. SaveActiveNode reads the selection
+                // back via get_ItemText(-1), so a correct visual selection is
+                // also a correct round-trip.
+                PMComboBoxJointType.CurrentSelection =
+                    ResolveComboIndexByText(PMComboBoxJointType, node.Link?.Joint?.Type);
+            }
+            // World role: leave the dropdown empty; EnableControls disables it.
+        }
+
+        // Finds the index of the item whose text equals `target` in a live
+        // combobox by scanning get_ItemText. Returns 0 (the first item) when
+        // `target` is null / empty / not found. Does NOT terminate on an empty
+        // item text (unlike SelectComboBox) so a leading blank can't short-
+        // circuit the scan; bounded so a missing target can't loop forever.
+        private static short ResolveComboIndexByText(PropertyManagerPageCombobox box, string target)
+        {
+            if (box == null || string.IsNullOrEmpty(target))
+            {
+                return 0;
+            }
+            const short scanCap = 16;
+            for (short k = 0; k < scanCap; k++)
+            {
+                string itemtext = box.get_ItemText(k);
+                if (itemtext == null)
+                {
+                    break;
+                }
+                if (itemtext == target)
+                {
+                    return k;
+                }
+            }
+            return 0;
         }
 
         //Populates the TreeView with the organized links from the robot

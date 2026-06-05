@@ -509,10 +509,6 @@ namespace SW2RD.Export
             {
                 CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionInertial.Mark);
             }
-            if (PMSelectionGlobalCoordsys != null)
-            {
-                CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionGlobalCoordsys.Mark);
-            }
             if (PMSelectionJointCoordsys != null)
             {
                 CommonSwOperations.DeselectAllAtMark(ActiveSWModel, PMSelectionJointCoordsys.Mark);
@@ -568,8 +564,7 @@ namespace SW2RD.Export
                 switch (sectionId)
                 {
                     case LinkJointGroupID:
-                        LoadActiveGlobalCoordsysIntoSelectionBox(node);
-                        LoadActiveJointCoordsysIntoSelectionBox(node);
+                        LoadActiveCoordsysIntoSelectionBox(node);
                         LoadActiveJointAxisIntoSelectionBox(node);
                         break;
                     case VisualGroupID:
