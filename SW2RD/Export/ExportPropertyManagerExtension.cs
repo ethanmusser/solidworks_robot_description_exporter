@@ -668,13 +668,26 @@ namespace SW2RD.Export
         // id SelectByID2 expects. A bare top-level name passes through
         // unchanged. A sub-component reference "<FeatureName> <Comp.Name2>"
         // becomes the SolidWorks component-qualified id
-        // "FeatureName@<reversed component path>@<assembly doc name>":
-        // SOLIDWORKS qualifies a feature inside a component by listing the
-        // entity, then each component instance from innermost to outermost
-        // (the reverse of Component2.Name2's "/"-separated parent/child
-        // order), then the top-level document name (no extension). For the
-        // common single-level case (Name2 = "Part-1") this is
-        // "FeatureName@Part-1@Assembly".
+        // "<FeatureName>@<component selection path>".
+        //
+        // The component selection path is NOT a simple reverse-and-join of
+        // Component2.Name2's "/"-separated instance chain. For a feature
+        // nested more than one level deep (i.e. inside a SUB-ASSEMBLY)
+        // SOLIDWORKS expects each level encoded as "<instance>@<parent-doc>"
+        // and chained with "/", e.g. a feature on component "SubAsm-1/Part-1"
+        // selects as "<FeatureName>@SubAsm-1@Assembly/Part-1@SubAsm" - the
+        // exact form IComponent2.GetSelectByIDString() produces for the
+        // owning component, with the feature name prefixed. We therefore ask
+        // SolidWorks for the canonical component path rather than rebuilding
+        // it ourselves; the old manual reverse-join only happened to be
+        // correct for the single-level "Part-1" case
+        // ("<FeatureName>@Part-1@Assembly") and silently produced an
+        // unresolvable id for sub-assembly nesting, which is why a
+        // sub-assembly coord system would vanish from the SelectionBox on
+        // every rehydrate. The manual reconstruction is retained only as a
+        // best-effort fallback when the owning component can no longer be
+        // found (e.g. the feature was deleted from the assembly since the
+        // configuration was saved).
         private string ToSelectByIdName(string persistedName)
         {
             if (string.IsNullOrEmpty(persistedName))
@@ -697,6 +710,30 @@ namespace SW2RD.Export
                 return featureName;
             }
 
+            // Preferred path: let SOLIDWORKS produce the canonical component
+            // selection string (correct at any sub-assembly nesting depth)
+            // and prefix the feature name. Proven for the single-level case
+            // ("Part-1@Assembly" -> "<FeatureName>@Part-1@Assembly") and the
+            // only form that works for deeper sub-assembly nesting.
+            Component2 owningComponent = FindComponentByName2(componentName);
+            if (owningComponent != null)
+            {
+                try
+                {
+                    string componentSelection = owningComponent.GetSelectByIDString();
+                    if (!string.IsNullOrEmpty(componentSelection))
+                    {
+                        return featureName + "@" + componentSelection;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn("GetSelectByIDString for component '" + componentName +
+                        "' failed; falling back to manual reconstruction: " + ex.Message);
+                }
+            }
+
+            // Fallback (single-level correct only): manual reverse-join.
             string[] pathSegments = componentName.Split('/');
             Array.Reverse(pathSegments);
             string qualified = featureName + "@" + string.Join("@", pathSegments);
@@ -707,6 +744,45 @@ namespace SW2RD.Export
                 qualified += "@" + assemblyName;
             }
             return qualified;
+        }
+
+        // Resolves a Component2 by its full "/"-separated Name2 path
+        // (e.g. "SubAsm-1/Part-1"). Mirrors the component lookup in
+        // ExportHelper.ResolveFeatureReference: GetComponents(false) returns
+        // every component at every sub-assembly depth, so a deep Name2 match
+        // is found directly. Returns null when the active document is not an
+        // assembly or no component matches (deleted / renamed since save).
+        private Component2 FindComponentByName2(string name2)
+        {
+            if (string.IsNullOrEmpty(name2))
+            {
+                return null;
+            }
+            try
+            {
+                AssemblyDoc assy = ActiveSWModel as AssemblyDoc;
+                if (assy == null)
+                {
+                    return null;
+                }
+                object[] components = assy.GetComponents(false);
+                if (components == null)
+                {
+                    return null;
+                }
+                foreach (object obj in components)
+                {
+                    if (obj is Component2 comp && comp.Name2 == name2)
+                    {
+                        return comp;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("FindComponentByName2('" + name2 + "') failed: " + ex.Message);
+            }
+            return null;
         }
 
         // The top-level document name SOLIDWORKS uses as the trailing
