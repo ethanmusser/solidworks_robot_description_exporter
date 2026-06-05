@@ -15,4 +15,17 @@
     <PackageReference Include="xunit.runner.utility" Version="2.4.1" />
   </ItemGroup>
 
+  <!--
+    Compile-time reference so the `TestRunner diff` subcommand can call the
+    shared SW2RD.Validation comparer. SW2RD embeds the SOLIDWORKS interop
+    types, so this does not add a SOLIDWORKS build dependency beyond SW2RD
+    itself. TestRunner is only built on developer boxes (release CI builds
+    SW2RD.csproj directly), so the transitive SW interop HintPaths are fine.
+    The xunit AssemblyRunner still loads SW2RD.dll from its explicit
+    bin\x64\Debug path at runtime regardless of the copy placed here.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\SW2RD\SW2RD.csproj" />
+  </ItemGroup>
+
 </Project>

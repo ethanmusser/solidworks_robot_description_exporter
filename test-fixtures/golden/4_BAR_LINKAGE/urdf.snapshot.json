@@ -1,0 +1,484 @@
+{
+  "SchemaVersion": 1,
+  "Format": "URDF",
+  "ModelName": "4_BAR_LINKAGE - URDF",
+  "Tree": {
+    "Name": "4_BAR_LINKAGE - URDF",
+    "GlobalOriginCoordinateSystemName": "Coordinate System1 \u003CLINK-1\u003E",
+    "WorldBody": {
+      "Name": "world",
+      "Inertial": {
+        "Origin": {
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "W": 1,
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          }
+        },
+        "Mass": 0,
+        "Inertia": {
+          "Ixx": 0,
+          "Ixy": 0,
+          "Ixz": 0,
+          "Iyy": 0,
+          "Iyz": 0,
+          "Izz": 0
+        }
+      },
+      "Material": {
+        "Name": "",
+        "Color": {
+          "Red": 1,
+          "Green": 1,
+          "Blue": 1,
+          "Alpha": 1
+        },
+        "TextureFilename": ""
+      },
+      "VisualGroups": [],
+      "CollisionGroups": [],
+      "CollisionUsesVisual": false,
+      "InertialSource": "Visual",
+      "InertialComponents": [],
+      "Sites": [],
+      "Joint": null,
+      "Children": [
+        {
+          "Name": "ground_link",
+          "Inertial": {
+            "Origin": {
+              "Position": {
+                "X": 0.046606118795909167,
+                "Y": -3.4694469519536142E-18,
+                "Z": -0.00016969406020454769
+              },
+              "Rotation": {
+                "W": 1,
+                "X": 0,
+                "Y": 0,
+                "Z": 0
+              }
+            },
+            "Mass": 0.011570796326794907,
+            "Inertia": {
+              "Ixx": 4.0161780570526282E-07,
+              "Ixy": 1.2246467991473548E-23,
+              "Ixz": 1.2924697071141068E-24,
+              "Iyy": 1.103177988086556E-05,
+              "Iyz": -8.8232598672322932E-24,
+              "Izz": 1.137536855816671E-05
+            }
+          },
+          "Material": {
+            "Name": "",
+            "Color": {
+              "Red": 0.792156862745098,
+              "Green": 0.81960784313725488,
+              "Blue": 0.93333333333333335,
+              "Alpha": 1
+            },
+            "TextureFilename": ""
+          },
+          "VisualGroups": [
+            {
+              "Name": "link",
+              "MeshFilename": "package://4_BAR_LINKAGE - URDF/meshes/ground_link_visual.STL",
+              "Components": [
+                {
+                  "DisplayName": "",
+                  "PersistentId": "aEIAAAUAAAD//v8UTABJAE4ASwAtADEAQAA0AF8AQgBBAFIAXwBMAEkATgBLAEEARwBFAAQAAAAQAAAAAQAAAAEAAAAYAAAA"
+                },
+                {
+                  "DisplayName": "",
+                  "PersistentId": "aEIAAAUAAAD//v8TUABJAE4ALQAxAEAANABfAEIAQQBSAF8ATABJAE4ASwBBAEcARQAEAAAAEAAAAAEAAAABAAAATQAAAA=="
+                }
+              ]
+            }
+          ],
+          "CollisionGroups": [],
+          "CollisionUsesVisual": true,
+          "InertialSource": "Visual",
+          "InertialComponents": [],
+          "Sites": [],
+          "Joint": {
+            "Name": "",
+            "Type": "",
+            "ParentLinkName": "",
+            "ChildLinkName": "",
+            "Origin": {
+              "Position": {
+                "X": 0,
+                "Y": 0,
+                "Z": 0
+              },
+              "Rotation": {
+                "W": 1,
+                "X": 0,
+                "Y": 0,
+                "Z": 0
+              }
+            },
+            "Axis": {
+              "X": 0,
+              "Y": 0,
+              "Z": 0
+            },
+            "Limit": null,
+            "CoordinateSystemName": "Coordinate System1 \u003CLINK-1\u003E",
+            "AxisName": "",
+            "AxisFlipped": false,
+            "AutoComputeLimits": true,
+            "Damping": null,
+            "Friction": null,
+            "Armature": null,
+            "Reference": null,
+            "AutoDeriveAxis": false
+          },
+          "Children": [
+            {
+              "Name": "input_link",
+              "Inertial": {
+                "Origin": {
+                  "Position": {
+                    "X": 0.033112214869462551,
+                    "Y": 1.0408340855860843E-17,
+                    "Z": -0.00025935123912187996
+                  },
+                  "Rotation": {
+                    "W": 1,
+                    "X": 0,
+                    "Y": 0,
+                    "Z": 0
+                  }
+                },
+                "Mass": 0.0075707963267949039,
+                "Inertia": {
+                  "Ixx": 2.5995113903859617E-07,
+                  "Ixy": -3.9704669402545328E-23,
+                  "Ixz": -1.8117707168153355E-23,
+                  "Iyy": 2.9668094860963043E-06,
+                  "Iyz": -8.860148253017136E-24,
+                  "Izz": 3.1853981633974522E-06
+                }
+              },
+              "Material": {
+                "Name": "",
+                "Color": {
+                  "Red": 0.792156862745098,
+                  "Green": 0.81960784313725488,
+                  "Blue": 0.93333333333333335,
+                  "Alpha": 1
+                },
+                "TextureFilename": ""
+              },
+              "VisualGroups": [
+                {
+                  "Name": "link",
+                  "MeshFilename": "package://4_BAR_LINKAGE - URDF/meshes/input_link_visual.STL",
+                  "Components": [
+                    {
+                      "DisplayName": "",
+                      "PersistentId": "aEIAAAUAAAD//v8UTABJAE4ASwAtADUAQAA0AF8AQgBBAFIAXwBMAEkATgBLAEEARwBFAAQAAAAQAAAAAQAAAAEAAAA/AAAA"
+                    },
+                    {
+                      "DisplayName": "",
+                      "PersistentId": "aEIAAAUAAAD//v8TUABJAE4ALQAyAEAANABfAEIAQQBSAF8ATABJAE4ASwBBAEcARQAEAAAAEAAAAAEAAAABAAAATgAAAA=="
+                    }
+                  ]
+                }
+              ],
+              "CollisionGroups": [],
+              "CollisionUsesVisual": true,
+              "InertialSource": "Visual",
+              "InertialComponents": [],
+              "Sites": [],
+              "Joint": {
+                "Name": "input_joint",
+                "Type": "revolute",
+                "ParentLinkName": "ground_link",
+                "ChildLinkName": "input_link",
+                "Origin": {
+                  "Position": {
+                    "X": 0,
+                    "Y": 0,
+                    "Z": -0.0049999999999999975
+                  },
+                  "Rotation": {
+                    "W": 0.59142086500031144,
+                    "X": 0,
+                    "Y": 0,
+                    "Z": 0.80636304506238587
+                  }
+                },
+                "Axis": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 1
+                },
+                "Limit": null,
+                "CoordinateSystemName": "Coordinate System1 \u003CLINK-5\u003E",
+                "AxisName": "Axis1 \u003CLINK-5\u003E",
+                "AxisFlipped": true,
+                "AutoComputeLimits": false,
+                "Damping": null,
+                "Friction": null,
+                "Armature": null,
+                "Reference": null,
+                "AutoDeriveAxis": false
+              },
+              "Children": [
+                {
+                  "Name": "coupler_link",
+                  "Inertial": {
+                    "Origin": {
+                      "Position": {
+                        "X": 0.063472448386157149,
+                        "Y": 4.163336342344337E-17,
+                        "Z": -0.00014468534942322156
+                      },
+                      "Rotation": {
+                        "W": 1,
+                        "X": 0,
+                        "Y": 0,
+                        "Z": 0
+                      }
+                    },
+                    "Mass": 0.013570796326794884,
+                    "Inertia": {
+                      "Ixx": 4.7245113903859593E-07,
+                      "Ixy": 2.898440866385809E-21,
+                      "Ixz": -3.4294219721012702E-23,
+                      "Iyy": 1.8099884527269382E-05,
+                      "Iyz": 1.5186834486059269E-23,
+                      "Izz": 1.8505973204570527E-05
+                    }
+                  },
+                  "Material": {
+                    "Name": "",
+                    "Color": {
+                      "Red": 0.792156862745098,
+                      "Green": 0.81960784313725488,
+                      "Blue": 0.93333333333333335,
+                      "Alpha": 1
+                    },
+                    "TextureFilename": ""
+                  },
+                  "VisualGroups": [
+                    {
+                      "Name": "link",
+                      "MeshFilename": "package://4_BAR_LINKAGE - URDF/meshes/coupler_link_visual.STL",
+                      "Components": [
+                        {
+                          "DisplayName": "",
+                          "PersistentId": "aEIAAAUAAAD//v8UTABJAE4ASwAtADYAQAA0AF8AQgBBAFIAXwBMAEkATgBLAEEARwBFAAQAAAAQAAAAAQAAAAEAAABKAAAA"
+                        },
+                        {
+                          "DisplayName": "",
+                          "PersistentId": "aEIAAAUAAAD//v8TUABJAE4ALQAzAEAANABfAEIAQQBSAF8ATABJAE4ASwBBAEcARQAEAAAAEAAAAAEAAAABAAAATwAAAA=="
+                        }
+                      ]
+                    }
+                  ],
+                  "CollisionGroups": [],
+                  "CollisionUsesVisual": true,
+                  "InertialSource": "Visual",
+                  "InertialComponents": [],
+                  "Sites": [
+                    {
+                      "Name": "coupler_rocker_constraint_coupler",
+                      "CoordinateSystemName": "Coordinate System2 \u003CLINK-6\u003E",
+                      "Pose": {
+                        "Position": {
+                          "X": 0,
+                          "Y": 0,
+                          "Z": 0
+                        },
+                        "Rotation": {
+                          "W": 1,
+                          "X": 0,
+                          "Y": 0,
+                          "Z": 0
+                        }
+                      }
+                    }
+                  ],
+                  "Joint": {
+                    "Name": "coupler_joint",
+                    "Type": "revolute",
+                    "ParentLinkName": "input_link",
+                    "ChildLinkName": "coupler_link",
+                    "Origin": {
+                      "Position": {
+                        "X": 0.060000000000000102,
+                        "Y": 0,
+                        "Z": -0.005000000000000001
+                      },
+                      "Rotation": {
+                        "W": 0.72723292938247153,
+                        "X": 0,
+                        "Y": 0,
+                        "Z": -0.68639075345009504
+                      }
+                    },
+                    "Axis": {
+                      "X": 0,
+                      "Y": 0,
+                      "Z": 1
+                    },
+                    "Limit": null,
+                    "CoordinateSystemName": "Coordinate System1 \u003CLINK-6\u003E",
+                    "AxisName": "Axis1 \u003CLINK-6\u003E",
+                    "AxisFlipped": true,
+                    "AutoComputeLimits": false,
+                    "Damping": null,
+                    "Friction": null,
+                    "Armature": null,
+                    "Reference": null,
+                    "AutoDeriveAxis": false
+                  },
+                  "Children": [],
+                  "IsFixedFrame": false,
+                  "StlQualityFine": false,
+                  "WorldAttachment": "Welded"
+                }
+              ],
+              "IsFixedFrame": false,
+              "StlQualityFine": false,
+              "WorldAttachment": "Welded"
+            },
+            {
+              "Name": "rocker_link",
+              "Inertial": {
+                "Origin": {
+                  "Position": {
+                    "X": 0.043643688888024931,
+                    "Y": 2.9143354396410359E-16,
+                    "Z": 0.00095344666679638562
+                  },
+                  "Rotation": {
+                    "W": 1,
+                    "X": 0,
+                    "Y": 0,
+                    "Z": 0
+                  }
+                },
+                "Mass": 0.012356194490192342,
+                "Inertia": {
+                  "Ixx": 4.5234143709134754E-07,
+                  "Ixy": -3.8381180422460484E-22,
+                  "Ixz": 3.9622322036994634E-23,
+                  "Iyy": 1.1082503512251638E-05,
+                  "Iyz": 2.7407117340810004E-25,
+                  "Izz": 1.1385186035209161E-05
+                }
+              },
+              "Material": {
+                "Name": "",
+                "Color": {
+                  "Red": 0.792156862745098,
+                  "Green": 0.81960784313725488,
+                  "Blue": 0.93333333333333335,
+                  "Alpha": 1
+                },
+                "TextureFilename": ""
+              },
+              "VisualGroups": [
+                {
+                  "Name": "link",
+                  "MeshFilename": "package://4_BAR_LINKAGE - URDF/meshes/rocker_link_visual.STL",
+                  "Components": [
+                    {
+                      "DisplayName": "",
+                      "PersistentId": "aEIAAAUAAAD//v8UTABJAE4ASwAtADcAQAA0AF8AQgBBAFIAXwBMAEkATgBLAEEARwBFAAQAAAAQAAAAAQAAAAEAAABMAAAA"
+                    },
+                    {
+                      "DisplayName": "",
+                      "PersistentId": "aEIAAAUAAAD//v8TUABJAE4ALQA0AEAANABfAEIAQQBSAF8ATABJAE4ASwBBAEcARQAEAAAAEAAAAAEAAAABAAAAUwAAAA=="
+                    }
+                  ]
+                }
+              ],
+              "CollisionGroups": [],
+              "CollisionUsesVisual": true,
+              "InertialSource": "Visual",
+              "InertialComponents": [],
+              "Sites": [
+                {
+                  "Name": "coupler_rocker_constraint_rocker",
+                  "CoordinateSystemName": "Coordinate System2 \u003CLINK-7\u003E",
+                  "Pose": {
+                    "Position": {
+                      "X": 0,
+                      "Y": 0,
+                      "Z": 0
+                    },
+                    "Rotation": {
+                      "W": 1,
+                      "X": 0,
+                      "Y": 0,
+                      "Z": 0
+                    }
+                  }
+                }
+              ],
+              "Joint": {
+                "Name": "rocker_joint",
+                "Type": "revolute",
+                "ParentLinkName": "ground_link",
+                "ChildLinkName": "rocker_link",
+                "Origin": {
+                  "Position": {
+                    "X": 0.10000000000000267,
+                    "Y": 0,
+                    "Z": -0.015000000000000003
+                  },
+                  "Rotation": {
+                    "W": 0.68613757233980344,
+                    "X": 0,
+                    "Y": 0,
+                    "Z": 0.72747180826726265
+                  }
+                },
+                "Axis": {
+                  "X": 0,
+                  "Y": 0,
+                  "Z": 1
+                },
+                "Limit": null,
+                "CoordinateSystemName": "Coordinate System1 \u003CLINK-7\u003E",
+                "AxisName": "Axis1 \u003CLINK-7\u003E",
+                "AxisFlipped": true,
+                "AutoComputeLimits": true,
+                "Damping": null,
+                "Friction": null,
+                "Armature": null,
+                "Reference": null,
+                "AutoDeriveAxis": false
+              },
+              "Children": [],
+              "IsFixedFrame": false,
+              "StlQualityFine": false,
+              "WorldAttachment": "Welded"
+            }
+          ],
+          "IsFixedFrame": false,
+          "StlQualityFine": false,
+          "WorldAttachment": "Welded"
+        }
+      ],
+      "IsFixedFrame": false,
+      "StlQualityFine": false,
+      "WorldAttachment": "Welded"
+    }
+  },
+  "MeshDir": null,
+  "Auxiliary": {},
+  "MjcfRotationFormat": "AxisAngle",
+  "MjcfAngleUnit": "Degree"
+}

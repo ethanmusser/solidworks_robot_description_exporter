@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by the SolidWorks Robot Description Exporter (SW2RD). Originally created by Stephen Brawner (brawner@gmail.com) as the SolidWorks to URDF Exporter. 
+     Commit Version: 1.6.1-22-g71a1179-dirty  Build Version: 0.1.0.0
+     For more information, please see https://github.com/ethanmusser/solidworks_robot_description_exporter -->
+<robot
+  name="TOY_BLOCK - URDF">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="0.0225128622708927 0.022478737379948 0.0217426627546263"
+        rpy="0 0 0" />
+      <mass
+        value="0.0430268110935552" />
+      <inertia
+        ixx="1.41188296125073E-05"
+        ixy="2.48839999665855E-09"
+        ixz="-1.2041435307987E-08"
+        iyy="1.4111001539306E-05"
+        iyz="1.99060185520559E-08"
+        izz="1.46084391569613E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://TOY_BLOCK - URDF/meshes/base_link_visual.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://TOY_BLOCK - URDF/meshes/base_link_visual.STL" />
+      </geometry>
+    </collision>
+  </link>
+</robot>

@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by the SolidWorks Robot Description Exporter (SW2RD). Originally created by Stephen Brawner (brawner@gmail.com) as the SolidWorks to URDF Exporter. 
+     Commit Version: 1.6.1-22-g71a1179-dirty  Build Version: 0.1.0.0
+     For more information, please see https://github.com/ethanmusser/solidworks_robot_description_exporter -->
+<robot
+  name="4_BAR_LINKAGE - URDF">
+  <link
+    name="ground_link">
+    <inertial>
+      <origin
+        xyz="0.0466061187959092 -3.46944695195361E-18 -0.000169694060204548"
+        rpy="0 0 0" />
+      <mass
+        value="0.0115707963267949" />
+      <inertia
+        ixx="4.01617805705263E-07"
+        ixy="1.22464679914735E-23"
+        ixz="1.29246970711411E-24"
+        iyy="1.10317798808656E-05"
+        iyz="-8.82325986723229E-24"
+        izz="1.13753685581667E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://4_BAR_LINKAGE - URDF/meshes/ground_link_visual.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://4_BAR_LINKAGE - URDF/meshes/ground_link_visual.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="input_link">
+    <inertial>
+      <origin
+        xyz="0.0331122148694626 1.04083408558608E-17 -0.00025935123912188"
+        rpy="0 0 0" />
+      <mass
+        value="0.0075707963267949" />
+      <inertia
+        ixx="2.59951139038596E-07"
+        ixy="-3.97046694025453E-23"
+        ixz="-1.81177071681534E-23"
+        iyy="2.9668094860963E-06"
+        iyz="-8.86014825301714E-24"
+        izz="3.18539816339745E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://4_BAR_LINKAGE - URDF/meshes/input_link_visual.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://4_BAR_LINKAGE - URDF/meshes/input_link_visual.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="input_joint"
+    type="continuous">
+    <origin
+      xyz="0 0 -0.005"
+      rpy="0 0 1.87595311229007" />
+    <parent
+      link="ground_link" />
+    <child
+      link="input_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="coupler_link">
+    <inertial>
+      <origin
+        xyz="0.0634724483861571 4.16333634234434E-17 -0.000144685349423222"
+        rpy="0 0 0" />
+      <mass
+        value="0.0135707963267949" />
+      <inertia
+        ixx="4.72451139038596E-07"
+        ixy="2.89844086638581E-21"
+        ixz="-3.42942197210127E-23"
+        iyy="1.80998845272694E-05"
+        iyz="1.51868344860593E-23"
+        izz="1.85059732045705E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://4_BAR_LINKAGE - URDF/meshes/coupler_link_visual.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://4_BAR_LINKAGE - URDF/meshes/coupler_link_visual.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="coupler_joint"
+    type="continuous">
+    <origin
+      xyz="0.0600000000000001 0 -0.005"
+      rpy="0 0 -1.51302873567974" />
+    <parent
+      link="input_link" />
+    <child
+      link="coupler_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+  <link
+    name="rocker_link">
+    <inertial>
+      <origin
+        xyz="0.0436436888880249 2.91433543964104E-16 0.000953446666796386"
+        rpy="0 0 0" />
+      <mass
+        value="0.0123561944901923" />
+      <inertia
+        ixx="4.52341437091348E-07"
+        ixy="-3.83811804224605E-22"
+        ixz="3.96223220369946E-23"
+        iyy="1.10825035122516E-05"
+        iyz="2.740711734081E-25"
+        izz="1.13851860352092E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://4_BAR_LINKAGE - URDF/meshes/rocker_link_visual.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://4_BAR_LINKAGE - URDF/meshes/rocker_link_visual.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="rocker_joint"
+    type="continuous">
+    <origin
+      xyz="0.100000000000003 0 -0.015"
+      rpy="0 0 1.62926008972054" />
+    <parent
+      link="ground_link" />
+    <child
+      link="rocker_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+</robot>

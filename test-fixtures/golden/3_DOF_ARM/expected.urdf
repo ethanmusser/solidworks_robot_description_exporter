@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by the SolidWorks Robot Description Exporter (SW2RD). Originally created by Stephen Brawner (brawner@gmail.com) as the SolidWorks to URDF Exporter. 
+     Commit Version: 1.6.1-22-g71a1179-dirty  Build Version: 0.1.0.0
+     For more information, please see https://github.com/ethanmusser/solidworks_robot_description_exporter -->
+<robot
+  name="3_DOF_ARM - URDF">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="0.00249115384615384 2.34558007901714E-18 0.00305587412587413"
+        rpy="0 0 0" />
+      <mass
+        value="0.398196868842506" />
+      <inertia
+        ixx="0.000274825543588331"
+        ixy="5.44804086369882E-36"
+        ixz="-1.73424974427747E-36"
+        iyy="0.000274825543588331"
+        iyz="-4.24724918936619E-21"
+        izz="0.000487408282727414" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://3_DOF_ARM - URDF/meshes/base_link_visual.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.529411764705882 0.549019607843137 0.549019607843137 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://3_DOF_ARM - URDF/meshes/base_link_visual.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="prox_link">
+    <inertial>
+      <origin
+        xyz="6.94771684018737E-10 -0.0881460587278585 2.58403335621354E-10"
+        rpy="0 0 0" />
+      <mass
+        value="0.357941487119925" />
+      <inertia
+        ixx="0.00114917997225565"
+        ixy="2.06864849078337E-11"
+        ixz="3.02960665449024E-10"
+        iyy="0.000183306754902574"
+        iyz="5.69287522767011E-12"
+        izz="0.00115439695256225" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://3_DOF_ARM - URDF/meshes/prox_link_visual.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://3_DOF_ARM - URDF/meshes/prox_link_visual.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="prox_joint"
+    type="continuous">
+    <origin
+      xyz="0.00249115384615384 0 0"
+      rpy="-1.5707963267949 0 -1.5707963267949" />
+    <parent
+      link="base_link" />
+    <child
+      link="prox_link" />
+    <axis
+      xyz="0 -1 0" />
+  </joint>
+  <link
+    name="dist_link">
+    <inertial>
+      <origin
+        xyz="6.9477172498596E-10 -0.101063661551862 -2.58403354269632E-10"
+        rpy="0 0 0" />
+      <mass
+        value="0.357941487119925" />
+      <inertia
+        ixx="0.00114917997225565"
+        ixy="-2.06864850679244E-11"
+        ixz="-3.02960665496642E-10"
+        iyy="0.000183306754902574"
+        iyz="5.69287538893905E-12"
+        izz="0.00115439695256225" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://3_DOF_ARM - URDF/meshes/dist_link_visual.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://3_DOF_ARM - URDF/meshes/dist_link_visual.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="dist_joint"
+    type="continuous">
+    <origin
+      xyz="0 -0.18920972027972 0"
+      rpy="-1.5707963267949 0 0" />
+    <parent
+      link="prox_link" />
+    <child
+      link="dist_link" />
+    <axis
+      xyz="1 0 0" />
+  </joint>
+  <link
+    name="effector_link">
+    <inertial>
+      <origin
+        xyz="-2.79391592768449E-16 -2.22044604925031E-16 0.012249499404682"
+        rpy="0 0 0" />
+      <mass
+        value="0.229984484909938" />
+      <inertia
+        ixx="3.54543429351251E-05"
+        ixy="1.3657694333968E-20"
+        ixz="-8.36849489430375E-20"
+        iyy="3.4937159545877E-05"
+        iyz="3.76507539839933E-19"
+        izz="4.65803881841071E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://3_DOF_ARM - URDF/meshes/effector_link_effector.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.776470588235294 0.756862745098039 0.737254901960784 1" />
+      </material>
+    </visual>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://3_DOF_ARM - URDF/meshes/effector_link_gripper.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.776470588235294 0.756862745098039 0.737254901960784 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://3_DOF_ARM - URDF/meshes/effector_link_effector.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="effector_joint"
+    type="continuous">
+    <origin
+      xyz="0 -0.18 0"
+      rpy="1.5707963267949 0 0" />
+    <parent
+      link="dist_link" />
+    <child
+      link="effector_link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+</robot>

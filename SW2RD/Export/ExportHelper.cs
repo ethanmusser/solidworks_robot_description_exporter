@@ -28,6 +28,7 @@ using SW2RD.MJCF;
 using SW2RD.ROS;
 using SW2RD.Input;
 using SW2RD.Utilities;
+using SW2RD.Validation;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -504,6 +505,8 @@ namespace SW2RD.Export
                 {
                     mjcfTree = KinematicTreeAdapter.ToCore(URDFRobot);
                 }
+                MaybeCaptureGoldenSnapshot(SnapshotReplay.MjcfFormat, windowsModelFileName, mjcfTree,
+                    package.MJCFMeshDir, mjcfAux);
                 MJCFModel mjcfModel = MJCFBuilder.Build(mjcfTree, package.MJCFMeshDir, mjcfAux, MJCFRotationFormat, MJCFAngleUnit);
                 MJCFWriter mjcfWriter = new MJCFWriter(windowsModelFileName);
                 try
@@ -522,6 +525,8 @@ namespace SW2RD.Export
                 // URDFRobot's MeshGroups by ExportFiles, so the canonical tree
                 // is built from URDFRobot rather than ActiveWorldNode.
                 KinematicTree urdfTree = KinematicTreeAdapter.ToCore(URDFRobot);
+                MaybeCaptureGoldenSnapshot(SnapshotReplay.UrdfFormat, windowsModelFileName, urdfTree,
+                    null, null);
                 URDFWriter uWriter = new URDFWriter(windowsModelFileName);
                 try
                 {
@@ -540,6 +545,48 @@ namespace SW2RD.Export
             ResetUserPreferences();
             progressBar.End();
             return true;
+        }
+
+        // When the SW2RD_CAPTURE_GOLDEN environment variable is set (to anything
+        // non-empty), writes a `<output>.snapshot.json` alongside the exported
+        // URDF / MJCF file. The snapshot freezes the exact writer input (the
+        // canonical KinematicTree plus MJCF mesh-asset / site auxiliary data and
+        // the writer options) so the golden tests can replay it SW-free and the
+        // committed `expected.*` outputs can be regenerated without re-running
+        // SolidWorks. This is a developer / maintainer fixture-blessing hook and
+        // is a no-op in normal user exports. Failures here never abort an export.
+        private void MaybeCaptureGoldenSnapshot(
+            string format,
+            string outputFileName,
+            KinematicTree tree,
+            string mjcfMeshDir,
+            Dictionary<string, LinkAuxiliary> mjcfAux)
+        {
+            string flag = System.Environment.GetEnvironmentVariable("SW2RD_CAPTURE_GOLDEN");
+            if (string.IsNullOrEmpty(flag))
+            {
+                return;
+            }
+            try
+            {
+                ExportSnapshot snapshot = new ExportSnapshot
+                {
+                    Format = format,
+                    ModelName = tree?.Name ?? URDFRobot?.Name ?? "",
+                    Tree = tree,
+                    MeshDir = mjcfMeshDir,
+                    Auxiliary = mjcfAux ?? new Dictionary<string, LinkAuxiliary>(),
+                    MjcfRotationFormat = MJCFRotationFormat,
+                    MjcfAngleUnit = MJCFAngleUnit,
+                };
+                string snapshotPath = Path.ChangeExtension(outputFileName, ".snapshot.json");
+                File.WriteAllText(snapshotPath, ExportSnapshotSerializer.Serialize(snapshot));
+                logger.Info("Captured golden snapshot to " + snapshotPath);
+            }
+            catch (Exception e)
+            {
+                logger.Warn("Failed to capture golden snapshot: " + e.Message);
+            }
         }
 
         // ROS-specific package files (CMakeLists, package.xml, launch files, joint

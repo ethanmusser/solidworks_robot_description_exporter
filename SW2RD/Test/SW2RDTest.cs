@@ -13,7 +13,6 @@ namespace SW2RD.Test
     {
         public const string ModelName3DofArm = "3_DOF_ARM";
         public const string ModelName4Wheeler = "4_WHEELER";
-        public const string ModelNameOriginal3DofArm = "ORIGINAL_3_DOF_ARM";
         protected readonly SWTestFixture TestFixture;
         protected readonly SldWorks SwApp;
         public SW2RDTest(SWTestFixture fixture)

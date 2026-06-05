@@ -1,0 +1,154 @@
+{
+  "SchemaVersion": 1,
+  "Format": "URDF",
+  "ModelName": "TOY_BLOCK - URDF",
+  "Tree": {
+    "Name": "TOY_BLOCK - URDF",
+    "GlobalOriginCoordinateSystemName": "Origin_global",
+    "WorldBody": {
+      "Name": "world",
+      "Inertial": {
+        "Origin": {
+          "Position": {
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          },
+          "Rotation": {
+            "W": 1,
+            "X": 0,
+            "Y": 0,
+            "Z": 0
+          }
+        },
+        "Mass": 0,
+        "Inertia": {
+          "Ixx": 0,
+          "Ixy": 0,
+          "Ixz": 0,
+          "Iyy": 0,
+          "Iyz": 0,
+          "Izz": 0
+        }
+      },
+      "Material": {
+        "Name": "",
+        "Color": {
+          "Red": 1,
+          "Green": 1,
+          "Blue": 1,
+          "Alpha": 1
+        },
+        "TextureFilename": ""
+      },
+      "VisualGroups": [],
+      "CollisionGroups": [],
+      "CollisionUsesVisual": false,
+      "InertialSource": "Visual",
+      "InertialComponents": [],
+      "Sites": [],
+      "Joint": null,
+      "Children": [
+        {
+          "Name": "base_link",
+          "Inertial": {
+            "Origin": {
+              "Position": {
+                "X": 0.022512862270892657,
+                "Y": 0.022478737379948037,
+                "Z": 0.02174266275462626
+              },
+              "Rotation": {
+                "W": 1,
+                "X": 0,
+                "Y": 0,
+                "Z": 0
+              }
+            },
+            "Mass": 0.043026811093555196,
+            "Inertia": {
+              "Ixx": 1.41188296125073E-05,
+              "Ixy": 2.4883999966585458E-09,
+              "Ixz": -1.2041435307987039E-08,
+              "Iyy": 1.4111001539305963E-05,
+              "Iyz": 1.9906018552055893E-08,
+              "Izz": 1.4608439156961294E-05
+            }
+          },
+          "Material": {
+            "Name": "",
+            "Color": {
+              "Red": 1,
+              "Green": 1,
+              "Blue": 1,
+              "Alpha": 1
+            },
+            "TextureFilename": ""
+          },
+          "VisualGroups": [
+            {
+              "Name": "block",
+              "MeshFilename": "package://TOY_BLOCK - URDF/meshes/base_link_visual.STL",
+              "Components": [
+                {
+                  "DisplayName": "",
+                  "PersistentId": "aEIAAAUAAAD//v8SQgBsAG8AYwBrAEEALQAxAEAAVABPAFkAXwBCAEwATwBDAEsABAAAABAAAAABAAAAAQAAABgAAAA="
+                }
+              ]
+            }
+          ],
+          "CollisionGroups": [],
+          "CollisionUsesVisual": true,
+          "InertialSource": "Visual",
+          "InertialComponents": [],
+          "Sites": [],
+          "Joint": {
+            "Name": "",
+            "Type": "",
+            "ParentLinkName": "",
+            "ChildLinkName": "",
+            "Origin": {
+              "Position": {
+                "X": 0,
+                "Y": 0,
+                "Z": 0
+              },
+              "Rotation": {
+                "W": 1,
+                "X": 0,
+                "Y": 0,
+                "Z": 0
+              }
+            },
+            "Axis": {
+              "X": 0,
+              "Y": 0,
+              "Z": 0
+            },
+            "Limit": null,
+            "CoordinateSystemName": "Origin_global",
+            "AxisName": "",
+            "AxisFlipped": false,
+            "AutoComputeLimits": true,
+            "Damping": null,
+            "Friction": null,
+            "Armature": null,
+            "Reference": null,
+            "AutoDeriveAxis": false
+          },
+          "Children": [],
+          "IsFixedFrame": false,
+          "StlQualityFine": false,
+          "WorldAttachment": "Free"
+        }
+      ],
+      "IsFixedFrame": false,
+      "StlQualityFine": false,
+      "WorldAttachment": "Welded"
+    }
+  },
+  "MeshDir": null,
+  "Auxiliary": {},
+  "MjcfRotationFormat": "AxisAngle",
+  "MjcfAngleUnit": "Degree"
+}

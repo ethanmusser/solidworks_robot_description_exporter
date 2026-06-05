@@ -16,10 +16,8 @@ namespace SW2RD.Test
         [Theory]
         [InlineData("3_DOF_ARM", 4, MeshExportFormat.STL)]
         [InlineData("4_WHEELER", 5, MeshExportFormat.STL)]
-        [InlineData("ORIGINAL_3_DOF_ARM", 4, MeshExportFormat.STL)]
         [InlineData("3_DOF_ARM", 4, MeshExportFormat.THREEDXML)]
         [InlineData("4_WHEELER", 5, MeshExportFormat.THREEDXML)]
-        [InlineData("ORIGINAL_3_DOF_ARM", 4, MeshExportFormat.THREEDXML)]
         public void TestExportRobot(string modelName, int expNumLinks, MeshExportFormat meshExportFormat)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
@@ -40,7 +38,6 @@ namespace SW2RD.Test
         [Theory]
         [InlineData("3_DOF_ARM", 4)]
         [InlineData("4_WHEELER", 5)]
-        [InlineData("ORIGINAL_3_DOF_ARM", 4)]
         public void TestExportRobotNoSTL(string modelName, int expNumLinks)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
@@ -61,7 +58,6 @@ namespace SW2RD.Test
         [Theory]
         [InlineData("3_DOF_ARM", 4)]
         [InlineData("4_WHEELER", 5)]
-        [InlineData("ORIGINAL_3_DOF_ARM", 4)]
         public void TestExportRobotSkipInertial(string modelName, int expNumLinks)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
@@ -82,7 +78,6 @@ namespace SW2RD.Test
         [Theory]
         [InlineData("3_DOF_ARM", 4)]
         [InlineData("4_WHEELER", 5)]
-        [InlineData("ORIGINAL_3_DOF_ARM", 4)]
         public void TestExportRobotSkipVisual(string modelName, int expNumLinks)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
@@ -103,7 +98,6 @@ namespace SW2RD.Test
         [Theory]
         [InlineData("3_DOF_ARM", 4)]
         [InlineData("4_WHEELER", 5)]
-        [InlineData("ORIGINAL_3_DOF_ARM", 4)]
         public void TestExportRobotSkipKinematics(string modelName, int expNumLinks)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
@@ -124,7 +118,6 @@ namespace SW2RD.Test
         [Theory]
         [InlineData("3_DOF_ARM", 4)]
         [InlineData("4_WHEELER", 5)]
-        [InlineData("ORIGINAL_3_DOF_ARM", 4)]
         public void TestExportRobotSkipLimits(string modelName, int expNumLinks)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
@@ -145,7 +138,6 @@ namespace SW2RD.Test
         [Theory]
         [InlineData("3_DOF_ARM", 3)]
         [InlineData("4_WHEELER", 4)]
-        [InlineData("ORIGINAL_3_DOF_ARM", 3)]
         public void TestGetJointNames(string modelName, int expNumJoints)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);

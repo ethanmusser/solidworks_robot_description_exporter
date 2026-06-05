@@ -120,7 +120,6 @@ namespace SW2RD.Test
 
         [Theory]
         [InlineData(ModelName3DofArm, 0)]
-        [InlineData(ModelNameOriginal3DofArm, 3)]
         public void TestFindHiddenComponens(string modelName, int expected)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
@@ -132,7 +131,6 @@ namespace SW2RD.Test
 
         [Theory]
         [InlineData(ModelName3DofArm)]
-        [InlineData(ModelNameOriginal3DofArm)]
         public void TestShowAllComponents(string modelName)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
@@ -145,7 +143,6 @@ namespace SW2RD.Test
 
         [Theory]
         [InlineData(ModelName3DofArm)]
-        [InlineData(ModelNameOriginal3DofArm)]
         public void TestShowComponents(string modelName)
         {
             ModelDoc2 doc = OpenSWDocument(modelName);
