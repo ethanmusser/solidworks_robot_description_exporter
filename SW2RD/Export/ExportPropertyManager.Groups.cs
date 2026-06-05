@@ -402,7 +402,7 @@ namespace SW2RD.Export
         // Loads the inertial mark with the set of components that will
         // drive mass / inertia at export time, per the InertialSource
         // dropdown. Pulled out of FillPropertyManager so the
-        // viewer-highlight-follows-active-tab logic in RehydrateMarksForActiveTab
+        // viewer-highlight-follows-active-section logic in RehydrateMarksForActiveSection
         // has a uniform "load the inertial mark" entry point.
         //
         // Source resolution rules (must mirror Link.GetInertialComponents
@@ -487,8 +487,8 @@ namespace SW2RD.Export
         }
 
         // Clears every component / feature-picker mark owned by the PMP.
-        // Used by RehydrateMarksForActiveTab to drain the marks for the
-        // tabs the user is leaving so the SOLIDWORKS viewer highlight no
+        // Used by RehydrateMarksForActiveSection to drain the marks for the
+        // sections the user is leaving so the SOLIDWORKS viewer highlight no
         // longer shows them. Safe to call even before all SelectionBoxes
         // have been added (defensive null checks per box).
         private void ClearAllSelectionMarks()
@@ -528,18 +528,24 @@ namespace SW2RD.Export
         }
 
         // Drains every PMP-owned SelectionBox mark and repopulates only
-        // the marks that belong to the currently-active tab. The net
-        // effect is that the SOLIDWORKS viewer highlight reflects ONLY
-        // the entities of the active tab (not the union of every
-        // SelectionBox that ever held a pick for this link).
+        // the marks that belong to the currently-active page-1 section
+        // (the expanded accordion group). The net effect is that the
+        // SOLIDWORKS viewer highlight reflects ONLY the entities of the
+        // active section (not the union of every SelectionBox that ever
+        // held a pick for this link).
         //
-        // Tab -> marks mapping:
-        //   SetupTabID:        none
-        //   LinkJointTabID:    Global / Joint coord-sys + Joint axis
-        //   VisualTabID:       active visual group
-        //   CollisionTabID:    active collision group
-        //   InertialTabID:     inertial components
-        //   SitesTabID:        active site's reference coord-sys
+        // Section (group) -> marks mapping:
+        //   LinkJointGroupID:  Global / Joint coord-sys + Joint axis
+        //   VisualGroupID:     active visual group
+        //   CollisionGroupID:  active collision group
+        //   InertialGroupID:   inertial components
+        //   SitesGroupID:      active site's reference coord-sys
+        //
+        // The joint-axis ARROW overlay is NOT driven from here (it is a
+        // viewport manipulator, not a SelectionBox mark); the overlay is
+        // gated to the Link/Joint section by FillPropertyManager and
+        // OnGroupExpand so it doesn't linger while another section is
+        // active.
         //
         // The whole sequence runs under suppressGroupListboxRefresh = true
         // so the synthetic OnSelectionboxListChanged events fired by the
@@ -548,7 +554,7 @@ namespace SW2RD.Export
         // and restore the flag (see the rationale on each), so this
         // outer guard is the canonical "I'm doing programmatic mark
         // surgery, don't commit anything back" envelope.
-        private void RehydrateMarksForActiveTab(LinkNode node, int tabId)
+        private void RehydrateMarksForActiveSection(LinkNode node, int sectionId)
         {
             if (node == null)
             {
@@ -559,26 +565,25 @@ namespace SW2RD.Export
             try
             {
                 ClearAllSelectionMarks();
-                switch (tabId)
+                switch (sectionId)
                 {
-                    case LinkJointTabID:
+                    case LinkJointGroupID:
                         LoadActiveGlobalCoordsysIntoSelectionBox(node);
                         LoadActiveJointCoordsysIntoSelectionBox(node);
                         LoadActiveJointAxisIntoSelectionBox(node);
                         break;
-                    case VisualTabID:
+                    case VisualGroupID:
                         LoadActiveVisualGroupIntoSelectionBox(node);
                         break;
-                    case CollisionTabID:
+                    case CollisionGroupID:
                         LoadActiveCollisionGroupIntoSelectionBox(node);
                         break;
-                    case InertialTabID:
+                    case InertialGroupID:
                         LoadActiveInertialIntoSelectionBox(node);
                         break;
-                    case SitesTabID:
+                    case SitesGroupID:
                         LoadActiveSiteCoordSysIntoSelectionBox(node);
                         break;
-                    // SetupTabID: no marks to populate.
                 }
             }
             finally

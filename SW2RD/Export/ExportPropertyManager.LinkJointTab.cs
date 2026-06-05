@@ -27,7 +27,7 @@ using System;
 
 namespace SW2RD.Export
 {
-    // PMPage UI builder for the "Link/Joint" tab. Hosts the per-link
+    // PMPage UI builder for the "Link / Joint" group. Hosts the per-link
     // text inputs (link name, joint name), the global / joint coordinate
     // system selectors, the joint axis selector with its reverse-direction
     // bitmap button, the joint type combobox, and the per-joint Joint
@@ -43,20 +43,20 @@ namespace SW2RD.Export
             int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMLabelParentLink = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
+            PMLabelParentLink = (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(
                 LabelLinkNameID, (short)controlType, "", (short)alignment, options, "");
 
             // Static "Link name" header above the textbox so the
-            // tab remains self-describing.
+            // section remains self-describing.
             int leftAlign = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            PMLinkJointTab.AddControl2(LabelLinkNameStaticID,
+            PMLinkJointGroup.AddControl2(LabelLinkNameStaticID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Label,
                 "Link name", (short)leftAlign, options,
                 "Identifier exported as the URDF/MJCF link/body name.");
 
             // Link name textbox.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Textbox;
-            PMTextBoxLinkName = (PropertyManagerPageTextbox)PMLinkJointTab.AddControl2(
+            PMTextBoxLinkName = (PropertyManagerPageTextbox)PMLinkJointGroup.AddControl2(
                 TextBoxLinkNameID, (short)controlType, "base_link", (short)alignment, options,
                 "Enter the name of the link");
 
@@ -64,12 +64,12 @@ namespace SW2RD.Export
             // control IDs or controls can leak onto unrelated tabs.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             options = (int)swAddControlOptions_e.swControlOptions_Visible;
-            PMLabelJointName = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
+            PMLabelJointName = (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(
                 LabelJointNameID, (short)controlType, "Joint name", (short)leftAlign, options,
                 "Enter the name of the joint");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Textbox;
-            PMTextBoxJointName = (PropertyManagerPageTextbox)PMLinkJointTab.AddControl2(
+            PMTextBoxJointName = (PropertyManagerPageTextbox)PMLinkJointGroup.AddControl2(
                 TextBoxJointNameID, (short)controlType, "", (short)alignment, options,
                 "Enter the name of the joint");
 
@@ -98,13 +98,13 @@ namespace SW2RD.Export
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
             string tip = "How a top-level body attaches to the world. Welded = body is rigidly fixed; Free = MJCF emits a <freejoint/> on the body so it floats with 6 DoF. URDF ignores this and always emits a fixed-base base_link.";
-            PMLabelWorldAttachment = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
+            PMLabelWorldAttachment = (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(
                 LabelWorldAttachmentID, (short)controlType,
                 "World attachment", (short)alignment, options, tip);
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Combobox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMComboBoxWorldAttachment = (PropertyManagerPageCombobox)PMLinkJointTab.AddControl2(
+            PMComboBoxWorldAttachment = (PropertyManagerPageCombobox)PMLinkJointGroup.AddControl2(
                 ComboBoxWorldAttachmentID, (short)controlType,
                 "World attachment", (short)alignment, options, tip);
             PMComboBoxWorldAttachment.Style =
@@ -127,13 +127,13 @@ namespace SW2RD.Export
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
             string tip = "Pick the reference coordinate system that defines the global origin. Leave empty to auto-generate one at the assembly origin.";
-            PMLabelGlobalCoordsys = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
+            PMLabelGlobalCoordsys = (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(
                 IDLabelGlobalCoordsys, (short)controlType,
                 "Global origin coordinate system", (short)alignment, options, tip);
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMSelectionGlobalCoordsys = (PropertyManagerPageSelectionbox)PMLinkJointTab.AddControl2(
+            PMSelectionGlobalCoordsys = (PropertyManagerPageSelectionbox)PMLinkJointGroup.AddControl2(
                 SelectionGlobalCoordsysID, (short)controlType,
                 "Pick global origin coordinate system", (short)alignment, options, tip);
             // SingleEntityOnly = true matches SW's coord-system and mate
@@ -169,13 +169,13 @@ namespace SW2RD.Export
             // disabled on the WorldNode itself (the WorldNode owns the
             // Global Origin picker, not this one).
             string tip = "Pick the reference coordinate system that defines this body's frame. For a top-level body it is the world->body offset; for a nested link it is the joint origin. Leave empty to auto-generate one from the parent/child kinematic chain.";
-            PMLabelCoordSys = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
+            PMLabelCoordSys = (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(
                 LabelCoordSysID, (short)controlType,
                 "Link coordinate system", (short)alignment, options, tip);
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMSelectionJointCoordsys = (PropertyManagerPageSelectionbox)PMLinkJointTab.AddControl2(
+            PMSelectionJointCoordsys = (PropertyManagerPageSelectionbox)PMLinkJointGroup.AddControl2(
                 SelectionJointCoordsysID, (short)controlType,
                 "Pick link coordinate system", (short)alignment, options, tip);
             // SW-native single-entity overwrite UX - see
@@ -200,14 +200,14 @@ namespace SW2RD.Export
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
             string tip = "Pick the SolidWorks reference axis that defines the joint motion direction. Toggle the auto-derive checkbox to let the exporter resolve the axis from the kinematic chain instead.";
-            PMLabelAxes = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
+            PMLabelAxes = (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(
                 LabelAxesID, (short)controlType, "Joint axis", (short)alignment, options, tip);
 
             // "Auto-derive axis from kinematic chain" toggle. Defaults
             // off so new joints require an explicit reference-axis pick
             // unless the user opts into inference from mates.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Checkbox;
-            PMCheckAutoDeriveAxis = (PropertyManagerPageCheckbox)PMLinkJointTab.AddControl2(
+            PMCheckAutoDeriveAxis = (PropertyManagerPageCheckbox)PMLinkJointGroup.AddControl2(
                 CheckAutoDeriveAxisID, (short)controlType,
                 "Auto-derive axis from kinematic chain", (short)alignment, options,
                 "When checked, the joint axis is resolved from the SolidWorks mates at export time and the picker below is ignored.");
@@ -215,7 +215,7 @@ namespace SW2RD.Export
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMSelectionJointAxis = (PropertyManagerPageSelectionbox)PMLinkJointTab.AddControl2(
+            PMSelectionJointAxis = (PropertyManagerPageSelectionbox)PMLinkJointGroup.AddControl2(
                 SelectionJointAxisID, (short)controlType, "Pick joint axis",
                 (short)alignment, options, tip);
             // SW-native single-entity overwrite UX - see
@@ -236,7 +236,7 @@ namespace SW2RD.Export
             // buttons as full-width rows, so this control is stacked below
             // the axis selectionbox.
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_BitmapButton;
-            PMBitmapAxisFlip = (PropertyManagerPageBitmapButton)PMLinkJointTab.AddControl2(
+            PMBitmapAxisFlip = (PropertyManagerPageBitmapButton)PMLinkJointGroup.AddControl2(
                 BitmapAxisFlipID, (short)controlType, "Reverse Direction",
                 (short)alignment, options,
                 "Reverse the positive direction of the reference axis");
@@ -251,12 +251,12 @@ namespace SW2RD.Export
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
             string tip = "Select the joint type";
-            PMLabelJointType = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
+            PMLabelJointType = (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(
                 LabelJointTypeID, (short)controlType, "Joint type", (short)alignment, options, tip);
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Combobox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMComboBoxJointType = (PropertyManagerPageCombobox)PMLinkJointTab.AddControl2(
+            PMComboBoxJointType = (PropertyManagerPageCombobox)PMLinkJointGroup.AddControl2(
                 ComboBoxJointTypeID, (short)controlType, "Joint type",
                 (short)alignment, options, tip);
             PMComboBoxJointType.Style =
@@ -281,14 +281,14 @@ namespace SW2RD.Export
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
 
-            PMLabelJointProperties = (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(
+            PMLabelJointProperties = (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(
                 LabelJointPropertiesID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Label,
                 "Joint Properties",
                 (short)alignment, options,
                 "Optional limits, dynamics, and MJCF-only reference / armature for this joint. Leave empty to omit.");
 
-            PMCheckAutoComputeLimits = (PropertyManagerPageCheckbox)PMLinkJointTab.AddControl2(
+            PMCheckAutoComputeLimits = (PropertyManagerPageCheckbox)PMLinkJointGroup.AddControl2(
                 CheckAutoComputeLimitsID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Checkbox,
                 "Auto-compute Lower/Upper from limit mate",
@@ -350,7 +350,7 @@ namespace SW2RD.Export
             int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            return (PropertyManagerPageLabel)PMLinkJointTab.AddControl2(id,
+            return (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(id,
                 (short)swPropertyManagerPageControlType_e.swControlType_Label,
                 caption, (short)alignment, options, tip);
         }
@@ -360,7 +360,7 @@ namespace SW2RD.Export
             int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            return (PropertyManagerPageTextbox)PMLinkJointTab.AddControl2(id,
+            return (PropertyManagerPageTextbox)PMLinkJointGroup.AddControl2(id,
                 (short)swPropertyManagerPageControlType_e.swControlType_Textbox,
                 "", (short)alignment, options, tip);
         }

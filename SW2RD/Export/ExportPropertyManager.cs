@@ -36,6 +36,21 @@ using System.Windows.Forms;
 
 namespace SW2RD.Export
 {
+    // Which of the two purpose-built PropertyManagerPages this instance is.
+    // Configure builds the link tree + the kinematic-config accordion
+    // (Link/Joint, Visual, Collision, Inertial, Sites) and its green check
+    // saves the configuration. Export builds only the Export group (output /
+    // mesh options + Export button) and loads the saved configuration into an
+    // in-memory tree to feed the export pipeline. One class serves both modes
+    // so the Tree / Exporter / validation / export plumbing is shared rather
+    // than duplicated. Public because the public ExportPropertyManager
+    // constructor takes it as a parameter.
+    public enum ExportPmMode
+    {
+        Configure,
+        Export,
+    }
+
     [ComVisible(true)]
     public sealed partial class ExportPropertyManager : PropertyManagerPage2Handler9, IDisposable
     {
@@ -44,6 +59,11 @@ namespace SW2RD.Export
         private static readonly log4net.ILog logger = Logger.GetLogger();
         public SldWorks swApp;
         public ModelDoc2 ActiveSWModel;
+
+        // Configure vs Export. Set once in the constructor; gates group
+        // creation, tree wiring, green-check save, and the export-time
+        // SaveActiveNode skip.
+        private readonly ExportPmMode mode;
 
         // SOLIDWORKS exposes this class to COM via IPropertyManagerPage2Handler,
         // not via .NET serialization. Configuration persistence runs through
@@ -57,16 +77,32 @@ namespace SW2RD.Export
         //General objects required for the PropertyManager page
 
         private readonly PropertyManagerPage2 PMPage;
-        // The PropertyManagerPage is organized as a fixed always-visible
-        // header (Preview/Export button + status label + link tree +
-        // child-count spinner) followed by six tabs. Builders attach
-        // controls directly to the relevant tab.
-        private PropertyManagerPageTab PMSetupTab;
-        private PropertyManagerPageTab PMLinkJointTab;
-        private PropertyManagerPageTab PMVisualTab;
-        private PropertyManagerPageTab PMCollisionTab;
-        private PropertyManagerPageTab PMInertialTab;
-        private PropertyManagerPageTab PMSitesTab;
+        // The PropertyManagerPage is a single SolidWorks PropertyManagerPage2
+        // run as a Flow-Simulation-style two-step wizard via the native
+        // Next / Previous arrows (swPropertyManagerOptions_MultiplePages).
+        // Each "page" of the wizard is simulated by toggling the Visible
+        // property of a set of PropertyManagerPageGroups (SW has no
+        // SetTabVisible, so tabs cannot drive wizard navigation):
+        //
+        //   Page 1 (Configure): PMTreeGroup (link tree, always expanded) +
+        //     the five kinematic-config groups (Link/Joint, Visual,
+        //     Collision, Inertial, Sites) which behave as an ACCORDION -
+        //     expanding one collapses the others, and the expanded group is
+        //     the "active section" that drives the SOLIDWORKS viewer
+        //     highlight (see OnGroupExpand / RehydrateMarksForActiveSection).
+        //   Page 2 (Export): PMExportGroup (output / mesh format, quality,
+        //     rotation, angle, validation status, Export button).
+        //
+        // UpdateWizardVisibility flips the per-page group visibility and the
+        // SetMessage3 step banner; OnNextPage / OnPreviousPage move between
+        // the two pages.
+        private PropertyManagerPageGroup PMTreeGroup;
+        private PropertyManagerPageGroup PMLinkJointGroup;
+        private PropertyManagerPageGroup PMVisualGroup;
+        private PropertyManagerPageGroup PMCollisionGroup;
+        private PropertyManagerPageGroup PMInertialGroup;
+        private PropertyManagerPageGroup PMSitesGroup;
+        private PropertyManagerPageGroup PMExportGroup;
         // The Visual / Collision selection boxes hold the components for the
         // CURRENTLY ACTIVE group of that role on the active link. When the user
         // switches groups (via the listbox) or links (via the tree), we save
@@ -108,7 +144,6 @@ namespace SW2RD.Export
         private PropertyManagerPageCombobox PMComboBoxRotationFormat;
         private PropertyManagerPageCombobox PMComboBoxAngleUnit;
         private PropertyManagerPageLabel PMLabelConfigurationCache;
-        private PropertyManagerPageButton PMButtonClearSavedConfiguration;
 
         // Per-joint properties (Limits / Dynamics / Reference / Armature) and
         // the per-joint "auto-compute lower/upper from limit mate" toggle.
@@ -231,19 +266,45 @@ namespace SW2RD.Export
         // the rename handler only fires for real user keystrokes.
         private bool suppressGroupNameTextboxEvents;
 
-        // ID of the tab that is currently active in the PMP. Drives the
-        // "viewer highlight follows the active tab" behavior: when this
-        // is e.g. VisualTabID, only the Visual SelectionBox's mark is
-        // populated and all other marks are cleared, so the SOLIDWORKS
-        // viewer highlights ONLY the components of the active visual
-        // group (not the union of every group ever loaded by
-        // FillPropertyManager). OnTabClicked updates this on every tab
-        // change; FillPropertyManager reads it when the active link
-        // changes, so a link switch repopulates only the marks the
-        // currently-visible tab needs. Defaults to SetupTabID because
-        // SW shows the first-added tab (Setup) on initial PMP open and
-        // does not fire OnTabClicked for it.
-        private int currentActiveTabId = SetupTabID;
+        // ID of the kinematic-config GROUP that is currently the active
+        // section on page 1. Drives the "viewer highlight follows the
+        // active section" behavior: when this is e.g. VisualGroupID, only
+        // the Visual SelectionBox's mark is populated and all other marks
+        // are cleared, so the SOLIDWORKS viewer highlights ONLY the
+        // components of the active visual group (not the union of every
+        // group ever loaded by FillPropertyManager). OnGroupExpand updates
+        // this whenever the user expands a different accordion group;
+        // FillPropertyManager reads it when the active link changes, so a
+        // link switch repopulates only the marks the currently-expanded
+        // section needs. Defaults to LinkJointGroupID because that group
+        // opens expanded (SW does not fire OnGroupExpand for the
+        // initially-expanded group).
+        private int currentActiveSectionId = LinkJointGroupID;
+
+        // Wizard pagination machinery, kept DORMANT after the Configure /
+        // Export split. The Configure PMP is a single accordion page today
+        // (wizardPages has one entry), so the native Next / Previous arrows
+        // are not even enabled (the swPropertyManagerOptions_MultiplePages
+        // option is gated on TotalWizardPages > 1). The machinery is retained
+        // so a future second Configure page is purely a data change: add a
+        // second int[] of group IDs to wizardPages in SetupPropertyManagerPage
+        // and the arrows, EnableButton logic, and per-page visibility all
+        // light up automatically. Export mode never paginates.
+        private int currentWizardPage = 1;
+
+        // Per-page descriptor: each entry is the set of kinematic group IDs
+        // shown on that wizard page. Populated in SetupPropertyManagerPage
+        // (Configure mode only). The tree group is always visible in Configure
+        // and is therefore NOT listed here. Null/empty in Export mode.
+        private List<int[]> wizardPages;
+        private int TotalWizardPages => wizardPages?.Count ?? 1;
+
+        // Re-entrancy guard for the page-1 accordion. Programmatically
+        // setting PropertyManagerPageGroup.Expanded fires OnGroupExpand,
+        // so any code that collapses sibling groups (or sets the initial
+        // accordion state) sets this true to stop the handler re-entering
+        // itself.
+        private bool suppressGroupExpandAccordion;
 
         // Set true while OnClose is executing. When the property-manager page
         // closes (green check OR PMPage.Close(true) from the Preview-and-Export
@@ -359,12 +420,17 @@ namespace SW2RD.Export
 
         // "Reverse Direction" bitmap button next to the Reference Axis combo.
         private const int BitmapAxisFlipID = 80;
-        private const int SetupTabID = 90;
-        private const int LinkJointTabID = 91;
-        private const int VisualTabID = 92;
-        private const int CollisionTabID = 93;
-        private const int InertialTabID = 94;
-        private const int SitesTabID = 95;
+        // Wizard group IDs. 90 (the old SetupTabID) is retired - the Setup
+        // tab's controls moved to the Export group (page 2) and the tree /
+        // child-count / cache label moved to the Tree group (page 1). The
+        // five kinematic-config group IDs reuse the old per-tab IDs so the
+        // active-section machinery (RehydrateMarksForActiveSection) reads
+        // naturally; Tree / Export groups take fresh high-end IDs.
+        private const int LinkJointGroupID = 91;
+        private const int VisualGroupID = 92;
+        private const int CollisionGroupID = 93;
+        private const int InertialGroupID = 94;
+        private const int SitesGroupID = 95;
         private const int SelectionGlobalCoordsysID = 100;
         private const int SelectionJointCoordsysID = 101;
         private const int SelectionJointAxisID = 102;
@@ -417,7 +483,9 @@ namespace SW2RD.Export
         private const int LabelWorldAttachmentID = 149;
         private const int ComboBoxWorldAttachmentID = 150;
         private const int LabelConfigurationCacheID = 151;
-        private const int ButtonClearSavedConfigurationID = 152;
+        // 152 retired (was ButtonClearSavedConfigurationID); the Clear Saved
+        // Configuration action moved to a dedicated ribbon command (see
+        // SwAddin.ClearSavedConfigurationCommand).
         // 153 retired (was ButtonImportLegacyConfigurationID); legacy import removed.
         private const int FastMeshExportCheckID = 154;
         private const int MeshQualityComboID = 155;
@@ -425,6 +493,11 @@ namespace SW2RD.Export
         private const int RotationFormatComboID = 157;
         private const int LabelAngleUnitID = 158;
         private const int AngleUnitComboID = 159;
+        // Wizard group boxes (the page-1 tree group and the page-2 export
+        // group). The five kinematic-config groups reuse the old per-tab
+        // IDs (91-95) above.
+        private const int TreeGroupID = 160;
+        private const int ExportGroupID = 161;
 
         // Marks for every PMP SelectionBox so SOLIDWORKS can attribute the
         // user's selection to the right list. CRITICAL:
@@ -496,8 +569,9 @@ namespace SW2RD.Export
         }
 
         //The following runs when a new instance of the class is created
-        public ExportPropertyManager(SldWorks swAppPtr)
+        public ExportPropertyManager(SldWorks swAppPtr, ExportPmMode pmMode)
         {
+            mode = pmMode;
             swApp = swAppPtr;
             ActiveSWModel = swApp.ActiveDoc;
             Exporter = new ExportHelper(swApp);
@@ -507,14 +581,35 @@ namespace SW2RD.Export
 
             docMenu = new ContextMenuStrip();
 
+            // Build the wizard page descriptor before creating the page so the
+            // MultiplePages gate below sees the real page count. Configure mode
+            // only; Export mode never paginates so wizardPages stays null.
+            if (mode == ExportPmMode.Configure)
+            {
+                InitWizardPages();
+            }
+
             int longerrors = 0;
             ActiveSWModel.ShowConfiguration2("Robot Description Export");
 
             //Set the variables for the page
-            string PageTitle = "Robot Description Export";
+            string PageTitle = mode == ExportPmMode.Configure
+                ? "Configure Robot Description"
+                : "Export Robot Description";
+            // swPropertyManagerOptions_MultiplePages turns on the native
+            // Next / Previous arrows in the PMP title bar. It is enabled ONLY
+            // in Configure mode AND only when the wizard actually has more than
+            // one page (TotalWizardPages > 1). Today Configure is a single
+            // accordion page, so the option is off and no dead arrows render;
+            // the gate flips it on automatically once a second page is added
+            // to wizardPages. Export mode never shows the arrows.
             long options = (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_OkayButton +
                 (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_CancelButton +
                 (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_HandleKeystrokes;
+            if (mode == ExportPmMode.Configure && TotalWizardPages > 1)
+            {
+                options += (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_MultiplePages;
+            }
 
             //Create the PropertyManager page
             PMPage = (PropertyManagerPage2)swApp.CreatePropertyManagerPage(
@@ -548,85 +643,294 @@ namespace SW2RD.Export
                 (Exception)e.ExceptionObject);
         }
 
-        // Builds the entire PropertyManagerPage, ordered top to bottom on
-        // the side bar:
-        //   Header         -> BuildPmPageHeader    (Preview/Export, status, link tree, child-count)
-        //   Setup tab      -> BuildSetupTab        (output / mesh format, export-meshes toggle)
-        //   Link/Joint     -> BuildLinkJointTab    (names, coord systems, axis, joint type, joint properties)
-        //   Visual tab     -> BuildComponentsTabs  (visual groups editor)
-        //   Collision tab  -> BuildComponentsTabs  (collision groups editor + use-visual-as-collision toggle)
-        //   Inertial tab   -> BuildComponentsTabs  (inertial source + components)
-        //   Sites tab      -> BuildSitesTab        (MJCF-only site editor)
+        // Builds the entire PropertyManagerPage as a two-step wizard, ordered
+        // top to bottom on the side bar:
+        //   Page 1 (Configure):
+        //     Tree group       -> BuildTreeGroup       (link tree, child-count, saved-config label)
+        //     Link/Joint group -> BuildLinkJointTab    (names, coord systems, axis, joint type, joint properties)
+        //     Visual group     -> BuildComponentsTabs  (visual groups editor)
+        //     Collision group  -> BuildComponentsTabs  (collision groups editor + use-visual-as-collision toggle)
+        //     Inertial group   -> BuildComponentsTabs  (inertial source + components)
+        //     Sites group      -> BuildSitesTab        (MJCF-only site editor)
+        //   Page 2 (Export):
+        //     Export group     -> BuildExportGroup     (output / mesh format, quality, rotation, angle, validation, Export button)
         //
-        // The header builder is called BEFORE PMPage.AddTab so SolidWorks
-        // renders the tree, child-count spinner, status label and
-        // Preview/Export button above the tab strip and they remain
-        // visible regardless of which tab is currently active.
-        //
-        // Tabs are created BEFORE the per-tab builders run so each builder
-        // can hang controls directly off its own tab without ordering
-        // concerns. Tree wiring happens last so the first
-        // TreeAfterSelect -> FillPropertyManager call sees fully-
-        // constructed PM controls.
+        // Every group box is created up front so the build order (and
+        // therefore the on-screen order) is explicit; the per-group
+        // builders then hang controls off the appropriate group. The five
+        // kinematic-config groups are an accordion (only one expanded at a
+        // time); ApplyAccordionInitialState opens Link/Joint and collapses
+        // the rest. UpdateWizardVisibility hides the page-2 group on first
+        // show. Tree wiring happens last so the first TreeAfterSelect ->
+        // FillPropertyManager call sees fully-constructed PM controls.
         private void SetupPropertyManagerPage()
         {
-            BuildPmPageHeader();
+            if (mode == ExportPmMode.Configure)
+            {
+                SetupConfigurePage();
+            }
+            else
+            {
+                SetupExportPage();
+            }
+        }
 
-            PMSetupTab = (PropertyManagerPageTab)PMPage.AddTab(SetupTabID, "Setup", "", 0);
-            // Use '/' as the separator: SW's PMP tab strip parses '&' as
-            // a Windows-style keyboard mnemonic accelerator marker (the
-            // character after '&' becomes the Alt-key shortcut and the
-            // '&' itself is stripped from the rendered caption), so a
-            // literal "Link & Joint" caption renders as "Link  Joint".
-            PMLinkJointTab = (PropertyManagerPageTab)PMPage.AddTab(LinkJointTabID, "Link/Joint", "", 0);
-            PMVisualTab = (PropertyManagerPageTab)PMPage.AddTab(VisualTabID, "Visual", "", 0);
-            PMCollisionTab = (PropertyManagerPageTab)PMPage.AddTab(CollisionTabID, "Collision", "", 0);
-            PMInertialTab = (PropertyManagerPageTab)PMPage.AddTab(InertialTabID, "Inertial", "", 0);
-            PMSitesTab = (PropertyManagerPageTab)PMPage.AddTab(SitesTabID, "Sites", "", 0);
+        // Configure PMP: the link tree + the five kinematic-config groups
+        // (Link/Joint, Visual, Collision, Inertial, Sites) as an accordion.
+        // No Export group is created here - export lives in its own PMP.
+        private void SetupConfigurePage()
+        {
+            int visible = (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible;
+            int visibleExpanded = visible +
+                (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Expanded;
 
-            BuildSetupTab();
+            // The tree group and the Link/Joint group open expanded; the
+            // remaining kinematic groups open collapsed so the page reads as
+            // an accordion.
+            PMTreeGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
+                TreeGroupID, "Robot links", visibleExpanded);
+            PMLinkJointGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
+                LinkJointGroupID, "Link / Joint", visibleExpanded);
+            PMVisualGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
+                VisualGroupID, "Visual", visible);
+            PMCollisionGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
+                CollisionGroupID, "Collision", visible);
+            PMInertialGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
+                InertialGroupID, "Inertial", visible);
+            PMSitesGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
+                SitesGroupID, "Sites (MJCF)", visible);
+
+            BuildTreeGroup();
             BuildLinkJointTab();
             BuildComponentsTabs();
             BuildSitesTab();
 
-            WireUpLinkTree();
+            ApplyAccordionInitialState();
+            UpdateWizardVisibility();
+
+            CreateLinkTreeControl(interactive: true);
+        }
+
+        // Export PMP: only the Export group (output / mesh format, quality,
+        // rotation, validation, Export button). The kinematic config is
+        // read-only here - it was authored in the Configure PMP and is loaded
+        // into an in-memory tree (CreateLinkTreeControl(interactive: false))
+        // that the export pipeline reads. No tree UI, no accordion.
+        private void SetupExportPage()
+        {
+            int visible = (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible;
+            int visibleExpanded = visible +
+                (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Expanded;
+
+            PMExportGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
+                ExportGroupID, "Export", visibleExpanded);
+
+            BuildExportGroup();
+
+            CreateLinkTreeControl(interactive: false);
+        }
+
+        // Seed the wizard page descriptor (Configure mode). One entry today =
+        // a single accordion page holding the five kinematic groups; the tree
+        // group is always visible and is not listed. Add a second int[] here
+        // to split Configure across two wizard pages (the MultiplePages
+        // option, EnableButton arrows, and UpdateWizardVisibility all follow).
+        private void InitWizardPages()
+        {
+            wizardPages = new List<int[]>
+            {
+                new[]
+                {
+                    LinkJointGroupID,
+                    VisualGroupID,
+                    CollisionGroupID,
+                    InertialGroupID,
+                    SitesGroupID,
+                },
+            };
+        }
+
+        // Page-1 accordion seed state: only the Link/Joint group is
+        // expanded. Wrapped in suppressGroupExpandAccordion so the
+        // programmatic Expanded writes don't re-enter the accordion
+        // handler.
+        private void ApplyAccordionInitialState()
+        {
+            suppressGroupExpandAccordion = true;
+            try
+            {
+                if (PMLinkJointGroup != null) PMLinkJointGroup.Expanded = true;
+                if (PMVisualGroup != null) PMVisualGroup.Expanded = false;
+                if (PMCollisionGroup != null) PMCollisionGroup.Expanded = false;
+                if (PMInertialGroup != null) PMInertialGroup.Expanded = false;
+                if (PMSitesGroup != null) PMSitesGroup.Expanded = false;
+            }
+            finally
+            {
+                suppressGroupExpandAccordion = false;
+            }
+        }
+
+        // Maps a wizard / kinematic group ID to its PropertyManagerPageGroup
+        // object (Configure mode). Returns null for IDs whose group was not
+        // created in the current mode.
+        private PropertyManagerPageGroup GroupById(int id)
+        {
+            if (id == TreeGroupID) return PMTreeGroup;
+            if (id == LinkJointGroupID) return PMLinkJointGroup;
+            if (id == VisualGroupID) return PMVisualGroup;
+            if (id == CollisionGroupID) return PMCollisionGroup;
+            if (id == InertialGroupID) return PMInertialGroup;
+            if (id == SitesGroupID) return PMSitesGroup;
+            if (id == ExportGroupID) return PMExportGroup;
+            return null;
+        }
+
+        // Applies per-wizard-page group visibility from the wizardPages
+        // descriptor, manages the native Next / Back arrows, and writes the
+        // step banner. Configure mode only (Export mode never paginates and
+        // does not call this). The tree group is always visible. The embedded
+        // WinForms tree is also toggled directly as belt-and-suspenders in
+        // case hiding the WindowFromHandle's host group does not hide the
+        // child control. With a single wizard page (today) every kinematic
+        // group is visible, the arrows are disabled, and the banner reads as a
+        // single-step page.
+        private void UpdateWizardVisibility()
+        {
+            if (wizardPages == null || wizardPages.Count == 0) return;
+
+            if (PMTreeGroup != null) PMTreeGroup.Visible = true;
+
+            // Show only the groups belonging to the current page; hide the
+            // rest. Page numbers are 1-based.
+            for (int page = 1; page <= wizardPages.Count; page++)
+            {
+                bool onThisPage = page == currentWizardPage;
+                foreach (int groupId in wizardPages[page - 1])
+                {
+                    PropertyManagerPageGroup grp = GroupById(groupId);
+                    if (grp != null) grp.Visible = onThisPage;
+                }
+            }
+
+            // SOLIDWORKS does NOT auto-manage the native multipage Next /
+            // Back arrows from the OnNextPage / OnPreviousPage return values
+            // - it leaves whatever enabled state the page was created with
+            // until we call EnableButton. So drive them explicitly per page:
+            // Back is live on every page but the first, Next on every page but
+            // the last. With one page both are disabled (and the arrows are
+            // not even shown because MultiplePages is off).
+            try
+            {
+                PMPage.EnableButton(
+                    (int)swPropertyManagerPageButtons_e.swPropertyManagerPageButton_Back,
+                    currentWizardPage > 1);
+                PMPage.EnableButton(
+                    (int)swPropertyManagerPageButtons_e.swPropertyManagerPageButton_Next,
+                    currentWizardPage < TotalWizardPages);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("Updating wizard Next / Back button state failed: " + ex.Message);
+            }
+
+            if (Tree != null)
+            {
+                try
+                {
+                    Tree.Visible = true;
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn("Toggling Tree.Visible in UpdateWizardVisibility failed: " + ex.Message);
+                }
+            }
+
+            try
+            {
+                if (TotalWizardPages > 1)
+                {
+                    PMPage.SetMessage3(
+                        "Step " + currentWizardPage + " of " + TotalWizardPages +
+                        ": Configure the kinematic tree - select a link in the tree, then expand a section to edit it. Use the arrows to move between pages.",
+                        (int)swPropertyManagerPageMessageVisibility.swMessageBoxVisible,
+                        (int)swPropertyManagerPageMessageExpanded.swMessageBoxExpand,
+                        "Step " + currentWizardPage + " of " + TotalWizardPages);
+                }
+                else
+                {
+                    PMPage.SetMessage3(
+                        "Select a link in the tree, then expand a section (Link/Joint, Visual, Collision, Inertial, Sites) to edit it. Click the green check to save the configuration.",
+                        (int)swPropertyManagerPageMessageVisibility.swMessageBoxVisible,
+                        (int)swPropertyManagerPageMessageExpanded.swMessageBoxExpand,
+                        "Configure Robot Description");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("Updating wizard title / message failed: " + ex.Message);
+            }
         }
 
         // Final initialization step run by SetupPropertyManagerPage. Wires
         // up the WinForms TreeView (events, context menu, root node) and
         // hands its window handle to the PropertyManagerPage host control
-        // created earlier in BuildSetupTab. Splitting this from the
-        // builders keeps the per-tab UI files free of TreeView / context-
-        // menu concerns.
-        private void WireUpLinkTree()
+        // created earlier in BuildTreeGroup. Splitting this from the
+        // builders keeps the per-section UI files free of TreeView /
+        // context-menu concerns.
+        // Builds the in-memory LinkNode Tree and (in Configure mode) hosts the
+        // WinForms TreeView inside the PMP.
+        //
+        // interactive = true (Configure): the full editor tree - selection /
+        // drag-drop / context-menu events, the PMTree WindowFromHandle host,
+        // and PMPage focus. The first TreeAfterSelect -> FillPropertyManager
+        // populates the kinematic groups.
+        //
+        // interactive = false (Export): a bare in-memory tree with a single
+        // root node and NO event handlers / host / focus (PMTree and the
+        // SelectionBoxes do not exist in Export mode). LoadConfigTree
+        // repopulates the nodes from the saved attribute and ExportButtonPress
+        // reads them; the user never sees or edits this tree.
+        private void CreateLinkTreeControl(bool interactive)
         {
             Tree = new TreeView
             {
                 Height = 163,
                 Visible = true
             };
-            Tree.AfterSelect += new TreeViewEventHandler(TreeAfterSelect);
-            Tree.NodeMouseClick += new TreeNodeMouseClickEventHandler(TreeNodeMouseClick);
-            Tree.KeyDown += new KeyEventHandler(TreeKeyDown);
-            Tree.DragDrop += new DragEventHandler(TreeDragDrop);
-            Tree.DragOver += new DragEventHandler(TreeDragOver);
-            Tree.DragEnter += new DragEventHandler(TreeDragEnter);
-            Tree.ItemDrag += new ItemDragEventHandler(TreeItemDrag);
-            Tree.AllowDrop = true;
-            PMTree.SetWindowHandlex64(Tree.Handle.ToInt64());
 
-            ToolStripMenuItem addChild = new ToolStripMenuItem { Text = "Add Child Link" };
-            addChild.Click += new EventHandler(AddChildClick);
-            ToolStripMenuItem removeChild = new ToolStripMenuItem { Text = "Remove" };
-            removeChild.Click += new EventHandler(RemoveChildClick);
-            docMenu.Items.AddRange(new ToolStripMenuItem[] { addChild, removeChild });
+            if (interactive)
+            {
+                Tree.AfterSelect += new TreeViewEventHandler(TreeAfterSelect);
+                Tree.NodeMouseClick += new TreeNodeMouseClickEventHandler(TreeNodeMouseClick);
+                Tree.KeyDown += new KeyEventHandler(TreeKeyDown);
+                Tree.DragDrop += new DragEventHandler(TreeDragDrop);
+                Tree.DragOver += new DragEventHandler(TreeDragOver);
+                Tree.DragEnter += new DragEventHandler(TreeDragEnter);
+                Tree.ItemDrag += new ItemDragEventHandler(TreeItemDrag);
+                Tree.AllowDrop = true;
+                PMTree.SetWindowHandlex64(Tree.Handle.ToInt64());
+
+                ToolStripMenuItem addChild = new ToolStripMenuItem { Text = "Add Child Link" };
+                addChild.Click += new EventHandler(AddChildClick);
+                ToolStripMenuItem removeChild = new ToolStripMenuItem { Text = "Remove" };
+                removeChild.Click += new EventHandler(RemoveChildClick);
+                docMenu.Items.AddRange(new ToolStripMenuItem[] { addChild, removeChild });
+            }
 
             LinkNode node = CreateEmptyNode(null);
-            node.ContextMenuStrip = docMenu;
+            if (interactive)
+            {
+                node.ContextMenuStrip = docMenu;
+            }
             Tree.Nodes.Add(node);
             Tree.SelectedNode = Tree.Nodes[0];
-            PMSelectionVisual.SetSelectionFocus();
-            PMPage.SetFocus(dotNetTree);
+
+            if (interactive)
+            {
+                PMSelectionVisual.SetSelectionFocus();
+                PMPage.SetFocus(dotNetTree);
+            }
         }
         // Toggle the Enabled state of every control in the Collision Groups
         // editor. Controls stay visible so loading an existing config and

@@ -45,59 +45,59 @@ namespace SW2RD.Export
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
 
-            // Static heading so the tab's visual hierarchy reads
-            // "Sites (MJCF)".
-            PMSitesTab.AddControl2(LabelSitesHeaderID,
-                (short)controlType, "Sites (MJCF)", (short)alignment, options,
-                "MJCF-only frames attached to a body. Ignored when exporting URDF.");
-
-            PMSitesTab.AddControl2(
+            // No "Sites (MJCF)" heading label here - the accordion group
+            // caption already reads "Sites (MJCF)", so repeating it in the
+            // body is redundant. The help label below carries the usage
+            // hint (and notes the MJCF-only / URDF-ignored behavior).
+            // LabelSitesHeaderID remains reserved (unused) in
+            // ExportPropertyManager.cs.
+            PMSitesGroup.AddControl2(
                 SitesHelpLabelID, (short)controlType,
-                "Select a site row, then edit its name and reference coordinate system below.",
+                "MJCF-only frames attached to a body (ignored for URDF). Select a site row, then edit its name and reference coordinate system below.",
                 (short)alignment, options,
                 "Sites are MJCF-only frames attached to a body. They are ignored when exporting URDF.");
 
-            PMSitesTab.AddControl2(
+            PMSitesGroup.AddControl2(
                 SitesListLabelID, (short)controlType, "Sites defined for this link",
                 (short)alignment, options,
                 "Select a site to edit its name and coordinate system below.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Listbox;
-            PMListBoxSites = (PropertyManagerPageListbox)PMSitesTab.AddControl2(
+            PMListBoxSites = (PropertyManagerPageListbox)PMSitesGroup.AddControl2(
                 SitesListBoxID, (short)controlType, "", (short)alignment, options,
                 "Sites already added to this link. Select one to edit it.");
             PMListBoxSites.Height = 50;
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
-            PMButtonSiteAdd = (PropertyManagerPageButton)PMSitesTab.AddControl2(
+            PMButtonSiteAdd = (PropertyManagerPageButton)PMSitesGroup.AddControl2(
                 SitesAddButtonID, (short)controlType, "New Site", 0, options,
                 "Create a new site on this link and make it active.");
 
-            PMButtonSiteRemove = (PropertyManagerPageButton)PMSitesTab.AddControl2(
+            PMButtonSiteRemove = (PropertyManagerPageButton)PMSitesGroup.AddControl2(
                 SitesRemoveButtonID, (short)controlType, "Delete Selected Site", 0, options,
                 "Delete the highlighted site from this link.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
-            PMSitesTab.AddControl2(
+            PMSitesGroup.AddControl2(
                 SitesNameLabelID, (short)controlType, "Site name", (short)alignment, options,
                 "Identifier that will appear as <site name=...> in the MJCF file.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Textbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMTextBoxSiteName = (PropertyManagerPageTextbox)PMSitesTab.AddControl2(
+            PMTextBoxSiteName = (PropertyManagerPageTextbox)PMSitesGroup.AddControl2(
                 SitesNameTextBoxID, (short)controlType, "", (short)alignment, options,
                 "Site name (will appear as <site name=...>)");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            PMSitesTab.AddControl2(LabelSiteCoordSysHeaderID,
+            PMSitesGroup.AddControl2(LabelSiteCoordSysHeaderID,
                 (short)controlType, "Site coordinate system", (short)alignment, options,
                 "Reference coordinate system that defines the site's pose relative to the parent body. Picked from the SW tree.");
 
             object coordSysFilterObj = new swSelectType_e[] { swSelectType_e.swSelCOORDSYS };
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMSelectionSiteCoordSys = (PropertyManagerPageSelectionbox)PMSitesTab.AddControl2(
+            PMSelectionSiteCoordSys = (PropertyManagerPageSelectionbox)PMSitesGroup.AddControl2(
                 SelectionSiteCoordSysID, (short)controlType, "Pick site coord. system",
                 (short)alignment, options,
                 "Pick the reference coordinate system that defines the active site's pose.");
@@ -262,7 +262,7 @@ namespace SW2RD.Export
 
                 SiteSpec site = node.Link.Sites[activeSiteIndex];
                 PMTextBoxSiteName.Text = site.Name ?? "";
-                if (currentActiveTabId == SitesTabID)
+                if (currentActiveSectionId == SitesGroupID)
                 {
                     LoadActiveSiteCoordSysIntoSelectionBox(node);
                 }
