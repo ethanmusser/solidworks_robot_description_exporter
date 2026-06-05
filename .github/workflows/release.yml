@@ -12,7 +12,15 @@ name: Build SW2RD and (optionally) installer
 
 on:
   release:
-    types: [created]
+    # `created` fires when a release is created directly; `published` fires when
+    # a draft release is later published. Crucially, GitHub does NOT fire
+    # `created` when a SAVED DRAFT is published - only `published` - so listening
+    # to `created` alone silently skips the workflow for the common
+    # draft-then-publish flow. Listening to both covers every path. A one-shot
+    # publish fires both events, but the `concurrency` block below (keyed on the
+    # tag ref, cancel-in-progress) collapses the two runs into one, so no
+    # duplicate installer is built or uploaded.
+    types: [created, published]
   push:
     branches:
       - master
