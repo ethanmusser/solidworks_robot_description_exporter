@@ -487,13 +487,43 @@ namespace SW2RD.SW
                 return;
             }
 
+            // Second toolbar command: "Clear Saved Configuration". This used
+            // to be a button on the export PropertyManagerPage; it moved to
+            // the ribbon so the user can reset a model's saved SW2RD config
+            // without first opening the export wizard. Reuses the same icon
+            // list (image index 0) for now. ClearConfigEnableMethod greys it
+            // out unless the active doc is an assembly with a saved config.
+            int clearCmdIndex = cmdGroup.AddCommandItem2(
+                "Clear Saved Configuration",
+                -1,
+                "Remove the saved SW2RD export configuration from the active assembly and start fresh",
+                "Clear Saved Configuration",
+                0,                              // image list index
+                "ClearSavedConfigurationCommand", // callback function
+                "ClearConfigEnableMethod",      // enable method
+                mainItemID2,
+                menuToolbarOption);
+
+            if (clearCmdIndex < 0)
+            {
+                logger.Warn("AddCommandItem2 (Clear Saved Configuration) returned " +
+                    clearCmdIndex + "; that toolbar item skipped");
+            }
+
             cmdGroup.HasToolbar = true;
             cmdGroup.HasMenu = false; // menu entry is published via AddMenuItem5
             cmdGroup.Activate();
 
-            int commandID = cmdGroup.get_CommandID(cmdIndex);
+            // Collect the command IDs for every item we successfully added so
+            // they all land on our ribbon tab.
+            System.Collections.Generic.List<int> commandIDs =
+                new System.Collections.Generic.List<int> { cmdGroup.get_CommandID(cmdIndex) };
+            if (clearCmdIndex >= 0)
+            {
+                commandIDs.Add(cmdGroup.get_CommandID(clearCmdIndex));
+            }
 
-            // Wire the new command into the dedicated Robot Description
+            // Wire the new commands into the dedicated Robot Description
             // Exporter ribbon tab for every document type the add-in is
             // active in. We own this tab outright (no other add-in
             // touches it) so we can drop any stale tab from a prior
@@ -510,7 +540,7 @@ namespace SW2RD.SW
             {
                 try
                 {
-                    AttachCommandToOwnTab(docType, commandID);
+                    AttachCommandToOwnTab(docType, commandIDs.ToArray());
                 }
                 catch (Exception ex)
                 {
@@ -521,11 +551,11 @@ namespace SW2RD.SW
             logger.Info("Added Robot Description Exporter CommandGroup to CommandManager toolbar");
         }
 
-        // Attaches `commandID` to the dedicated Robot Description Exporter
+        // Attaches `commandIDs` to the dedicated Robot Description Exporter
         // ribbon tab for `docType`. The tab name is `CmdGroupTitle`,
         // which we own; recreating it on connect keeps SolidWorks's cached
         // ribbon layout from accumulating duplicate CommandTabBox entries.
-        private void AttachCommandToOwnTab(int docType, int commandID)
+        private void AttachCommandToOwnTab(int docType, int[] commandIDs)
         {
             string tabName = CmdGroupTitle;
 
@@ -565,12 +595,14 @@ namespace SW2RD.SW
                 return;
             }
 
-            int[] cmdIDs = new[] { commandID };
-            int[] textTypes = new[]
+            // One text-display entry per command ID; SW requires the
+            // textTypes array length to match the command array.
+            int[] textTypes = new int[commandIDs.Length];
+            for (int i = 0; i < textTypes.Length; i++)
             {
-                (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow,
-            };
-            bool ok = cmdBox.AddCommands(cmdIDs, textTypes);
+                textTypes[i] = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
+            }
+            bool ok = cmdBox.AddCommands(commandIDs, textTypes);
             if (!ok)
             {
                 logger.Warn("ICommandTabBox.AddCommands returned false for tab '" + tabName +
@@ -624,6 +656,88 @@ namespace SW2RD.SW
                 MessageBox.Show("There was a problem setting up the property manager: \n\"" +
                     e.Message + "\"\nEmail your maintainer with the log file found at " +
                     Logger.GetFileName());
+            }
+        }
+
+        // Ribbon callback for the "Clear Saved Configuration" command.
+        // Deletes the canonical SW2RD v1 JSON configuration attribute from
+        // the active assembly after a confirmation prompt. Legacy SW2URDF
+        // attributes are intentionally left in place (see
+        // ConfigurationSerialization.ClearSavedConfiguration). This is the
+        // ribbon home for the action that used to be a button on the export
+        // PropertyManagerPage.
+        public void ClearSavedConfigurationCommand()
+        {
+            try
+            {
+                ModelDoc2 modeldoc = SwApp.ActiveDoc as ModelDoc2;
+                if (modeldoc == null ||
+                    modeldoc.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+                {
+                    MessageBox.Show(
+                        "Open an assembly to clear its saved robot description configuration.",
+                        "Clear Saved Configuration",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                if (!ConfigurationSerialization.HasSavedConfiguration(modeldoc))
+                {
+                    MessageBox.Show(
+                        "This assembly has no saved SW2RD export configuration to clear.",
+                        "Clear Saved Configuration",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                DialogResult answer = MessageBox.Show(
+                    "Clear the saved SW2RD export configuration from this assembly?\r\n\r\n" +
+                    "The next export will start from a fresh tree. Legacy SW2URDF " +
+                    "configuration attributes are left in place.",
+                    "Clear Saved Export Configuration",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                if (answer != DialogResult.Yes)
+                {
+                    return;
+                }
+
+                bool cleared = ConfigurationSerialization.ClearSavedConfiguration(modeldoc);
+                MessageBox.Show(
+                    cleared
+                        ? "Saved SW2RD export configuration cleared. The next export starts fresh."
+                        : "No saved SW2RD export configuration was found to delete.",
+                    "Clear Saved Configuration",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception e)
+            {
+                logger.Error("Exception caught clearing saved configuration", e);
+                MessageBox.Show("There was a problem clearing the saved configuration: \n\"" +
+                    e.Message + "\"\nEmail your maintainer with the log file found at " +
+                    Logger.GetFileName());
+            }
+        }
+
+        // Enable method for the "Clear Saved Configuration" ribbon command.
+        // SW calls this to decide whether the button is enabled (return 1)
+        // or greyed out (return 0). Enabled only when the active document is
+        // an assembly that actually carries a saved SW2RD configuration.
+        public int ClearConfigEnableMethod()
+        {
+            try
+            {
+                ModelDoc2 modeldoc = SwApp?.ActiveDoc as ModelDoc2;
+                if (modeldoc == null ||
+                    modeldoc.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+                {
+                    return 0;
+                }
+                return ConfigurationSerialization.HasSavedConfiguration(modeldoc) ? 1 : 0;
+            }
+            catch (Exception e)
+            {
+                logger.Warn("ClearConfigEnableMethod failed: " + e.Message);
+                return 0;
             }
         }
 

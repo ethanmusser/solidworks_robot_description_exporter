@@ -465,10 +465,10 @@ namespace SW2RD.Export
             }
 
             // Repopulate only the SelectionBox marks owned by the active
-            // tab so the SOLIDWORKS viewer highlights the entities the user
-            // is editing. RehydrateMarksForActiveTab drains every other mark
-            // and owns the per-tab mark mapping.
-            RehydrateMarksForActiveTab(node, currentActiveTabId);
+            // page-1 section so the SOLIDWORKS viewer highlights the entities
+            // the user is editing. RehydrateMarksForActiveSection drains every
+            // other mark and owns the per-section mark mapping.
+            RehydrateMarksForActiveSection(node, currentActiveSectionId);
 
             // Inertial source combo.
             switch (node.Link.InertialSource)
@@ -525,9 +525,20 @@ namespace SW2RD.Export
                 // joint and (re)render the overlay arrow in the model view so
                 // the user sees the saved direction as soon as they land on
                 // the node. The bitmap button has no visual "pressed" state -
-                // the overlay arrow IS the feedback.
+                // the overlay arrow IS the feedback. The arrow is gated to
+                // the Link/Joint section so it doesn't linger in the viewport
+                // while the user is editing geometry on another section; when
+                // the Link/Joint section is not the active one we clear it and
+                // let OnGroupExpand redraw it on return.
                 currentAxisFlipped = node.Link.Joint.AxisFlipped;
-                RefreshAxisDirectionPreview();
+                if (currentActiveSectionId == LinkJointGroupID)
+                {
+                    RefreshAxisDirectionPreview();
+                }
+                else
+                {
+                    Exporter.ClearAxisOverlay();
+                }
 
                 // Joint Properties section: limits, dynamics, MJCF-only
                 // reference / armature, and the per-joint auto-compute

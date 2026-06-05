@@ -59,10 +59,6 @@ namespace SW2RD.Export
                     ExportButtonPress();
                     break;
 
-                case ButtonClearSavedConfigurationID:
-                    ClearSavedConfigurationFromForm();
-                    break;
-
                 case SitesAddButtonID:
                     AddSiteFromForm();
                     break;
@@ -563,14 +559,15 @@ namespace SW2RD.Export
                     // as collision); unchecked = show the active
                     // collision group's components. The rehydrate is a
                     // no-op when the user is not currently on the
-                    // Collision tab - their highlight on whatever tab
-                    // they are looking at must stay scoped to THAT
-                    // tab's marks (see RehydrateMarksForActiveTab).
-                    if (currentActiveTabId == CollisionTabID)
+                    // Collision section - their highlight on whatever
+                    // section they are looking at must stay scoped to
+                    // THAT section's marks (see
+                    // RehydrateMarksForActiveSection).
+                    if (currentActiveSectionId == CollisionGroupID)
                     {
                         try
                         {
-                            RehydrateMarksForActiveTab(active, CollisionTabID);
+                            RehydrateMarksForActiveSection(active, CollisionGroupID);
                         }
                         catch (Exception ex)
                         {
@@ -751,12 +748,12 @@ namespace SW2RD.Export
 
                 // Refresh the highlight so the viewer shows the set
                 // that will actually drive mass / inertia. No-op when
-                // the user isn't currently on the Inertial tab.
-                if (active != null && currentActiveTabId == InertialTabID)
+                // the user isn't currently on the Inertial section.
+                if (active != null && currentActiveSectionId == InertialGroupID)
                 {
                     try
                     {
-                        RehydrateMarksForActiveTab(active, InertialTabID);
+                        RehydrateMarksForActiveSection(active, InertialGroupID);
                     }
                     catch (Exception ex)
                     {
@@ -796,10 +793,105 @@ namespace SW2RD.Export
                 "silently does nothing. Ok, except for this logging message");
         }
 
+        // Page-1 accordion + active-section driver. The five kinematic-
+        // config groups behave as an accordion: expanding one collapses
+        // the others, and the freshly-expanded group becomes the active
+        // section that drives the SOLIDWORKS viewer highlight (and the
+        // joint-axis arrow overlay for the Link/Joint section). Collapsing
+        // a group is left alone - the highlight stays on the last expanded
+        // section until the user expands a different one.
         void IPropertyManagerPage2Handler9.OnGroupExpand(int Id, bool Expanded)
         {
-            logger.Info("OnGroupExpand called. This method no longer throws an Exception. It just " +
-                "silently does nothing. Ok, except for this logging message");
+            // Re-entrancy guard: ApplyAccordionInitialState /
+            // UpdateWizardVisibility and the sibling-collapse loop below
+            // all write Expanded programmatically, which re-fires this
+            // callback.
+            if (suppressGroupExpandAccordion)
+            {
+                return;
+            }
+
+            // The accordion (and its viewer-highlight side effects) only
+            // applies on the configure page. Ignore any stray expand event
+            // that arrives while the export page is showing.
+            if (currentWizardPage != 1)
+            {
+                return;
+            }
+
+            // Only the page-1 kinematic-config groups participate. The
+            // tree and export groups are not accordion members.
+            if (Id != LinkJointGroupID && Id != VisualGroupID && Id != CollisionGroupID
+                && Id != InertialGroupID && Id != SitesGroupID)
+            {
+                return;
+            }
+
+            // Collapsing a section doesn't change the active section - the
+            // user just folded it away. Leave the highlight as-is.
+            if (!Expanded)
+            {
+                return;
+            }
+
+            // Accordion: collapse every sibling so only the just-expanded
+            // group stays open.
+            suppressGroupExpandAccordion = true;
+            try
+            {
+                if (Id != LinkJointGroupID && PMLinkJointGroup != null) PMLinkJointGroup.Expanded = false;
+                if (Id != VisualGroupID && PMVisualGroup != null) PMVisualGroup.Expanded = false;
+                if (Id != CollisionGroupID && PMCollisionGroup != null) PMCollisionGroup.Expanded = false;
+                if (Id != InertialGroupID && PMInertialGroup != null) PMInertialGroup.Expanded = false;
+                if (Id != SitesGroupID && PMSitesGroup != null) PMSitesGroup.Expanded = false;
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("OnGroupExpand accordion collapse failed: " + ex.Message);
+            }
+            finally
+            {
+                suppressGroupExpandAccordion = false;
+            }
+
+            // The freshly-expanded group is now the active section: drive
+            // the viewer highlight to match.
+            currentActiveSectionId = Id;
+            LinkNode node = (LinkNode)Tree?.SelectedNode;
+            if (node == null)
+            {
+                return;
+            }
+
+            try
+            {
+                RehydrateMarksForActiveSection(node, Id);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("OnGroupExpand(" + Id + ") rehydrate failed: " + ex.Message);
+            }
+
+            // Joint-axis arrow overlay follows the Link/Joint section. Draw
+            // it (deferred, to avoid the SelectionMgr re-entrancy hazard
+            // documented on DeferRefreshAxisPreview) when entering the
+            // Link/Joint section on a nested link; clear it otherwise so it
+            // doesn't linger in the viewport while another section is active.
+            try
+            {
+                if (Id == LinkJointGroupID && ResolveNodeRole(node) == NodeRole.NestedLink)
+                {
+                    DeferRefreshAxisPreview();
+                }
+                else
+                {
+                    Exporter.ClearAxisOverlay();
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("OnGroupExpand(" + Id + ") axis overlay update failed: " + ex.Message);
+            }
         }
 
         void IPropertyManagerPage2Handler9.OnListboxSelectionChanged(int Id, int Item)
@@ -855,11 +947,47 @@ namespace SW2RD.Export
             }
         }
 
+        // Native Next-arrow handler: advances the wizard from page 1
+        // (Configure) to page 2 (Export). Returning true lets SW treat the
+        // page change as accepted; the actual content swap is done by
+        // UpdateWizardVisibility. Commit the active node first so the
+        // export step sees the freshly-edited link state. While on the
+        // export page the page-1 SelectionBox marks + axis overlay are
+        // irrelevant, so we drain them to keep the viewport clean.
         bool IPropertyManagerPage2Handler9.OnNextPage()
         {
-            logger.Info("OnNextPage called. This method no longer throws an Exception. It just " + "" +
-                "silently does nothing. Ok, except for this logging message");
-            return true;
+            try
+            {
+                if (currentWizardPage >= TotalWizardPages)
+                {
+                    return false;
+                }
+
+                SaveActiveNode();
+
+                currentWizardPage++;
+                UpdateWizardVisibility();
+
+                // Leaving the configure page: drop every page-1 highlight
+                // and the joint-axis arrow so the viewport isn't cluttered
+                // while the user sets export options.
+                try
+                {
+                    ClearAllSelectionMarks();
+                    Exporter.ClearAxisOverlay();
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn("OnNextPage clearing page-1 highlights failed: " + ex.Message);
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                logger.Error("Exception caught advancing to the export page", e);
+                return false;
+            }
         }
 
         void IPropertyManagerPage2Handler9.OnOptionCheck(int Id)
@@ -887,11 +1015,49 @@ namespace SW2RD.Export
             return true;
         }
 
+        // Native Previous-arrow handler: returns the wizard from page 2
+        // (Export) back to page 1 (Configure). Re-hydrates the active
+        // section's SelectionBox marks + joint-axis arrow so the viewer
+        // highlight the user had on the configure page is restored.
         bool IPropertyManagerPage2Handler9.OnPreviousPage()
         {
-            logger.Info("OnPreviousPage called. This method no longer throws an Exception. " +
-                "It just silently does nothing. Ok, except for this logging message");
-            return true;
+            try
+            {
+                if (currentWizardPage <= 1)
+                {
+                    return false;
+                }
+
+                currentWizardPage--;
+                UpdateWizardVisibility();
+
+                // Returning to the configure page: restore the highlight
+                // for whatever section was active when we left.
+                LinkNode node = (LinkNode)Tree?.SelectedNode;
+                if (node != null)
+                {
+                    try
+                    {
+                        RehydrateMarksForActiveSection(node, currentActiveSectionId);
+                        if (currentActiveSectionId == LinkJointGroupID
+                            && ResolveNodeRole(node) == NodeRole.NestedLink)
+                        {
+                            DeferRefreshAxisPreview();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.Warn("OnPreviousPage restoring page-1 highlights failed: " + ex.Message);
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                logger.Error("Exception caught returning to the configure page", e);
+                return false;
+            }
         }
 
         void IPropertyManagerPage2Handler9.OnRedo()
@@ -924,45 +1090,15 @@ namespace SW2RD.Export
                 "Exception. It just silently does nothing. Ok, except for this logging message");
         }
 
-        // SolidWorks does not paint marked SelectionBox contents into a
-        // SelectionBox whose tab is not currently active, and switching
-        // tabs after FillPropertyManager has populated the marks does NOT
-        // retroactively rehydrate the box. We also use the tab change
-        // to keep the SOLIDWORKS VIEWER highlight in sync with the
-        // active tab: RehydrateMarksForActiveTab drains every PMP mark
-        // and repopulates only the ones the new tab owns, so the user
-        // sees exactly the entities they're editing on the active tab
-        // and nothing else (no "union of every group ever loaded for
-        // this link" noise). currentActiveTabId is also remembered so
-        // a subsequent link switch (via FillPropertyManager) restores
-        // the same active-tab-only viewer state on the new node.
-        //
-        // This MUST run synchronously - SW activates the tab AFTER
-        // OnTabClicked returns true, and a synchronous load populates
-        // the underlying SelectionMgr marks BEFORE SW paints the now-
-        // active tab, so the freshly-loaded contents render
-        // immediately. The load must stay synchronous because SW paints the
-        // active tab as soon as this callback returns; a deferred load updates
-        // the marks after the first paint and leaves the SelectionBox visually
-        // empty. The *SelectionMark constants are independent powers of 2, so
-        // each box owns a distinct mark channel.
+        // The PMP no longer uses tabs - page-1 navigation is the accordion
+        // of PropertyManagerPageGroups (see OnGroupExpand) and page-to-page
+        // navigation is the native Next / Previous arrows (OnNextPage /
+        // OnPreviousPage). The active-section viewer-highlight machinery
+        // that used to live here now lives in OnGroupExpand /
+        // RehydrateMarksForActiveSection. Kept as a no-op because the
+        // IPropertyManagerPage2Handler9 interface requires it.
         bool IPropertyManagerPage2Handler9.OnTabClicked(int Id)
         {
-            currentActiveTabId = Id;
-            LinkNode node = (LinkNode)Tree?.SelectedNode;
-            if (node == null)
-            {
-                return true;
-            }
-
-            try
-            {
-                RehydrateMarksForActiveTab(node, Id);
-            }
-            catch (Exception ex)
-            {
-                logger.Warn("OnTabClicked(" + Id + ") rehydrate failed: " + ex.Message);
-            }
             return true;
         }
 

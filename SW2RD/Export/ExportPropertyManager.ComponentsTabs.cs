@@ -39,17 +39,17 @@ namespace SW2RD.Export
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
 
-            // Static heading on each tab so the visual hierarchy still
+            // Static heading on each group so the visual hierarchy still
             // reads as "Visual" / "Collision" / "Inertial".
-            PMVisualTab.AddControl2(LabelVisualHeaderID,
+            PMVisualGroup.AddControl2(LabelVisualHeaderID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Label,
                 "Visual", (short)alignment, options,
                 "Components included in the visual mesh export for this link.");
-            PMCollisionTab.AddControl2(LabelCollisionHeaderID,
+            PMCollisionGroup.AddControl2(LabelCollisionHeaderID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Label,
                 "Collision", (short)alignment, options,
                 "Components included in the collision mesh export for this link.");
-            PMInertialTab.AddControl2(LabelInertialHeaderID,
+            PMInertialGroup.AddControl2(LabelInertialHeaderID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Label,
                 "Inertial", (short)alignment, options,
                 "Components driving the link's mass and inertia computation.");
@@ -69,14 +69,14 @@ namespace SW2RD.Export
             int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMLabelInertialSource = (PropertyManagerPageLabel)PMInertialTab.AddControl2(
+            PMLabelInertialSource = (PropertyManagerPageLabel)PMInertialGroup.AddControl2(
                 LabelInertialSourceID, (short)controlType, "Inertial Source",
                 (short)alignment, options,
                 "Choose which set of components drives the link's mass and inertia");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Combobox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMComboBoxInertialSource = (PropertyManagerPageCombobox)PMInertialTab.AddControl2(
+            PMComboBoxInertialSource = (PropertyManagerPageCombobox)PMInertialGroup.AddControl2(
                 ComboInertialSourceID, (short)controlType, "Inertial Source",
                 (short)alignment, options,
                 "Visual: use visual components. Collision: use collision components. Custom: use the inertial components box below.");
@@ -100,24 +100,31 @@ namespace SW2RD.Export
             int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMLabelVisualComponents = (PropertyManagerPageLabel)PMVisualTab.AddControl2(
+            PMLabelVisualComponents = (PropertyManagerPageLabel)PMVisualGroup.AddControl2(
                 LabelVisualID, (short)controlType, "Visual Groups", (short)alignment, options,
                 "Define one or more named groups of components. Each group is exported as its own visual mesh.");
 
-            PMVisualTab.AddControl2(
+            PMVisualGroup.AddControl2(
                 VisualGroupsHelpLabelID, (short)controlType,
                 "Click a row to load that group's components into the box below and its name into the Group name box (edit it to rename in place). Click Add Visual Group to create a new group.",
                 (short)alignment, options,
                 "Components selected in the box below belong to the highlighted group.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Listbox;
-            PMListBoxVisualGroups = (PropertyManagerPageListbox)PMVisualTab.AddControl2(
+            PMListBoxVisualGroups = (PropertyManagerPageListbox)PMVisualGroup.AddControl2(
                 VisualGroupsListBoxID, (short)controlType, "", (short)alignment, options,
                 "Visual groups defined for this link. Click a row to edit it; click Remove Selected Group to delete it.");
             PMListBoxVisualGroups.Height = 150;
 
-            PMVisualTab.AddControl2(LabelVisualComponentsHeaderID,
-                (short)controlType, "Components in active visual group",
+            // BUGFIX: this header MUST be a Label. controlType is still
+            // swControlType_Listbox here (reused from the listbox above),
+            // so emit the label with an explicit Label type rather than
+            // the stale controlType value - otherwise SW registers this as
+            // a second listbox of the wrong type, which intermittently
+            // renders as a missing label above the SelectionBox.
+            PMVisualGroup.AddControl2(LabelVisualComponentsHeaderID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Label,
+                "Components in active visual group",
                 (short)alignment, options,
                 "Components belonging to the visual group highlighted above.");
 
@@ -125,7 +132,7 @@ namespace SW2RD.Export
             // flow is "pick a row -> edit its components below".
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMSelectionVisual = (PropertyManagerPageSelectionbox)PMVisualTab.AddControl2(
+            PMSelectionVisual = (PropertyManagerPageSelectionbox)PMVisualGroup.AddControl2(
                 SelectionVisualID, (short)controlType,
                 "Components for the highlighted visual group", (short)alignment, options,
                 "Components belonging to the visual group selected above.");
@@ -138,23 +145,23 @@ namespace SW2RD.Export
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            PMVisualTab.AddControl2(
+            PMVisualGroup.AddControl2(
                 VisualGroupsNameLabelID, (short)controlType, "Group name",
                 (short)alignment, options,
                 "Display name of the selected group and the suffix on its mesh filename.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Textbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMTextBoxVisualGroupName = (PropertyManagerPageTextbox)PMVisualTab.AddControl2(
+            PMTextBoxVisualGroupName = (PropertyManagerPageTextbox)PMVisualGroup.AddControl2(
                 VisualGroupsNameTextBoxID, (short)controlType, "", (short)alignment, options,
                 "Edit to rename the selected visual group.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
-            PMButtonVisualGroupAdd = (PropertyManagerPageButton)PMVisualTab.AddControl2(
+            PMButtonVisualGroupAdd = (PropertyManagerPageButton)PMVisualGroup.AddControl2(
                 VisualGroupsAddButtonID, (short)controlType, "Add Visual Group", 0, options,
                 "Save the current selection into the highlighted group, then create a new empty group.");
 
-            PMButtonVisualGroupRemove = (PropertyManagerPageButton)PMVisualTab.AddControl2(
+            PMButtonVisualGroupRemove = (PropertyManagerPageButton)PMVisualGroup.AddControl2(
                 VisualGroupsRemoveButtonID, (short)controlType, "Remove Selected Visual Group", 0, options,
                 "Delete the highlighted visual group from this link.");
         }
@@ -170,7 +177,7 @@ namespace SW2RD.Export
             int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMCheckCollisionUsesVisual = PMCollisionTab.AddControl2(
+            PMCheckCollisionUsesVisual = PMCollisionGroup.AddControl2(
                 CheckCollisionUsesVisualID, (short)controlType,
                 "Use visual groups as collision", (short)alignment, options,
                 "When checked, the visual groups are reused as collision meshes; the collision editor below is hidden so you don't have to re-pick the same components.");
@@ -186,30 +193,33 @@ namespace SW2RD.Export
             int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMLabelCollisionComponents = (PropertyManagerPageLabel)PMCollisionTab.AddControl2(
+            PMLabelCollisionComponents = (PropertyManagerPageLabel)PMCollisionGroup.AddControl2(
                 LabelCollisionID, (short)controlType, "Collision Groups", (short)alignment, options,
                 "Define one or more named groups of components. Each group is exported as its own collision mesh. Empty list reuses the visual meshes for collision.");
 
-            PMLabelCollisionGroupsHelp = (PropertyManagerPageLabel)PMCollisionTab.AddControl2(
+            PMLabelCollisionGroupsHelp = (PropertyManagerPageLabel)PMCollisionGroup.AddControl2(
                 CollisionGroupsHelpLabelID, (short)controlType,
                 "Click a row to load that group's components into the box below and its name into the Group name box (edit it to rename in place). Click Add Collision Group to create a new group.",
                 (short)alignment, options,
                 "Components selected in the box below belong to the highlighted group.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Listbox;
-            PMListBoxCollisionGroups = (PropertyManagerPageListbox)PMCollisionTab.AddControl2(
+            PMListBoxCollisionGroups = (PropertyManagerPageListbox)PMCollisionGroup.AddControl2(
                 CollisionGroupsListBoxID, (short)controlType, "", (short)alignment, options,
                 "Collision groups defined for this link.");
             PMListBoxCollisionGroups.Height = 150;
 
-            PMCollisionTab.AddControl2(LabelCollisionComponentsHeaderID,
-                (short)controlType, "Components in active collision group",
+            // BUGFIX: explicit Label type - see the matching note on the
+            // visual header above. controlType is still Listbox here.
+            PMCollisionGroup.AddControl2(LabelCollisionComponentsHeaderID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Label,
+                "Components in active collision group",
                 (short)alignment, options,
                 "Components belonging to the collision group highlighted above.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMSelectionCollision = (PropertyManagerPageSelectionbox)PMCollisionTab.AddControl2(
+            PMSelectionCollision = (PropertyManagerPageSelectionbox)PMCollisionGroup.AddControl2(
                 SelectionCollisionID, (short)controlType,
                 "Components for the highlighted collision group", (short)alignment, options,
                 "Components belonging to the collision group selected above.");
@@ -222,23 +232,23 @@ namespace SW2RD.Export
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            PMLabelCollisionGroupsName = (PropertyManagerPageLabel)PMCollisionTab.AddControl2(
+            PMLabelCollisionGroupsName = (PropertyManagerPageLabel)PMCollisionGroup.AddControl2(
                 CollisionGroupsNameLabelID, (short)controlType, "Group name",
                 (short)alignment, options,
                 "Display name of the selected group and the suffix on its mesh filename.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Textbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMTextBoxCollisionGroupName = (PropertyManagerPageTextbox)PMCollisionTab.AddControl2(
+            PMTextBoxCollisionGroupName = (PropertyManagerPageTextbox)PMCollisionGroup.AddControl2(
                 CollisionGroupsNameTextBoxID, (short)controlType, "", (short)alignment, options,
                 "Edit to rename the selected collision group.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Button;
-            PMButtonCollisionGroupAdd = (PropertyManagerPageButton)PMCollisionTab.AddControl2(
+            PMButtonCollisionGroupAdd = (PropertyManagerPageButton)PMCollisionGroup.AddControl2(
                 CollisionGroupsAddButtonID, (short)controlType, "Add Collision Group", 0, options,
                 "Save the current selection into the highlighted group, then create a new empty group.");
 
-            PMButtonCollisionGroupRemove = (PropertyManagerPageButton)PMCollisionTab.AddControl2(
+            PMButtonCollisionGroupRemove = (PropertyManagerPageButton)PMCollisionGroup.AddControl2(
                 CollisionGroupsRemoveButtonID, (short)controlType,
                 "Remove Selected Collision Group", 0, options,
                 "Delete the highlighted collision group from this link.");
@@ -253,7 +263,7 @@ namespace SW2RD.Export
             int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            PMLabelInertialComponents = (PropertyManagerPageLabel)PMInertialTab.AddControl2(
+            PMLabelInertialComponents = (PropertyManagerPageLabel)PMInertialGroup.AddControl2(
                 LabelInertialID, (short)controlType,
                 "Inertial Components (used when source = Custom)",
                 (short)alignment, options,
@@ -261,7 +271,7 @@ namespace SW2RD.Export
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
-            PMSelectionInertial = (PropertyManagerPageSelectionbox)PMInertialTab.AddControl2(
+            PMSelectionInertial = (PropertyManagerPageSelectionbox)PMInertialGroup.AddControl2(
                 SelectionInertialID, (short)controlType, "Inertial Components",
                 (short)alignment, options, "");
             PMSelectionInertial.AllowSelectInMultipleBoxes = true;
