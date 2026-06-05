@@ -41,6 +41,7 @@ namespace SW2RD.Test
     // MJCF builder, and assert that the emitted body/joint/site transforms match
     // the URDF input. The reference values come from the 3_DOF_ARM example and
     // standard quaternion identities.
+    [Trait("Category", "SWFree")]
     public class TestMJCFExport
     {
         [Fact]

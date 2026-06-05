@@ -38,6 +38,7 @@ namespace SW2RD.Test
     // KinematicTree -> MJCFModel boundary directly so they are immune to
     // any SolidWorks-side changes; if one of these regresses the bug is
     // squarely inside MJCFBuilder / Body / MJCFModel.
+    [Trait("Category", "SWFree")]
     public class TestMJCFMultiTree
     {
         [Fact]
