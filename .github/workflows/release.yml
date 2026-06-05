@@ -69,10 +69,12 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v3
 
-      # Target SW2RD.csproj directly (not SW2RD.sln) so we skip the sibling
-      # TestRunner project, which references solidworkstools.dll and is
-      # unsatisfiable on GitHub-hosted runners. `msbuild /restore /t:Build` uses
-      # the NuGet client that ships with VS and scopes restore to one project.
+      # Target SW2RD.csproj directly (not SW2RD.sln) so we build just the add-in
+      # DLL the installer ships, skipping the sibling TestRunner project (it is a
+      # dev-box xUnit harness and is not part of the release artifact). The
+      # SW-free test subset runs from the same SW2RD.dll in the `test` job below.
+      # `msbuild /restore /t:Build` uses the NuGet client that ships with VS and
+      # scopes restore to one project.
       #
       # /p:SolidWorksPath points SW2RD.csproj's HintPaths at the vendored
       # SOLIDWORKS DLLs under SW2RD/lib/sw-api/api/redist/.
