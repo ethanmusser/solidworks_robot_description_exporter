@@ -1,15 +1,21 @@
 name: Build SW2RD and (optionally) installer
 
-# `build` runs on every supported trigger and compiles SW2RD.dll. `installer`
-# depends on `build`, downloads its artifact, and runs Inno Setup + checksum +
-# attestation + upload. The installer job runs only when:
+# `build` runs on every supported trigger and compiles SW2RD.dll. `test`
+# depends on `build` and runs the SolidWorks-independent xUnit subset (trait
+# Category=SWFree) on every trigger. `installer` depends on `build`, downloads
+# its artifact, and runs Inno Setup + checksum + attestation + upload. The
+# installer job runs only when:
 #   - trigger is `release` (cuts a tagged release with assets attached)
+#   - trigger is `push` (every push to master, uploads a workflow artifact)
 #   - trigger is `workflow_dispatch` (manual smoke test from the Actions tab)
 #   - trigger is `pull_request` AND the PR has the `ci:installer` label
 
 on:
   release:
     types: [created]
+  push:
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       tag_name:
@@ -85,11 +91,57 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  test:
+    name: Run SW-free unit tests
+    needs: build
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      # Check out the source into a `solidworks_urdf_exporter` subdirectory. The
+      # golden-fixture tests (TestExportGoldens) locate test-fixtures/golden by
+      # walking up from the running DLL for an ancestor directory NAMED
+      # `solidworks_urdf_exporter`, then reading
+      # <ancestor>/solidworks_urdf_exporter/test-fixtures/golden. Checking out
+      # under that path reproduces the dev-box layout the heuristic expects.
+      - name: Checkout (for golden test fixtures)
+        uses: actions/checkout@v5
+        with:
+          path: solidworks_urdf_exporter
+
+      # Reuse the Release SW2RD.dll from `build`, placed inside the checked-out
+      # tree so the relative layout above holds. The Test/ sources compile into
+      # the DLL in every config, and EmbedInteropTypes means the assembly loads
+      # (and tests are DISCOVERED) without a SolidWorks install. Only EXECUTING a
+      # test that touches the SldWorks.Application COM ProgID needs SolidWorks,
+      # and the -trait filter below excludes every such test before its class is
+      # constructed.
+      - name: Download build output
+        uses: actions/download-artifact@v7
+        with:
+          name: sw2rd-build-output
+          path: solidworks_urdf_exporter/SW2RD/bin/x64/Release/
+
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Fetch xUnit console runner
+        run: nuget install xunit.runner.console -Version 2.4.1 -OutputDirectory tools -ExcludeVersion
+
+      # Run only the SolidWorks-independent subset (writers, config round-trip,
+      # golden fixtures, validation). xunit.console.exe exits non-zero on any
+      # failure, failing the job - so this is safe as a required check.
+      - name: Run SW-free tests
+        run: tools\xunit.runner.console\tools\net452\xunit.console.exe solidworks_urdf_exporter\SW2RD\bin\x64\Release\SW2RD.dll -trait "Category=SWFree" -nocolor
+
   installer:
     name: Build installer
     needs: build
     if: |
       github.event_name == 'release' ||
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:installer'))
     runs-on: windows-latest
@@ -124,6 +176,10 @@ jobs:
           $evt = $env:GITHUB_EVENT_NAME
           if ($evt -eq 'release') {
             $tag = '${{ github.event.release.tag_name }}'
+          } elseif ($evt -eq 'push') {
+            $sha = '${{ github.sha }}'
+            $shortSha = if ($sha.Length -ge 7) { $sha.Substring(0,7) } else { $sha }
+            $tag = "master-$shortSha"
           } elseif ($evt -eq 'pull_request') {
             $sha = '${{ github.event.pull_request.head.sha }}'
             $shortSha = if ($sha.Length -ge 7) { $sha.Substring(0,7) } else { $sha }
