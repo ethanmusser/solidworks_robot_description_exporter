@@ -311,42 +311,28 @@ namespace SW2RD.Export
                 active.Link.InertialComponents.Clear();
                 active.Link.InertialComponents.AddRange(picked);
             }
-            else if (Id == SelectionGlobalCoordsysID)
-            {
-                // Global origin coord-sys lives on the WorldNode at the
-                // root of the tree. The picked feature name writes to
-                // the WorldNode's GlobalOriginCoordinateSystemName which
-                // (for backwards-compat with the existing STL anchor /
-                // LocalizeJoint reads) is stored on the WorldNode's
-                // sentinel Link.Joint.CoordinateSystemName. An empty
-                // mark means the user cleared the box (or SW released
-                // marks during a tab switch); we keep the existing
-                // value to avoid wiping it on programmatic teardown.
-                string picked = ReadMarkedFeatureName(GlobalCoordSysSelectionMark);
-                if (!string.IsNullOrEmpty(picked) && active is WorldNode worldActive)
-                {
-                    worldActive.GlobalOriginCoordinateSystemName = picked;
-                }
-            }
             else if (Id == SelectionJointCoordsysID)
             {
-                // The "Link coordinate system" picker is enabled for both
-                // top-level bodies (where it is the world->body offset
-                // coord-sys) and nested links (where it is the joint
-                // origin). It is disabled on the WorldNode itself, so
-                // the gate is `active is not WorldNode` rather than the
-                // pre-refactor `!active.IsBaseNode`.
+                // The single coordinate-system picker serves every role:
+                // global origin (WorldNode), world->body offset (top-level
+                // body), and joint origin (nested link). All three persist
+                // to Link.Joint.CoordinateSystemName (the WorldNode's
+                // GlobalOriginCoordinateSystemName proxy IS that same field),
+                // so the commit is identical regardless of role. An empty
+                // mark means the user cleared the box (or SW released marks
+                // during a section switch); we keep the existing value to
+                // avoid wiping it on programmatic teardown.
                 string picked = ReadMarkedFeatureName(JointCoordSysSelectionMark);
                 logger.Info("OnSelectionboxListChanged(JointCoordsysID, Count=" + Count +
                             ") picked='" + picked + "' isWorld=" + (active is WorldNode));
-                if (!string.IsNullOrEmpty(picked) && !(active is WorldNode))
+                if (!string.IsNullOrEmpty(picked) && active.Link?.Joint != null)
                 {
                     active.Link.Joint.CoordinateSystemName = picked;
                     // RefreshAxisDirectionPreview is only meaningful for
                     // nested links (where there's an actual joint axis
-                    // to preview). For top-level bodies the axis
-                    // SelectionBox is disabled and Link.Joint.AxisName is
-                    // empty, so the preview helper short-circuits to a
+                    // to preview). For the world / top-level bodies the
+                    // axis SelectionBox is disabled and Link.Joint.AxisName
+                    // is empty, so the preview helper short-circuits to a
                     // no-op overlay clear. Defer either way - the
                     // EstimateAxis -> ClearSelection2(true) re-entrancy
                     // hazard is identical to OnAxisOverlayDirectionFlipped.
@@ -632,7 +618,9 @@ namespace SW2RD.Export
                             }
                         }
                     }
-                    SetAxisPickerEnabled(!Checked);
+                    // Re-run the full axis-row gate so the picker honors both
+                    // the auto-derive toggle AND the fixed-joint rule.
+                    UpdateAxisRowEnabledState(active);
                     // OnCheckboxCheck is dispatched from inside SW's
                     // PMP event pump alongside OnSelectionboxListChanged;
                     // defer the preview redraw for the same reason.
@@ -701,6 +689,39 @@ namespace SW2RD.Export
                     pageControl.Enabled = enabled;
                 }
             }
+        }
+
+        // Greys out the entire joint-axis row when the axis has no meaning for
+        // the active node's joint type. An axis is only relevant for a nested
+        // link whose joint is NOT "fixed" (revolute / prismatic). For the
+        // World root, top-level bodies (welded / free attachment), and nested
+        // "fixed" joints, the label, auto-derive checkbox, picker, and
+        // reverse-direction button are all disabled. When the axis IS
+        // relevant, the picker + reverse button additionally honor the
+        // auto-derive toggle (auto-derive ON disables the manual picker),
+        // which subsumes the standalone SetAxisPickerEnabled call.
+        private void UpdateAxisRowEnabledState(LinkNode node)
+        {
+            NodeRole role = ResolveNodeRole(node);
+            Joint joint = node?.Link?.Joint;
+            bool axisRelevant = role == NodeRole.NestedLink
+                && joint != null
+                && joint.Type != "fixed";
+
+            IPropertyManagerPageControl axisLabel = PMLabelAxes as IPropertyManagerPageControl;
+            if (axisLabel != null)
+            {
+                axisLabel.Enabled = axisRelevant;
+            }
+            IPropertyManagerPageControl autoDerive = PMCheckAutoDeriveAxis as IPropertyManagerPageControl;
+            if (autoDerive != null)
+            {
+                autoDerive.Enabled = axisRelevant;
+            }
+
+            // The picker / reverse button stay disabled when auto-derive is on
+            // even for a relevant axis (the exporter resolves the axis itself).
+            SetAxisPickerEnabled(axisRelevant && !(joint?.AutoDeriveAxis ?? false));
         }
 
         void IPropertyManagerPage2Handler9.OnComboboxEditChanged(int Id, string Text)
@@ -777,27 +798,39 @@ namespace SW2RD.Export
                 return;
             }
 
-            if (Id == ComboBoxWorldAttachmentID)
+            if (Id == ComboBoxJointTypeID)
             {
-                // World attachment combobox order MUST match
-                // WorldAttachmentModel (Welded = 0, Free = 1) - see the
-                // AddItems call in BuildWorldAttachmentControls.
+                // The single role-aware joint-type dropdown commits to a
+                // different field depending on the active node's role:
+                //   - Top-level body: the world attachment. Item order
+                //     matches PopulateJointTypeComboForRole's top-level set
+                //     ("fixed" = 0 -> Welded, "free" = 1 -> Free), which
+                //     also matches WorldAttachmentModel (Welded = 0,
+                //     Free = 1).
+                //   - Nested link: the joint type string (the item text:
+                //     "", "fixed", "revolute", "prismatic").
+                // The World root has the dropdown disabled, so no commit.
                 LinkNode active = (LinkNode)Tree?.SelectedNode;
-                if (active != null && active.IsTopLevelBody && active.Link != null)
+                if (active != null && active.Link != null)
                 {
-                    active.Link.WorldAttachment =
-                        (Item == 1)
-                            ? SW2RD.Core.WorldAttachmentModel.Free
-                            : SW2RD.Core.WorldAttachmentModel.Welded;
+                    if (active.IsTopLevelBody)
+                    {
+                        active.Link.WorldAttachment =
+                            (Item == 1)
+                                ? SW2RD.Core.WorldAttachmentModel.Free
+                                : SW2RD.Core.WorldAttachmentModel.Welded;
+                    }
+                    else if (!(active is WorldNode) && active.Link.Joint != null)
+                    {
+                        active.Link.Joint.Type = PMComboBoxJointType.get_ItemText((short)Item);
+                        // Setting the type to / from "fixed" changes whether
+                        // the axis row is relevant - re-run the gate so the
+                        // axis controls grey out (or re-enable) immediately.
+                        UpdateAxisRowEnabledState(active);
+                    }
                 }
                 return;
             }
-
-            // PMComboBoxJointType is the only other combobox on the
-            // page; changes there don't affect the axis overlay so
-            // they're a no-op (kept for future expansion - e.g.
-            // surfacing a warning when "fixed" is picked but an
-            // axis is selected).
         }
 
         void IPropertyManagerPage2Handler9.OnGroupCheck(int Id, bool Checked)

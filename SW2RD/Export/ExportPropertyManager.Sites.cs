@@ -103,7 +103,7 @@ namespace SW2RD.Export
                 "Pick the reference coordinate system that defines the active site's pose.");
             // SingleEntityOnly = true matches SW's own coord-system /
             // mate creation single-entity pickers - a new pick OVERWRITES
-            // the prior pick in place. See PMSelectionGlobalCoordsys in
+            // the prior pick in place. See PMSelectionJointCoordsys in
             // ExportPropertyManager.LinkJointTab.cs for the full
             // rationale, including why AllowSelectInMultipleBoxes is
             // FALSE (semantic exclusivity: a site coord-sys cannot

@@ -107,7 +107,7 @@ namespace SW2RD.Core
         string CoordinateSystemName,
         string AxisName,
         bool AxisFlipped,
-        bool AutoComputeLimits = true,
+        bool AutoComputeLimits = false,
         double? Damping = null,
         double? Friction = null,
         double? Armature = null,
