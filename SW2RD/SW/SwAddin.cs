@@ -288,6 +288,22 @@ namespace SW2RD.SW
                 logger.Info("Adding Export Robot Description to Tools menu");
             }
 
+            // "About" lives only on the Tools menu (the conventional home for
+            // an about box), not on the prime ribbon real estate. It is the
+            // visible location for the required third-party icon attribution.
+            int retAbout = SwApp.AddMenuItem5((int)swDocumentTypes_e.swDocASSEMBLY, add_in_id_,
+                "About Robot Description Exporter@&Tools",
+                -1, "ShowAboutBoxCommand", "",
+                "Version, credits, and icon attribution for the Robot Description Exporter", images);
+            if (retAbout < 0)
+            {
+                logger.Error("Failure to add menu item 'About Robot Description Exporter' to menu 'Tools'");
+            }
+            else
+            {
+                logger.Info("Adding About Robot Description Exporter to Tools menu");
+            }
+
             // Also publish the export action as a CommandManager toolbar
             // entry. If toolbar registration fails, the Tools menu entry still
             // gives users a stable way to launch the exporter.
@@ -367,7 +383,8 @@ namespace SW2RD.SW
 
             SwApp.RemoveMenu((int)swDocumentTypes_e.swDocASSEMBLY, "Configure Robot Description@&Tools", "");
             SwApp.RemoveMenu((int)swDocumentTypes_e.swDocASSEMBLY, "Export Robot Description@&Tools", "");
-            logger.Info("Removing Configure / Export Robot Description from Tools menu");
+            SwApp.RemoveMenu((int)swDocumentTypes_e.swDocASSEMBLY, "About Robot Description Exporter@&Tools", "");
+            logger.Info("Removing Configure / Export / About Robot Description from Tools menu");
         }
 
         // Builds the list of icon PNG paths handed to AddMenuItem5 and
@@ -390,7 +407,7 @@ namespace SW2RD.SW
             string[] result = new string[sizes.Length];
             for (int i = 0; i < sizes.Length; i++)
             {
-                string fileName = "ros_logo_" + sizes[i] + ".png";
+                string fileName = "robot_arm_" + sizes[i] + ".png";
                 string match = null;
                 foreach (string dir in candidates)
                 {
@@ -417,14 +434,14 @@ namespace SW2RD.SW
         }
 
         // Builds the multi-resolution sprite-strip list handed to the
-        // CommandGroup.IconList. Each strip holds two sub-icons: the ROS
-        // logo at sub-index 0 (Export Robot Description) and the trash-can
-        // "clear" icon at sub-index 1 (Clear Saved Configuration). The
-        // image-list index passed to AddCommandItem2 selects which sub-icon
-        // a given command renders. Falls back per-size to the single-icon
-        // ros_logo strip when the two-icon strip is missing on disk so a
-        // partial deployment degrades to "both buttons share the logo"
-        // rather than a blank icon.
+        // CommandGroup.IconList. Each strip holds three sub-icons: the robot
+        // arm at sub-index 0 (Configure), the red trash-can at sub-index 1
+        // (Clear Configuration), and the green export glyph at sub-index 2
+        // (Export). The image-list index passed to AddCommandItem2 selects
+        // which sub-icon a given command renders. Falls back per-size to the
+        // single-icon robot_arm strip when the multi-icon strip is missing on
+        // disk so a partial deployment degrades to "every button shares the
+        // logo" rather than a blank icon.
         private string[] BuildToolbarIconList()
         {
             string[] candidates = ResolveIconDirectories();
@@ -433,7 +450,7 @@ namespace SW2RD.SW
             for (int i = 0; i < sizes.Length; i++)
             {
                 string fileName = "sw2rd_toolbar_" + sizes[i] + ".png";
-                string fallbackName = "ros_logo_" + sizes[i] + ".png";
+                string fallbackName = "robot_arm_" + sizes[i] + ".png";
                 string match = null;
                 string fallback = null;
                 foreach (string dir in candidates)
@@ -537,16 +554,17 @@ namespace SW2RD.SW
             // would duplicate the commands under Tools.
             int menuToolbarOption = (int)swCommandItemType_e.swToolbarItem;
 
-            // First toolbar command: "Configure Robot Description". Opens the
-            // Configure PMP (link tree + kinematic / geometry / sites
-            // sections); its green check saves the configuration. Sub-index 0
-            // (the ROS logo). Always enabled on an assembly.
+            // First toolbar command: "Configure". Opens the Configure PMP
+            // (link tree + kinematic / geometry / sites sections); its green
+            // check saves the configuration. Sub-index 0 (the robot-arm logo).
+            // Always enabled on an assembly. The button label is the short
+            // "Configure"; the tooltip carries the full description.
             int configureCmdIndex = cmdGroup.AddCommandItem2(
-                "Configure Robot Description",
+                "Configure",
                 -1,
                 "Configure the assembly's robot description (links, joints, geometry, sites)",
                 "Configure Robot Description",
-                0,                              // image list index (ROS logo)
+                0,                              // image list index (robot arm)
                 "ConfigureRobotDescriptionCommand", // callback function
                 "ToolbarEnableMethod",          // enable method
                 mainItemID1,
@@ -559,17 +577,19 @@ namespace SW2RD.SW
                 return;
             }
 
-            // Second toolbar command: "Export Robot Description". Opens the
-            // Export PMP (output / mesh options + Export button); reads the
-            // saved configuration and writes files. Sub-index 2 (the export
-            // glyph). ExportEnableMethod greys it out until a saved config
-            // exists, so the user must Configure first.
+            // Second toolbar command: "Export". Opens the Export PMP (output /
+            // mesh options + Export button); reads the saved configuration and
+            // writes files. Sub-index 2 (the green export glyph). The green
+            // color signals an intended, low-consequence action.
+            // ExportEnableMethod greys it out until a saved config exists, so
+            // the user must Configure first. Short label "Export"; full
+            // description in the tooltip.
             int exportCmdIndex = cmdGroup.AddCommandItem2(
-                "Export Robot Description",
+                "Export",
                 -1,
                 "Export the saved robot description configuration (URDF or MJCF)",
                 "Export Robot Description",
-                2,                              // image list index (export glyph)
+                2,                              // image list index (green export glyph)
                 "ExportRobotDescriptionCommand", // callback function
                 "ExportEnableMethod",           // enable method
                 mainItemID3,
@@ -581,16 +601,18 @@ namespace SW2RD.SW
                     exportCmdIndex + "; that toolbar item skipped");
             }
 
-            // Third toolbar command: "Clear Saved Configuration". Resets a
-            // model's saved SW2RD config without opening a PMP. Sub-index 1
-            // (the trash-can "clear" glyph). ClearConfigEnableMethod greys it
-            // out unless the active doc is an assembly with a saved config.
+            // Third toolbar command: "Clear Configuration". Resets a model's
+            // saved SW2RD config without opening a PMP. Sub-index 1 (the red
+            // trash-can glyph). The red color signals a destructive action.
+            // ClearConfigEnableMethod greys it out unless the active doc is an
+            // assembly with a saved config. Short label "Clear Configuration";
+            // full description in the tooltip.
             int clearCmdIndex = cmdGroup.AddCommandItem2(
-                "Clear Saved Configuration",
+                "Clear Configuration",
                 -1,
                 "Remove the saved SW2RD export configuration from the active assembly and start fresh",
-                "Clear Saved Configuration",
-                1,                              // image list index (trash-can icon)
+                "Clear Configuration",
+                1,                              // image list index (red trash-can icon)
                 "ClearSavedConfigurationCommand", // callback function
                 "ClearConfigEnableMethod",      // enable method
                 mainItemID2,
@@ -949,6 +971,47 @@ namespace SW2RD.SW
                 logger.Warn("ClearConfigEnableMethod failed: " + e.Message);
                 return 0;
             }
+        }
+
+        // Ribbon / menu callback for "About Robot Description Exporter".
+        // Shows the modal About dialog (version, credits, and the required
+        // Flaticon icon attribution). Wrapped in try/catch so a UI hiccup
+        // never tears down the add-in.
+        public void ShowAboutBoxCommand()
+        {
+            try
+            {
+                using (AboutForm about = new AboutForm(ResolveSingleIconPath("robot_arm_128x128.png")))
+                {
+                    about.ShowDialog();
+                }
+            }
+            catch (Exception e)
+            {
+                logger.Error("Exception caught showing the About box", e);
+                MessageBox.Show("There was a problem showing the About box: \n\"" +
+                    e.Message + "\"\nEmail your maintainer with the log file found at " +
+                    Logger.GetFileName());
+            }
+        }
+
+        // Resolves a single icon file to a full path using the same search
+        // order as the toolbar icon lists, or null if it can't be found.
+        private string ResolveSingleIconPath(string fileName)
+        {
+            foreach (string dir in ResolveIconDirectories())
+            {
+                if (string.IsNullOrEmpty(dir))
+                {
+                    continue;
+                }
+                string candidate = Path.Combine(dir, fileName);
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+            return null;
         }
 
         public void FlyoutCallback()

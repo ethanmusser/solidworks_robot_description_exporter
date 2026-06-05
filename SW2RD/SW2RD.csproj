@@ -117,34 +117,41 @@
     <Content Include="SW2RD.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="images\ros_logo_128x128.png">
+    <!--
+      The add-in's representative logo: the robot-arm icon (Flaticon #1839269
+      by Freepik - attributed in the About box). Used by the Tools menu
+      (AddMenuItem5), the CommandGroup MainIconList, and as sub-index 0 of the
+      sprite strips below. Replaces the former ros_logo_*.png set.
+    -->
+    <Content Include="images\robot_arm_128x128.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="images\ros_logo_16x16.png">
+    <Content Include="images\robot_arm_16x16.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="images\ros_logo_20x20.png">
+    <Content Include="images\robot_arm_20x20.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="images\ros_logo_32x32.png">
+    <Content Include="images\robot_arm_32x32.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="images\ros_logo_40x40.png">
+    <Content Include="images\robot_arm_40x40.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="images\ros_logo_64x64.png">
+    <Content Include="images\robot_arm_64x64.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="images\ros_logo_96x96.png">
+    <Content Include="images\robot_arm_96x96.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <!--
-      Two-icon CommandManager sprite strips (logo at sub-index 0, the
-      "Clear Saved Configuration" trash-can icon at sub-index 1). Each
-      strip is 2*size wide; SW's CommandGroup.IconList picks the sub-icon
-      by the image-list index passed to AddCommandItem2. Kept separate
-      from the single-icon ros_logo_*.png set, which is still used for the
-      Tools menu (AddMenuItem5) and the CommandGroup MainIconList.
+      Three-icon CommandManager sprite strips: sub-index 0 = robot arm
+      (Configure), 1 = red trash can (Clear Configuration, destructive),
+      2 = green export glyph (Export, affirmative). Each strip is 3*size
+      wide; SW's CommandGroup.IconList picks the sub-icon by the image-list
+      index passed to AddCommandItem2. The single-icon robot_arm_*.png set
+      above is used for the Tools menu (AddMenuItem5) and the CommandGroup
+      MainIconList.
     -->
     <Content Include="images\sw2rd_toolbar_20x20.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>

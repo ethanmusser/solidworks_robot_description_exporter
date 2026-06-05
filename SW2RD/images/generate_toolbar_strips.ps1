@@ -3,16 +3,21 @@ Add-Type -AssemblyName System.Drawing
 # Regenerates the sw2rd_toolbar_<size>.png sprite strips used by the
 # CommandGroup.IconList. Each strip is a horizontal row of THREE sub-icons,
 # all <size> wide:
-#   sub-index 0 = ROS logo            (Configure Robot Description)
-#   sub-index 1 = trash-can glyph     (Clear Saved Configuration)
-#   sub-index 2 = export tray + arrow (Export Robot Description)
+#   sub-index 0 = robot arm           (Configure) - the add-in logo
+#   sub-index 1 = trash-can glyph     (Clear Configuration) - drawn RED to
+#                                       signal a destructive action
+#   sub-index 2 = export tray + arrow (Export) - drawn GREEN to signal the
+#                                       intended, low-consequence action
 # AddCommandItem2's imageListIndex selects which sub-icon a command renders.
-# The ROS logo is composited from the existing ros_logo_<size>.png; the trash
-# and export glyphs are drawn vectorially so they stay crisp at every size.
+# The robot arm is composited from robot_arm_<size>.png (the Flaticon icon
+# #1839269 by Freepik - see the About box for attribution); the trash and
+# export glyphs are drawn vectorially so they stay crisp at every size.
 
 $imagesDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $sizes = @(20, 32, 40, 64, 96, 128)
-$glyph = [System.Drawing.Color]::FromArgb(255, 45, 45, 45)
+# Destructive (Clear) = red; affirmative (Export) = green.
+$trashColor = [System.Drawing.Color]::FromArgb(255, 192, 47, 47)
+$exportColor = [System.Drawing.Color]::FromArgb(255, 38, 140, 60)
 
 function Draw-Trash {
     param($g, $ox, $s, $color)
@@ -108,19 +113,19 @@ foreach ($s in $sizes) {
     $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $g.Clear([System.Drawing.Color]::Transparent)
 
-    # Cell 0: ROS logo from the existing single-icon file.
-    $logoPath = Join-Path $imagesDir ("ros_logo_{0}x{0}.png" -f $s)
+    # Cell 0: robot arm from the add-in logo single-icon file.
+    $logoPath = Join-Path $imagesDir ("robot_arm_{0}x{0}.png" -f $s)
     if (Test-Path $logoPath) {
         $logo = [System.Drawing.Image]::FromFile($logoPath)
         $g.DrawImage($logo, (New-Object System.Drawing.Rectangle(0, 0, $s, $s)))
         $logo.Dispose()
     }
 
-    # Cell 1: trash can.
-    Draw-Trash $g $s $s $glyph
+    # Cell 1: trash can (red = destructive).
+    Draw-Trash $g $s $s $trashColor
 
-    # Cell 2: export tray + arrow.
-    Draw-Export $g ($s * 2) $s $glyph
+    # Cell 2: export tray + arrow (green = affirmative).
+    Draw-Export $g ($s * 2) $s $exportColor
 
     $g.Dispose()
     $outPath = Join-Path $imagesDir ("sw2rd_toolbar_{0}x{0}.png" -f $s)
