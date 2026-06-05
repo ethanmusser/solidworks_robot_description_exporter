@@ -62,6 +62,7 @@ namespace SW2RD.Test
     /// real shape or value regression does. Adding a model is just dropping a
     /// new fixture folder in place; no code change required.</para>
     /// </summary>
+    [Trait("Category", "SWFree")]
     public class TestExportGoldens
     {
         [Fact]

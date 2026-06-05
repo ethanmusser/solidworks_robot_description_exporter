@@ -40,6 +40,7 @@ namespace SW2RD.Test
     // correct attribute name is emitted, (2) competing attributes are absent,
     // (3) eulerseq="XYZ" appears for - and only for - euler, and (4) parsing
     // the emitted value back to a quaternion recovers the original orientation.
+    [Trait("Category", "SWFree")]
     public class TestMJCFRotationFormat
     {
         private const double Deg2Rad = Math.PI / 180.0;

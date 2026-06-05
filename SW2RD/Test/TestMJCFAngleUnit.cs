@@ -41,6 +41,7 @@ namespace SW2RD.Test
     // emitted in the selected unit; (3) HINGE joint range / ref, stored in the
     // model as degrees, are emitted as-is for Degree and converted for Radian;
     // (4) SLIDE (prismatic) range / ref are lengths and are NEVER converted.
+    [Trait("Category", "SWFree")]
     public class TestMJCFAngleUnit
     {
         private const double Deg2Rad = Math.PI / 180.0;

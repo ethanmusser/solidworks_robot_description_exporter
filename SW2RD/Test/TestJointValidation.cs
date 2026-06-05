@@ -31,6 +31,7 @@ using Xunit;
 
 namespace SW2RD.Test
 {
+    [Trait("Category", "SWFree")]
     public class TestJointValidation
     {
         [Fact]

@@ -38,6 +38,7 @@ namespace SW2RD.Test
     // radians) and reduces a multi-body tree to the single robot URDF can
     // describe. These tests pin the behaviors that are specific to URDFBuilder
     // rather than to the shared canonical model.
+    [Trait("Category", "SWFree")]
     public class TestUrdfBuilder
     {
         [Fact]

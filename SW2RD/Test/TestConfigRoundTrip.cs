@@ -38,6 +38,7 @@ namespace SW2RD.Test
     // must be reconstructible from its own JSON output. A regression here
     // breaks configuration save/load on every assembly that uses the
     // exporter.
+    [Trait("Category", "SWFree")]
     public class TestConfigRoundTrip
     {
         [Fact]
