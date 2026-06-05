@@ -9,6 +9,10 @@
 *.userosscache
 *.sln.docstates
 
+# Machine-specific debug launch profile (carries a local SOLIDWORKS path and
+# the developer-only SW2RD_CAPTURE_GOLDEN toggle). Kept local like *.csproj.user.
+SW2RD/Properties/launchSettings.json
+
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
