@@ -35,25 +35,14 @@ namespace SW2RD.Export
     {
         private void BuildComponentsTabs()
         {
-            int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
-            int options = (int)swAddControlOptions_e.swControlOptions_Visible +
-                (int)swAddControlOptions_e.swControlOptions_Enabled;
-
-            // Static heading on each group so the visual hierarchy still
-            // reads as "Visual" / "Collision" / "Inertial".
-            PMVisualGroup.AddControl2(LabelVisualHeaderID,
-                (short)swPropertyManagerPageControlType_e.swControlType_Label,
-                "Visual", (short)alignment, options,
-                "Components included in the visual mesh export for this link.");
-            PMCollisionGroup.AddControl2(LabelCollisionHeaderID,
-                (short)swPropertyManagerPageControlType_e.swControlType_Label,
-                "Collision", (short)alignment, options,
-                "Components included in the collision mesh export for this link.");
-            PMInertialGroup.AddControl2(LabelInertialHeaderID,
-                (short)swPropertyManagerPageControlType_e.swControlType_Label,
-                "Inertial", (short)alignment, options,
-                "Components driving the link's mass and inertia computation.");
-
+            // No static "Visual" / "Collision" / "Inertial" heading labels
+            // here - the accordion group caption already names each section,
+            // so an in-body label repeating it is redundant. The first
+            // descriptive label in each editor below ("Visual Groups",
+            // "Collision Groups", "Inertial Source") carries the usage hint.
+            // LabelVisualHeaderID / LabelCollisionHeaderID /
+            // LabelInertialHeaderID remain reserved (unused) in
+            // ExportPropertyManager.cs.
             object filterObj = new swSelectType_e[] { swSelectType_e.swSelCOMPONENTS };
 
             BuildInertialSourceCombobox();

@@ -395,6 +395,48 @@ namespace SW2RD.SW
             return result;
         }
 
+        // Builds the multi-resolution sprite-strip list handed to the
+        // CommandGroup.IconList. Each strip holds two sub-icons: the ROS
+        // logo at sub-index 0 (Export Robot Description) and the trash-can
+        // "clear" icon at sub-index 1 (Clear Saved Configuration). The
+        // image-list index passed to AddCommandItem2 selects which sub-icon
+        // a given command renders. Falls back per-size to the single-icon
+        // ros_logo strip when the two-icon strip is missing on disk so a
+        // partial deployment degrades to "both buttons share the logo"
+        // rather than a blank icon.
+        private string[] BuildToolbarIconList()
+        {
+            string[] candidates = ResolveIconDirectories();
+            string[] sizes = new[] { "20x20", "32x32", "40x40", "64x64", "96x96", "128x128" };
+            string[] result = new string[sizes.Length];
+            for (int i = 0; i < sizes.Length; i++)
+            {
+                string fileName = "sw2rd_toolbar_" + sizes[i] + ".png";
+                string fallbackName = "ros_logo_" + sizes[i] + ".png";
+                string match = null;
+                string fallback = null;
+                foreach (string dir in candidates)
+                {
+                    if (string.IsNullOrEmpty(dir))
+                    {
+                        continue;
+                    }
+                    if (match == null && File.Exists(Path.Combine(dir, fileName)))
+                    {
+                        match = Path.Combine(dir, fileName);
+                    }
+                    if (fallback == null && File.Exists(Path.Combine(dir, fallbackName)))
+                    {
+                        fallback = Path.Combine(dir, fallbackName);
+                    }
+                }
+                result[i] = match ?? fallback ?? Path.Combine(
+                    "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\RobotDescriptionExporter\\images",
+                    fileName);
+            }
+            return result;
+        }
+
         // Search order for icon files: DLL dir\images, DLL dir, DLL
         // parent dir\images, and (last resort) the legacy install
         // directory. The "DLL parent dir\images" entry covers builds
@@ -457,12 +499,14 @@ namespace SW2RD.SW
                 return;
             }
 
-            // SW 2017+ accepts a single multi-resolution PNG list for
-            // both IconList (per-button icons) and MainIconList
-            // (CommandGroup header icons). Reusing the same list keeps
-            // the toolbar visually consistent at every DPI / icon-size
-            // setting in SW.
-            cmdGroup.IconList = iconList;
+            // IconList carries the per-button icons and MUST be the
+            // two-icon sprite strips so each command can claim a distinct
+            // sub-icon (Export = sub-index 0, Clear = sub-index 1).
+            // MainIconList is the CommandGroup's single representative icon
+            // (shown in toolbar customization / the group header), so it
+            // stays the single-icon ROS-logo list - feeding it the wide
+            // two-icon strip would squish both icons into the header slot.
+            cmdGroup.IconList = BuildToolbarIconList();
             cmdGroup.MainIconList = iconList;
 
             // SW exposes the placement bits as swMenuItem / swToolbarItem.
@@ -490,15 +534,17 @@ namespace SW2RD.SW
             // Second toolbar command: "Clear Saved Configuration". This used
             // to be a button on the export PropertyManagerPage; it moved to
             // the ribbon so the user can reset a model's saved SW2RD config
-            // without first opening the export wizard. Reuses the same icon
-            // list (image index 0) for now. ClearConfigEnableMethod greys it
-            // out unless the active doc is an assembly with a saved config.
+            // without first opening the export wizard. Uses sub-index 1 of
+            // the two-icon sprite strips (the trash-can "clear" glyph) so it
+            // is visually distinct from the Export command (sub-index 0).
+            // ClearConfigEnableMethod greys it out unless the active doc is
+            // an assembly with a saved config.
             int clearCmdIndex = cmdGroup.AddCommandItem2(
                 "Clear Saved Configuration",
                 -1,
                 "Remove the saved SW2RD export configuration from the active assembly and start fresh",
                 "Clear Saved Configuration",
-                0,                              // image list index
+                1,                              // image list index (trash-can icon)
                 "ClearSavedConfigurationCommand", // callback function
                 "ClearConfigEnableMethod",      // enable method
                 mainItemID2,

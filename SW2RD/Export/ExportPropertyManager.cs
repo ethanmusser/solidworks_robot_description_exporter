@@ -636,7 +636,7 @@ namespace SW2RD.Export
             PMInertialGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
                 InertialGroupID, "Inertial", visible);
             PMSitesGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
-                SitesGroupID, "Sites", visible);
+                SitesGroupID, "Sites (MJCF)", visible);
 
             // Page 2 group. Created visible; UpdateWizardVisibility hides it
             // for the initial page-1 view.
@@ -692,7 +692,45 @@ namespace SW2RD.Export
             if (PMCollisionGroup != null) PMCollisionGroup.Visible = onConfigure;
             if (PMInertialGroup != null) PMInertialGroup.Visible = onConfigure;
             if (PMSitesGroup != null) PMSitesGroup.Visible = onConfigure;
-            if (PMExportGroup != null) PMExportGroup.Visible = !onConfigure;
+            if (PMExportGroup != null)
+            {
+                PMExportGroup.Visible = !onConfigure;
+                // The export group is the sole content of page 2; show it
+                // expanded so the user lands on the format / mesh options
+                // instead of an empty collapsed header. Wrapped in the
+                // accordion-suppress guard for symmetry - OnGroupExpand
+                // already ignores non-kinematic group IDs, but the guard
+                // makes the "programmatic Expanded write" intent explicit.
+                if (!onConfigure)
+                {
+                    bool prior = suppressGroupExpandAccordion;
+                    suppressGroupExpandAccordion = true;
+                    try { PMExportGroup.Expanded = true; }
+                    finally { suppressGroupExpandAccordion = prior; }
+                }
+            }
+
+            // SOLIDWORKS does NOT auto-manage the native multipage Next /
+            // Back arrows from the OnNextPage / OnPreviousPage return values
+            // - it leaves whatever enabled state the page was created with
+            // (Next enabled, Back disabled) until we call EnableButton. So
+            // drive them explicitly per page: Back is live on every page but
+            // the first, Next on every page but the last. Without this the
+            // user on page 2 sees a greyed Back arrow and a dead (but
+            // enabled-looking) Next arrow.
+            try
+            {
+                PMPage.EnableButton(
+                    (int)swPropertyManagerPageButtons_e.swPropertyManagerPageButton_Back,
+                    currentWizardPage > 1);
+                PMPage.EnableButton(
+                    (int)swPropertyManagerPageButtons_e.swPropertyManagerPageButton_Next,
+                    currentWizardPage < TotalWizardPages);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("Updating wizard Next / Back button state failed: " + ex.Message);
+            }
 
             if (Tree != null)
             {

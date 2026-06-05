@@ -45,15 +45,15 @@ namespace SW2RD.Export
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
 
-            // Static heading so the tab's visual hierarchy reads
-            // "Sites (MJCF)".
-            PMSitesGroup.AddControl2(LabelSitesHeaderID,
-                (short)controlType, "Sites (MJCF)", (short)alignment, options,
-                "MJCF-only frames attached to a body. Ignored when exporting URDF.");
-
+            // No "Sites (MJCF)" heading label here - the accordion group
+            // caption already reads "Sites (MJCF)", so repeating it in the
+            // body is redundant. The help label below carries the usage
+            // hint (and notes the MJCF-only / URDF-ignored behavior).
+            // LabelSitesHeaderID remains reserved (unused) in
+            // ExportPropertyManager.cs.
             PMSitesGroup.AddControl2(
                 SitesHelpLabelID, (short)controlType,
-                "Select a site row, then edit its name and reference coordinate system below.",
+                "MJCF-only frames attached to a body (ignored for URDF). Select a site row, then edit its name and reference coordinate system below.",
                 (short)alignment, options,
                 "Sites are MJCF-only frames attached to a body. They are ignored when exporting URDF.");
 

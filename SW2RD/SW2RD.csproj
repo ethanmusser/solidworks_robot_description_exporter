@@ -138,6 +138,32 @@
     <Content Include="images\ros_logo_96x96.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <!--
+      Two-icon CommandManager sprite strips (logo at sub-index 0, the
+      "Clear Saved Configuration" trash-can icon at sub-index 1). Each
+      strip is 2*size wide; SW's CommandGroup.IconList picks the sub-icon
+      by the image-list index passed to AddCommandItem2. Kept separate
+      from the single-icon ros_logo_*.png set, which is still used for the
+      Tools menu (AddMenuItem5) and the CommandGroup MainIconList.
+    -->
+    <Content Include="images\sw2rd_toolbar_20x20.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\sw2rd_toolbar_32x32.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\sw2rd_toolbar_40x40.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\sw2rd_toolbar_64x64.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\sw2rd_toolbar_96x96.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="images\sw2rd_toolbar_128x128.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <Target Name="UpdateVersionInfo" BeforeTargets="BeforeBuild">
