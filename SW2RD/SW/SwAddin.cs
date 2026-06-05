@@ -740,6 +740,13 @@ namespace SW2RD.SW
         // agreed to save / rebuild), false if the user declined. Extracted
         // from the former SetupAssemblyExporter so Configure and Export apply
         // the identical pre-flight.
+        //
+        // A save/rebuild is only triggered when the document actually needs
+        // one. When the doc is already clean AND fully rebuilt the method is a
+        // no-op that returns true immediately - it neither prompts nor writes
+        // the file. This matters for PDM users: re-saving an unchanged,
+        // already-rebuilt assembly would dirty/flag the file (and its
+        // references) for no correctness benefit.
         private bool EnsureSavedAndRebuilt()
         {
             ModelDoc2 modeldoc = SwApp.ActiveDoc;
@@ -755,8 +762,16 @@ namespace SW2RD.SW
                 saveAndRebuild = true;
                 logger.Info("A rebuild is required");
             }
-            if (saveAndRebuild ||
-                MessageBox.Show("The Robot Description Exporter requires saving and/or rebuilding before continuing",
+
+            // Already clean and fully rebuilt: nothing to do, proceed without
+            // touching the file on disk.
+            if (!saveAndRebuild)
+            {
+                return true;
+            }
+
+            if (MessageBox.Show(
+                "The Robot Description Exporter requires saving and/or rebuilding before continuing",
                 "Save and rebuild document?", MessageBoxButtons.YesNo) == DialogResult.Yes)
             {
                 int options = (int)swSaveAsOptions_e.swSaveAsOptions_SaveReferenced |
