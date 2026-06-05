@@ -43,8 +43,10 @@ namespace SW2RD.Export
         void IPropertyManagerPage2Handler9.AfterActivation()
         {
             //Turns the selection box blue so that selected components are added to the PMPage
-            // selection box
-            PMSelectionVisual.SetSelectionFocus();
+            // selection box. The visual SelectionBox only exists in Configure
+            // mode; in Export mode there are no component pickers, so guard
+            // against the null.
+            PMSelectionVisual?.SetSelectionFocus();
         }
 
         // Button-press dispatcher: maps the COM-supplied control ID to the
@@ -119,18 +121,29 @@ namespace SW2RD.Export
             pageIsClosing = true;
             try
             {
-                if (Reason ==
-                    (int)swPropertyManagerPageCloseReasons_e.swPropertyManagerPageClose_Cancel)
+                // Only the Configure PMP edits and persists the kinematic
+                // tree. In Export mode the tree was loaded read-only from the
+                // saved attribute; there are no config-editing controls to
+                // commit and re-writing the attribute would be a no-op at best
+                // (and SaveActiveNode touches Configure-only controls that are
+                // null here). The Export PMP closes via PMPage.Close(true)
+                // from ExportButtonPress after the export has already run, so
+                // OnClose here just needs to clear the axis overlay below.
+                if (mode == ExportPmMode.Configure)
                 {
-                    logger.Info("Configuration canceled");
-                    SaveActiveNode();
-                }
-                else if (Reason ==
-                    (int)swPropertyManagerPageCloseReasons_e.swPropertyManagerPageClose_Okay)
-                {
-                    logger.Info("Configuration saved");
-                    SaveActiveNode();
-                    SaveConfigTree(ActiveSWModel, (LinkNode)Tree.Nodes[0], false);
+                    if (Reason ==
+                        (int)swPropertyManagerPageCloseReasons_e.swPropertyManagerPageClose_Cancel)
+                    {
+                        logger.Info("Configuration canceled");
+                        SaveActiveNode();
+                    }
+                    else if (Reason ==
+                        (int)swPropertyManagerPageCloseReasons_e.swPropertyManagerPageClose_Okay)
+                    {
+                        logger.Info("Configuration saved");
+                        SaveActiveNode();
+                        SaveConfigTree(ActiveSWModel, (LinkNode)Tree.Nodes[0], false);
+                    }
                 }
             }
             catch (Exception e)

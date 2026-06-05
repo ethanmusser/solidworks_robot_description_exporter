@@ -257,15 +257,35 @@ namespace SW2RD.SW
             // known install image folders so missing icons do not prevent menu
             // or toolbar registration.
             string[] images = BuildIconList();
-            int ret = SwApp.AddMenuItem5((int)swDocumentTypes_e.swDocASSEMBLY, add_in_id_, "Export Robot Description@&Tools",
-                -1, "AssemblyRobotDescriptionExporter", "", "Export assembly as a robot description (URDF or MJCF)", images);
-            if (ret < 0)
+
+            // Two Tools-menu entries mirroring the two ribbon commands:
+            // Configure authors / edits the kinematic tree and saves the
+            // config; Export reads the saved config and writes files. The
+            // Export entry's enable method greys it out until a config exists.
+            int retConfigure = SwApp.AddMenuItem5((int)swDocumentTypes_e.swDocASSEMBLY, add_in_id_,
+                "Configure Robot Description@&Tools",
+                -1, "ConfigureRobotDescriptionCommand", "",
+                "Configure the assembly's robot description (links, joints, geometry, sites)", images);
+            if (retConfigure < 0)
+            {
+                logger.Error("Failure to add menu item 'Configure Robot Description' to menu 'Tools'");
+            }
+            else
+            {
+                logger.Info("Adding Configure Robot Description to Tools menu");
+            }
+
+            int retExport = SwApp.AddMenuItem5((int)swDocumentTypes_e.swDocASSEMBLY, add_in_id_,
+                "Export Robot Description@&Tools",
+                -1, "ExportRobotDescriptionCommand", "ExportEnableMethod",
+                "Export the saved robot description configuration (URDF or MJCF)", images);
+            if (retExport < 0)
             {
                 logger.Error("Failure to add menu item 'Export Robot Description' to menu 'Tools'");
             }
             else
             {
-                logger.Info("Adding Assembly export to Tools menu");
+                logger.Info("Adding Export Robot Description to Tools menu");
             }
 
             // Also publish the export action as a CommandManager toolbar
@@ -345,8 +365,9 @@ namespace SW2RD.SW
                 logger.Warn("RemoveCommandGroup2 failed: " + ex.Message, ex);
             }
 
+            SwApp.RemoveMenu((int)swDocumentTypes_e.swDocASSEMBLY, "Configure Robot Description@&Tools", "");
             SwApp.RemoveMenu((int)swDocumentTypes_e.swDocASSEMBLY, "Export Robot Description@&Tools", "");
-            logger.Info("Removing assembly export from Tools menu");
+            logger.Info("Removing Configure / Export Robot Description from Tools menu");
         }
 
         // Builds the list of icon PNG paths handed to AddMenuItem5 and
@@ -500,45 +521,70 @@ namespace SW2RD.SW
             }
 
             // IconList carries the per-button icons and MUST be the
-            // two-icon sprite strips so each command can claim a distinct
-            // sub-icon (Export = sub-index 0, Clear = sub-index 1).
-            // MainIconList is the CommandGroup's single representative icon
-            // (shown in toolbar customization / the group header), so it
-            // stays the single-icon ROS-logo list - feeding it the wide
-            // two-icon strip would squish both icons into the header slot.
+            // multi-icon sprite strips so each command can claim a distinct
+            // sub-icon (Configure = sub-index 0, Clear = sub-index 1,
+            // Export = sub-index 2). MainIconList is the CommandGroup's single
+            // representative icon (shown in toolbar customization / the group
+            // header), so it stays the single-icon ROS-logo list - feeding it
+            // the wide multi-icon strip would squish every icon into the
+            // header slot.
             cmdGroup.IconList = BuildToolbarIconList();
             cmdGroup.MainIconList = iconList;
 
             // SW exposes the placement bits as swMenuItem / swToolbarItem.
-            // We only want the toolbar entry here - the menu entry is
+            // We only want the toolbar entry here - the menu entries are
             // already published via AddMenuItem5 above; setting both
-            // would duplicate "Export Robot Description" under Tools.
+            // would duplicate the commands under Tools.
             int menuToolbarOption = (int)swCommandItemType_e.swToolbarItem;
-            int cmdIndex = cmdGroup.AddCommandItem2(
-                "Export Robot Description",
+
+            // First toolbar command: "Configure Robot Description". Opens the
+            // Configure PMP (link tree + kinematic / geometry / sites
+            // sections); its green check saves the configuration. Sub-index 0
+            // (the ROS logo). Always enabled on an assembly.
+            int configureCmdIndex = cmdGroup.AddCommandItem2(
+                "Configure Robot Description",
                 -1,
-                "Export the active assembly as a robot description (URDF or MJCF)",
-                "Robot Description",
-                0,                              // image list index
-                "AssemblyRobotDescriptionExporter", // callback function
+                "Configure the assembly's robot description (links, joints, geometry, sites)",
+                "Configure Robot Description",
+                0,                              // image list index (ROS logo)
+                "ConfigureRobotDescriptionCommand", // callback function
                 "ToolbarEnableMethod",          // enable method
                 mainItemID1,
                 menuToolbarOption);
 
-            if (cmdIndex < 0)
+            if (configureCmdIndex < 0)
             {
-                logger.Warn("AddCommandItem2 returned " + cmdIndex + "; toolbar item skipped");
+                logger.Warn("AddCommandItem2 (Configure Robot Description) returned " +
+                    configureCmdIndex + "; toolbar item skipped");
                 return;
             }
 
-            // Second toolbar command: "Clear Saved Configuration". This used
-            // to be a button on the export PropertyManagerPage; it moved to
-            // the ribbon so the user can reset a model's saved SW2RD config
-            // without first opening the export wizard. Uses sub-index 1 of
-            // the two-icon sprite strips (the trash-can "clear" glyph) so it
-            // is visually distinct from the Export command (sub-index 0).
-            // ClearConfigEnableMethod greys it out unless the active doc is
-            // an assembly with a saved config.
+            // Second toolbar command: "Export Robot Description". Opens the
+            // Export PMP (output / mesh options + Export button); reads the
+            // saved configuration and writes files. Sub-index 2 (the export
+            // glyph). ExportEnableMethod greys it out until a saved config
+            // exists, so the user must Configure first.
+            int exportCmdIndex = cmdGroup.AddCommandItem2(
+                "Export Robot Description",
+                -1,
+                "Export the saved robot description configuration (URDF or MJCF)",
+                "Export Robot Description",
+                2,                              // image list index (export glyph)
+                "ExportRobotDescriptionCommand", // callback function
+                "ExportEnableMethod",           // enable method
+                mainItemID3,
+                menuToolbarOption);
+
+            if (exportCmdIndex < 0)
+            {
+                logger.Warn("AddCommandItem2 (Export Robot Description) returned " +
+                    exportCmdIndex + "; that toolbar item skipped");
+            }
+
+            // Third toolbar command: "Clear Saved Configuration". Resets a
+            // model's saved SW2RD config without opening a PMP. Sub-index 1
+            // (the trash-can "clear" glyph). ClearConfigEnableMethod greys it
+            // out unless the active doc is an assembly with a saved config.
             int clearCmdIndex = cmdGroup.AddCommandItem2(
                 "Clear Saved Configuration",
                 -1,
@@ -557,13 +603,18 @@ namespace SW2RD.SW
             }
 
             cmdGroup.HasToolbar = true;
-            cmdGroup.HasMenu = false; // menu entry is published via AddMenuItem5
+            cmdGroup.HasMenu = false; // menu entries are published via AddMenuItem5
             cmdGroup.Activate();
 
             // Collect the command IDs for every item we successfully added so
-            // they all land on our ribbon tab.
+            // they all land on our ribbon tab, in the intended ribbon order:
+            // Configure, Export, Clear.
             System.Collections.Generic.List<int> commandIDs =
-                new System.Collections.Generic.List<int> { cmdGroup.get_CommandID(cmdIndex) };
+                new System.Collections.Generic.List<int> { cmdGroup.get_CommandID(configureCmdIndex) };
+            if (exportCmdIndex >= 0)
+            {
+                commandIDs.Add(cmdGroup.get_CommandID(exportCmdIndex));
+            }
             if (clearCmdIndex >= 0)
             {
                 commandIDs.Add(cmdGroup.get_CommandID(clearCmdIndex));
@@ -660,10 +711,16 @@ namespace SW2RD.SW
 
         #region UI Callbacks
 
-        public void SetupAssemblyExporter()
+        // Shared save / rebuild gate for both PMPs. The exporter reads
+        // geometry and mass properties straight off the model, so a dirty or
+        // not-fully-rebuilt document would export stale data. Returns true if
+        // the caller may proceed (the doc was already clean, or the user
+        // agreed to save / rebuild), false if the user declined. Extracted
+        // from the former SetupAssemblyExporter so Configure and Export apply
+        // the identical pre-flight.
+        private bool EnsureSavedAndRebuilt()
         {
             ModelDoc2 modeldoc = SwApp.ActiveDoc;
-            logger.Info("Assembly export called for file " + modeldoc.GetTitle());
             bool saveAndRebuild = false;
             if (modeldoc.GetSaveFlag())
             {
@@ -684,24 +741,131 @@ namespace SW2RD.SW
                         (int)swSaveAsOptions_e.swSaveAsOptions_Silent;
                 logger.Info("Saving assembly");
                 modeldoc.Save3(options, 0, 0);
+                return true;
+            }
+            return false;
+        }
 
-                logger.Info("Opening property manager");
-                SetupPropertyManager();
+        // Opens the Configure PMP: the link tree + the kinematic / geometry /
+        // sites sections. Green check saves the configuration.
+        public void OpenConfigurePropertyManager()
+        {
+            ModelDoc2 modeldoc = SwApp.ActiveDoc;
+            logger.Info("Configure Robot Description called for file " + modeldoc.GetTitle());
+            if (!EnsureSavedAndRebuilt())
+            {
+                return;
+            }
+
+            logger.Info("Opening configure property manager");
+            ExportPropertyManager pm =
+                new ExportPropertyManager((SldWorks)SwApp, ExportPmMode.Configure);
+            logger.Info("Loading config tree");
+            if (pm.LoadConfigTree())
+            {
+                logger.Info("Showing configure property manager");
+                pm.Show();
             }
         }
 
-        public void AssemblyRobotDescriptionExporter()
+        // Opens the Export PMP: output / mesh options + Export button. Loads
+        // the saved configuration, builds the robot, and writes files. The
+        // ribbon command is greyed out (ExportEnableMethod) until a saved
+        // config exists; the defensive checks here cover the menu path and any
+        // race where the config was cleared after the button enabled.
+        public void OpenExportPropertyManager()
+        {
+            ModelDoc2 modeldoc = SwApp.ActiveDoc as ModelDoc2;
+            if (modeldoc == null ||
+                modeldoc.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                MessageBox.Show(
+                    "Open an assembly to export its robot description.",
+                    "Export Robot Description",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!ConfigurationSerialization.HasSavedConfiguration(modeldoc))
+            {
+                MessageBox.Show(
+                    "This assembly has no saved robot description configuration yet. " +
+                    "Use \"Configure Robot Description\" to set one up first.",
+                    "Export Robot Description",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            logger.Info("Export Robot Description called for file " + modeldoc.GetTitle());
+            if (!EnsureSavedAndRebuilt())
+            {
+                return;
+            }
+
+            logger.Info("Opening export property manager");
+            ExportPropertyManager pm =
+                new ExportPropertyManager((SldWorks)SwApp, ExportPmMode.Export);
+            logger.Info("Loading config tree");
+            if (pm.LoadConfigTree())
+            {
+                logger.Info("Showing export property manager");
+                pm.Show();
+            }
+        }
+
+        // Ribbon / menu callback for "Configure Robot Description".
+        public void ConfigureRobotDescriptionCommand()
         {
             try
             {
-                SetupAssemblyExporter();
+                OpenConfigurePropertyManager();
             }
             catch (Exception e)
             {
-                logger.Error("An exception was caught when trying to setup the assembly exporter", e);
+                logger.Error("An exception was caught when trying to open the configure property manager", e);
                 MessageBox.Show("There was a problem setting up the property manager: \n\"" +
                     e.Message + "\"\nEmail your maintainer with the log file found at " +
                     Logger.GetFileName());
+            }
+        }
+
+        // Ribbon / menu callback for "Export Robot Description".
+        public void ExportRobotDescriptionCommand()
+        {
+            try
+            {
+                OpenExportPropertyManager();
+            }
+            catch (Exception e)
+            {
+                logger.Error("An exception was caught when trying to open the export property manager", e);
+                MessageBox.Show("There was a problem setting up the property manager: \n\"" +
+                    e.Message + "\"\nEmail your maintainer with the log file found at " +
+                    Logger.GetFileName());
+            }
+        }
+
+        // Enable method for the "Export Robot Description" ribbon / menu
+        // command. Enabled (return 1) only when the active document is an
+        // assembly that already carries a saved SW2RD configuration; greyed
+        // out (return 0) otherwise so the user configures before exporting.
+        // Mirrors ClearConfigEnableMethod.
+        public int ExportEnableMethod()
+        {
+            try
+            {
+                ModelDoc2 modeldoc = SwApp?.ActiveDoc as ModelDoc2;
+                if (modeldoc == null ||
+                    modeldoc.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
+                {
+                    return 0;
+                }
+                return ConfigurationSerialization.HasSavedConfiguration(modeldoc) ? 1 : 0;
+            }
+            catch (Exception e)
+            {
+                logger.Warn("ExportEnableMethod failed: " + e.Message);
+                return 0;
             }
         }
 
@@ -784,19 +948,6 @@ namespace SW2RD.SW
             {
                 logger.Warn("ClearConfigEnableMethod failed: " + e.Message);
                 return 0;
-            }
-        }
-
-        public void SetupPropertyManager()
-        {
-            ExportPropertyManager pm = new ExportPropertyManager((SldWorks)SwApp);
-            logger.Info("Loading config tree");
-            bool success = pm.LoadConfigTree();
-
-            if (success)
-            {
-                logger.Info("Showing property manager");
-                pm.Show();
             }
         }
 

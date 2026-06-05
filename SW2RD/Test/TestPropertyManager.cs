@@ -54,7 +54,7 @@ namespace SW2RD.Test
             OpenSWDocument(modelName);
             SwAddin addin = new SwAddin();
             addin.ConnectToSW(SwApp, 0);
-            addin.SetupAssemblyExporter();
+            addin.OpenConfigurePropertyManager();
             SwApp.CloseAllDocuments(true);
         }
 
@@ -65,7 +65,7 @@ namespace SW2RD.Test
         {
             OpenSWDocument(modelName);
 
-            ExportPropertyManager pm = new ExportPropertyManager(SwApp);
+            ExportPropertyManager pm = new ExportPropertyManager(SwApp, ExportPmMode.Configure);
             pm.Show();
             pm.Close(true);
             SwApp.CloseAllDocuments(true);
@@ -79,7 +79,7 @@ namespace SW2RD.Test
         {
             OpenSWDocument(modelName);
 
-            ExportPropertyManager pm = new ExportPropertyManager(SwApp);
+            ExportPropertyManager pm = new ExportPropertyManager(SwApp, ExportPmMode.Configure);
             pm.Show();
             pm.Close(false);
             SwApp.CloseAllDocuments(true);
@@ -92,7 +92,7 @@ namespace SW2RD.Test
         public void TestPreviewExport(string modelName)
         {
             OpenSWDocument(modelName);
-            ExportPropertyManager pm = new ExportPropertyManager(SwApp);
+            ExportPropertyManager pm = new ExportPropertyManager(SwApp, ExportPmMode.Configure);
             pm.Show();
 
             // PrivateObject came from Microsoft.VisualStudio.TestTools.UnitTesting,

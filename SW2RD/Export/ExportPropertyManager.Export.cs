@@ -41,7 +41,16 @@ namespace SW2RD.Export
     {
         private void ExportButtonPress()
         {
-            SaveActiveNode();
+            // SaveActiveNode commits the active link's config-editing controls
+            // (link name, joint props, component groups) back into the tree.
+            // Those controls only exist in the Configure PMP; in Export mode
+            // the tree was loaded read-only from the saved attribute and there
+            // is nothing to commit (and SaveActiveNode would touch null
+            // Configure-only controls). Skip it in Export mode.
+            if (mode == ExportPmMode.Configure)
+            {
+                SaveActiveNode();
+            }
 
             // Compute toggles are no longer surfaced in the PMPage; the
             // ExportHelper defaults (all true) drive every export. The
