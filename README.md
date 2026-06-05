@@ -113,3 +113,8 @@ convert-urdf-mesh <URDF_PATH> --output <OUTPUT_URDF_PATH>
 
 1. `AxImp.exe` error - Check the installation of the .NET tools. If there is no error, install the Windows 10 SDK.
 1. `Resources.resx` error - Check if `solidworks_urdf_exporter/SW2RD/Properties/Resources.resx` exists and is empty. If empty, delete this file then right-click `SW2RD` in the Solution Explorer and select `Properties`. Navigate to the Resources tab and click the button to create a new file.
+
+## Credits and attributions
+
+- This project is a hard fork of the [SolidWorks to URDF Exporter (SW2URDF)](https://github.com/ros/solidworks_urdf_exporter), &copy; 2015 Stephen Brawner and contributors.
+- The robot-arm icon used for the add-in toolbar and logo is the ["Robotic arm" icon](https://www.flaticon.com/free-icon/robotic-arm_1839269) created by [Freepik](https://www.flaticon.com/authors/freepik) from [Flaticon](https://www.flaticon.com/free-icons/robotic-arm), used under the [Flaticon Free License](https://www.freepikcompany.com/legal#nav-flaticon) (attribution required). This attribution is also shown in the add-in's **Tools &rarr; About Robot Description Exporter** dialog.
