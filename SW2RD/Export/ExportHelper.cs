@@ -27,6 +27,7 @@ using SW2RD.Core;
 using SW2RD.MJCF;
 using SW2RD.ROS;
 using SW2RD.Input;
+using SW2RD.UI;
 using SW2RD.Utilities;
 using SW2RD.Validation;
 using System;
@@ -483,7 +484,7 @@ namespace SW2RD.Export
 
             if (!success)
             {
-                MessageBox.Show("Exporting the model failed unexpectedly. Email your maintainer " +
+                UserNotifier.Show("Exporting the model failed unexpectedly. Email your maintainer " +
                     "with the log file found at " + Logger.GetFileName());
                 return false;
             }
@@ -1571,7 +1572,7 @@ namespace SW2RD.Export
             {
                 if (!File.Exists(log_filename))
                 {
-                    System.Windows.Forms.MessageBox.Show("The log file was expected to be located at " + log_filename +
+                    UserNotifier.Show("The log file was expected to be located at " + log_filename +
                         ", but it was not found. Please contact your maintainer with this error message.");
                 }
                 else

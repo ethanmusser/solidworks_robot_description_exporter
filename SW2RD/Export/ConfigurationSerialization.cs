@@ -24,6 +24,7 @@ using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SW2RD.Configuration;
 using SW2RD.Input;
+using SW2RD.UI;
 using SW2RD.Utilities;
 using System;
 using System.Windows.Forms;
@@ -164,14 +165,14 @@ namespace SW2RD.Export
             catch (Exception ex)
             {
                 logger.Error("Serializing Config JSON failed", ex);
-                MessageBox.Show("Serializing this configuration failed. Please email your " +
+                UserNotifier.Show("Serializing this configuration failed. Please email your " +
                     "maintainer with your SW assembly.\n\n" + ex.Message);
                 return;
             }
 
             if (string.IsNullOrEmpty(newData))
             {
-                MessageBox.Show("Serializing this link failed. Please email your maintainer with your SW assembly.");
+                UserNotifier.Show("Serializing this link failed. Please email your maintainer with your SW assembly.");
                 return;
             }
 
@@ -179,8 +180,8 @@ namespace SW2RD.Export
             {
                 if (!warnUser ||
                     (warnUser &&
-                    MessageBox.Show("The configuration has changed, would you like to save?",
-                    "Save Export Configuration", MessageBoxButtons.YesNo) == DialogResult.Yes))
+                    UserNotifier.Ask("The configuration has changed, would you like to save?",
+                    "Save Export Configuration", MessageBoxButtons.YesNo, DialogResult.No) == DialogResult.Yes))
                 {
                     SaveDataToModelDoc(swApp, model, ConfigurationSwAttributeName, newData);
                 }
