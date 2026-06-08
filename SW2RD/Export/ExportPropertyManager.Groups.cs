@@ -154,7 +154,7 @@ namespace SW2RD.Export
         // Commits the visual SelectionBox's current contents into the active
         // visual group on the active link. Called whenever the user is about
         // to change the active group or active node.
-        private void CommitActiveVisualGroupSelection(LinkNode node)
+        private void CommitActiveVisualGroupSelection(LinkNode node, bool isUserEdit = false)
         {
             if (node == null)
             {
@@ -214,9 +214,21 @@ namespace SW2RD.Export
 
             group.Components.Clear();
             group.Components.AddRange(picked);
+
+            // A genuine user edit (non-empty pick from OnSelectionboxListChanged)
+            // is treated as curating the group, so any preserved missing
+            // references are dropped - the user is taking control of the
+            // membership and a phantom they cannot select would otherwise be
+            // merged back forever on save. Navigation / teardown commits pass
+            // isUserEdit=false so an untouched group keeps its missing refs for
+            // a later repair (the Phase 1 no-data-loss guarantee).
+            if (isUserEdit && picked.Count > 0)
+            {
+                group.UnresolvedComponentRefs?.Clear();
+            }
         }
 
-        private void CommitActiveCollisionGroupSelection(LinkNode node)
+        private void CommitActiveCollisionGroupSelection(LinkNode node, bool isUserEdit = false)
         {
             if (node == null)
             {
@@ -264,6 +276,13 @@ namespace SW2RD.Export
 
             group.Components.Clear();
             group.Components.AddRange(picked);
+
+            // See CommitActiveVisualGroupSelection: drop preserved missing refs
+            // only on a genuine non-empty user edit, never on navigation.
+            if (isUserEdit && picked.Count > 0)
+            {
+                group.UnresolvedComponentRefs?.Clear();
+            }
         }
 
         // Loads the active visual group's components into the visual
@@ -587,6 +606,26 @@ namespace SW2RD.Export
             }
         }
 
+        // Builds a mesh-group listbox row caption. Shows the resolved component
+        // count and, when the group carries references that could not be resolved
+        // on load (e.g. the component instance was deleted / renamed, or its
+        // persist reference went stale after a PDM pull and the instance no
+        // longer exists to re-bind by name), appends a ", N missing" annotation
+        // so the user can see the group has a phantom even though no Component2
+        // exists to render in the SelectionBox.
+        private static string GroupListboxLabel(MeshGroup g)
+        {
+            int count = (g.Components != null) ? g.Components.Count : 0;
+            int missing = (g.UnresolvedComponentRefs != null) ? g.UnresolvedComponentRefs.Count : 0;
+            string label = (string.IsNullOrEmpty(g.Name) ? "(unnamed)" : g.Name) +
+                " (" + count + " comp.";
+            if (missing > 0)
+            {
+                label += ", " + missing + " missing";
+            }
+            return label + ")";
+        }
+
         public void RefreshVisualGroupsListbox(LinkNode node)
         {
             PMListBoxVisualGroups.Clear();
@@ -597,10 +636,7 @@ namespace SW2RD.Export
             for (int i = 0; i < node.Link.VisualGroups.Count; i++)
             {
                 MeshGroup g = node.Link.VisualGroups[i];
-                int count = (g.Components != null) ? g.Components.Count : 0;
-                string label = (string.IsNullOrEmpty(g.Name) ? "(unnamed)" : g.Name) +
-                    " (" + count + " comp.)";
-                PMListBoxVisualGroups.AddItems(label);
+                PMListBoxVisualGroups.AddItems(GroupListboxLabel(g));
             }
             if (activeVisualGroupIndex >= 0 && activeVisualGroupIndex < node.Link.VisualGroups.Count)
             {
@@ -618,10 +654,7 @@ namespace SW2RD.Export
             for (int i = 0; i < node.Link.CollisionGroups.Count; i++)
             {
                 MeshGroup g = node.Link.CollisionGroups[i];
-                int count = (g.Components != null) ? g.Components.Count : 0;
-                string label = (string.IsNullOrEmpty(g.Name) ? "(unnamed)" : g.Name) +
-                    " (" + count + " comp.)";
-                PMListBoxCollisionGroups.AddItems(label);
+                PMListBoxCollisionGroups.AddItems(GroupListboxLabel(g));
             }
             if (activeCollisionGroupIndex >= 0 && activeCollisionGroupIndex < node.Link.CollisionGroups.Count)
             {

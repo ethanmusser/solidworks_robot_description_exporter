@@ -561,6 +561,108 @@ namespace SW2RD.Test
             Assert.False(FirstTopLevel(read.Tree).CollisionUsesVisual);
         }
 
+        [Fact]
+        public void TestRoundTripPreservesComponentNameAndPath()
+        {
+            // The saved component instance name (DisplayName) and document path
+            // must survive the JSON round trip: the name drives the load-time
+            // re-bind of a stale persist reference, and the path is shown to the
+            // user as the missing-component label.
+            ComponentReferenceModel comp = new ComponentReferenceModel(
+                "wheel-2@robot", new byte[] { 0x10, 0x20, 0x30 }, "C:\\parts\\wheel.SLDPRT");
+            MeshGroupModel visualGroup = new MeshGroupModel(
+                "base_visual", "base_visual.STL", new[] { comp });
+            LinkModel baseLink = SimpleLink("base") with { VisualGroups = new[] { visualGroup } };
+            KinematicTree tree = new KinematicTree("name_path_test", "Origin_global", WorldBody(baseLink));
+            Config original = new Config(
+                Config.CurrentSchemaVersion, "1.6.1-test", DateTime.UtcNow, tree);
+
+            string json = ConfigJsonSerializer.Serialize(original);
+            Config read = ConfigJsonSerializer.Deserialize(json);
+
+            ComponentReferenceModel readComp = FirstTopLevel(read.Tree).VisualGroups[0].Components[0];
+            Assert.Equal("wheel-2@robot", readComp.DisplayName);
+            Assert.Equal("C:\\parts\\wheel.SLDPRT", readComp.Path);
+            Assert.Equal(comp.PersistentId, readComp.PersistentId);
+        }
+
+        [Fact]
+        public void TestComponentReferenceWithoutPathDeserializesToNull()
+        {
+            // A reference created via the two-argument constructor (the shape of
+            // configs written before the Path field existed) leaves Path null and
+            // round-trips that way - no exception, no spurious value.
+            ComponentReferenceModel comp = new ComponentReferenceModel(
+                "legacy-1", new byte[] { 0x01 });
+            MeshGroupModel visualGroup = new MeshGroupModel("g", "g.STL", new[] { comp });
+            LinkModel baseLink = SimpleLink("base") with { VisualGroups = new[] { visualGroup } };
+            KinematicTree tree = new KinematicTree("no_path_test", "Origin_global", WorldBody(baseLink));
+            Config original = new Config(
+                Config.CurrentSchemaVersion, "1.6.1-test", DateTime.UtcNow, tree);
+
+            string json = ConfigJsonSerializer.Serialize(original);
+            Config read = ConfigJsonSerializer.Deserialize(json);
+
+            Assert.Null(FirstTopLevel(read.Tree).VisualGroups[0].Components[0].Path);
+        }
+
+        [Fact]
+        public void TestAdapterRoundTripsComponentNameAndPath()
+        {
+            // The legacy MeshGroup carries name/path index-aligned with its PIDs;
+            // both adapter directions (legacy <-> core) must preserve them.
+            MeshGroup group = new MeshGroup("base_visual");
+            group.ComponentPIDs.Add(new byte[] { 0x09, 0x09 });
+            group.ComponentNames.Add("bracket-1@robot");
+            group.ComponentPaths.Add("C:\\p\\bracket.SLDPRT");
+            Link link = new Link { Name = "base" };
+            link.VisualGroups.Add(group);
+
+            LinkModel model = KinematicTreeAdapter.ToCore(link);
+            ComponentReferenceModel core = model.VisualGroups[0].Components[0];
+            Assert.Equal("bracket-1@robot", core.DisplayName);
+            Assert.Equal("C:\\p\\bracket.SLDPRT", core.Path);
+
+            Link back = KinematicTreeAdapter.ToLegacyLink(model, null);
+            Assert.Equal("bracket-1@robot", back.VisualGroups[0].ComponentNames[0]);
+            Assert.Equal("C:\\p\\bracket.SLDPRT", back.VisualGroups[0].ComponentPaths[0]);
+            Assert.Equal(group.ComponentPIDs[0], back.VisualGroups[0].ComponentPIDs[0]);
+        }
+
+        [Fact]
+        public void TestUnresolvedComponentRefSurvivesSaveReload()
+        {
+            // A reference that failed to resolve on load (no live component, only
+            // a preserved ComponentRef) must NOT be erased when the config is
+            // re-saved. RetrieveSWComponentPIDs merges it back; the JSON round
+            // trip then preserves PID + name + path. (model is null because there
+            // are no live components to call GetPersistReference3 on.)
+            Link link = new Link { Name = "base_link" };
+            MeshGroup group = new MeshGroup("base_visual");
+            group.Components.Clear();
+            group.UnresolvedComponentRefs.Add(
+                new ComponentRef(new byte[] { 0x07, 0x07, 0x07 }, "ghost-1@robot", "C:\\parts\\ghost.SLDPRT"));
+            link.VisualGroups.Add(group);
+            LinkNode node = new LinkNode(link);
+
+            CommonSwOperations.RetrieveSWComponentPIDs(null, node);
+
+            // The unresolved reference is now persisted in the index-aligned lists.
+            Assert.Single(group.ComponentPIDs);
+            Assert.Equal("ghost-1@robot", group.ComponentNames[0]);
+            Assert.Equal("C:\\parts\\ghost.SLDPRT", group.ComponentPaths[0]);
+
+            Config saved = ConfigBridge.CreateFromLinkNode(node, "robot");
+            string json = ConfigJsonSerializer.Serialize(saved);
+            Config read = ConfigJsonSerializer.Deserialize(json);
+
+            MeshGroupModel readGroup = FirstTopLevel(read.Tree).VisualGroups[0];
+            Assert.Single(readGroup.Components);
+            Assert.Equal(new byte[] { 0x07, 0x07, 0x07 }, readGroup.Components[0].PersistentId);
+            Assert.Equal("ghost-1@robot", readGroup.Components[0].DisplayName);
+            Assert.Equal("C:\\parts\\ghost.SLDPRT", readGroup.Components[0].Path);
+        }
+
         // Convenience accessor used throughout the tests. All sample configs
         // have exactly one top-level body, so this is the single-tree
         // analogue of the old `tree.BaseLink`.

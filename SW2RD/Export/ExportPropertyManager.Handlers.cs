@@ -252,12 +252,12 @@ namespace SW2RD.Export
 
             if (Id == SelectionVisualID)
             {
-                CommitActiveVisualGroupSelection(active);
+                CommitActiveVisualGroupSelection(active, isUserEdit: true);
                 RefreshVisualGroupsListbox(active);
             }
             else if (Id == SelectionCollisionID)
             {
-                CommitActiveCollisionGroupSelection(active);
+                CommitActiveCollisionGroupSelection(active, isUserEdit: true);
                 RefreshCollisionGroupsListbox(active);
             }
             else if (Id == SelectionInertialID)
@@ -310,6 +310,14 @@ namespace SW2RD.Export
 
                 active.Link.InertialComponents.Clear();
                 active.Link.InertialComponents.AddRange(picked);
+
+                // Genuine custom edit curates the inertial set: drop any
+                // preserved missing inertial refs so a phantom isn't merged
+                // back on save (mirror of the visual / collision group rule).
+                if (picked.Count > 0)
+                {
+                    active.Link.UnresolvedInertialRefs?.Clear();
+                }
             }
             else if (Id == SelectionJointCoordsysID)
             {

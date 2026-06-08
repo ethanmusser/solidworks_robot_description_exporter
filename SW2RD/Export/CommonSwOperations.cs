@@ -394,35 +394,157 @@ namespace SW2RD.Export
 
         public static void RetrieveSWComponentPIDs(ModelDoc2 model, LinkNode node)
         {
-            // Refresh the per-group PIDs first; the legacy flat lists below are
-            // derived from them so older readers keep working.
+            // Refresh the per-group PIDs (plus the captured name / path metadata)
+            // first; the legacy flat lists below are derived from them so older
+            // readers keep working.
             if (node.Link.VisualGroups != null)
             {
                 foreach (MeshGroup group in node.Link.VisualGroups)
                 {
-                    group.ComponentPIDs = SaveSWComponents(model, group.Components);
+                    SaveGroupRefs(model, group);
                 }
             }
             if (node.Link.CollisionGroups != null)
             {
                 foreach (MeshGroup group in node.Link.CollisionGroups)
                 {
-                    group.ComponentPIDs = SaveSWComponents(model, group.Components);
+                    SaveGroupRefs(model, group);
                 }
             }
 
             // Mirror the flattened component lists into the single-list PID
-            // fields used by the fallback component storage path.
+            // fields used by the fallback component storage path. These do not
+            // carry name / path metadata; the per-group lists are canonical.
             node.Link.SWComponentPIDs = SaveSWComponents(model, node.Link.VisualComponents);
             node.Link.CollisionComponentPIDs = SaveSWComponents(model, node.Link.CollisionComponents);
 
-            if (node.Link.InertialComponents != null)
-            {
-                node.Link.InertialComponentPIDs = SaveSWComponents(model, node.Link.InertialComponents);
-            }
+            SaveInertialRefs(model, node.Link);
+
             foreach (LinkNode child in node.Nodes)
             {
                 RetrieveSWComponentPIDs(model, child);
+            }
+        }
+
+        // Persists a mesh group's component references: a fresh PID + name + path
+        // for each live (resolved) component, PLUS any references that failed to
+        // resolve on load (UnresolvedComponentRefs) preserved verbatim. The three
+        // ComponentPIDs / ComponentNames / ComponentPaths lists stay index-aligned.
+        //
+        // Preserving the unresolved references is the fix for the silent data
+        // loss: without it, re-saving a config whose component failed to resolve
+        // (e.g. after a PDM pull) would rebuild ComponentPIDs from the live set
+        // only, erasing the still-stored-but-unresolved reference forever.
+        private static void SaveGroupRefs(ModelDoc2 model, MeshGroup group)
+        {
+            List<byte[]> pids = new List<byte[]>();
+            List<string> names = new List<string>();
+            List<string> paths = new List<string>();
+
+            if (group.Components != null)
+            {
+                foreach (Component2 component in group.Components)
+                {
+                    if (component == null)
+                    {
+                        continue;
+                    }
+                    byte[] pid = SaveSWComponent(model, component);
+                    if (pid == null)
+                    {
+                        continue;
+                    }
+                    pids.Add(pid);
+                    names.Add(SafeComponentName(component));
+                    paths.Add(SafeComponentPath(component));
+                }
+            }
+
+            AppendUnresolvedRefs(group.UnresolvedComponentRefs, pids, names, paths);
+
+            group.ComponentPIDs = pids;
+            group.ComponentNames = names;
+            group.ComponentPaths = paths;
+        }
+
+        // Inertial-list equivalent of SaveGroupRefs.
+        private static void SaveInertialRefs(ModelDoc2 model, Link link)
+        {
+            List<byte[]> pids = new List<byte[]>();
+            List<string> names = new List<string>();
+            List<string> paths = new List<string>();
+
+            if (link.InertialComponents != null)
+            {
+                foreach (Component2 component in link.InertialComponents)
+                {
+                    if (component == null)
+                    {
+                        continue;
+                    }
+                    byte[] pid = SaveSWComponent(model, component);
+                    if (pid == null)
+                    {
+                        continue;
+                    }
+                    pids.Add(pid);
+                    names.Add(SafeComponentName(component));
+                    paths.Add(SafeComponentPath(component));
+                }
+            }
+
+            AppendUnresolvedRefs(link.UnresolvedInertialRefs, pids, names, paths);
+
+            link.InertialComponentPIDs = pids;
+            link.InertialComponentNames = names;
+            link.InertialComponentPaths = paths;
+        }
+
+        // Appends preserved unresolved references to the index-aligned save
+        // lists, so they round-trip even though no live component backs them.
+        private static void AppendUnresolvedRefs(
+            List<ComponentRef> unresolved,
+            List<byte[]> pids,
+            List<string> names,
+            List<string> paths)
+        {
+            if (unresolved == null)
+            {
+                return;
+            }
+            foreach (ComponentRef reference in unresolved)
+            {
+                if (reference?.Pid == null)
+                {
+                    continue;
+                }
+                pids.Add((byte[])reference.Pid.Clone());
+                names.Add(reference.Name ?? "");
+                paths.Add(reference.Path ?? "");
+            }
+        }
+
+        private static string SafeComponentName(Component2 component)
+        {
+            try
+            {
+                return component.Name2 ?? "";
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                return "";
+            }
+        }
+
+        private static string SafeComponentPath(Component2 component)
+        {
+            try
+            {
+                return component.GetPathName() ?? "";
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                return "";
             }
         }
 
@@ -488,7 +610,13 @@ namespace SW2RD.Export
         }
 
         // Converts the PIDs to actual references to the components and proceeds recursively
-        // through the child nodes
+        // through the child nodes. Each reference is resolved by its persistent ID
+        // first; if that fails (e.g. the persist reference went stale after a PDM
+        // pull) it falls back to re-binding by the saved instance name / document
+        // path. References that resolve neither way are preserved on the group /
+        // link as UnresolvedComponentRefs so a later save does not erase them, and
+        // a descriptive line naming the missing component(s) is added to
+        // problemLinks for the caller to surface.
         public static void LoadSWComponents(ModelDoc2 model, LinkNode node, List<string> problemLinks)
         {
             logger.Info("Loading SolidWorks components for " +
@@ -499,59 +627,28 @@ namespace SW2RD.Export
             // path that bypassed the DataContract OnDeserialized callback.
             node.Link.MigrateLegacyComponents();
 
-            // Resolve each visual group's components from its PID list. The
-            // legacy SWComponentPIDs is a flattened mirror used only by older
-            // readers; it is rebuilt from the groups on save.
-            int totalVisualPIDs = 0;
             int totalVisualLoaded = 0;
             foreach (MeshGroup group in node.Link.VisualGroups)
             {
-                if (group.ComponentPIDs == null)
-                {
-                    group.ComponentPIDs = new List<byte[]>();
-                }
-                group.Components = LoadSWComponents(model, group.ComponentPIDs);
-                totalVisualPIDs += group.ComponentPIDs.Count;
+                ResolveMeshGroup(model, group);
                 totalVisualLoaded += group.Components.Count;
-            }
-            if (totalVisualLoaded != totalVisualPIDs)
-            {
-                problemLinks.Add(node.Link.Name);
-                logger.Error("Link " + node.Link.Name + " did not fully load all visual components");
+                ReportMissing(problemLinks, node.Link.Name, "visual", group.UnresolvedComponentRefs);
             }
             logger.Info("Loaded " + totalVisualLoaded + " visual components for link " + node.Link.Name +
                 " across " + node.Link.VisualGroups.Count + " group(s)");
 
-            int totalCollisionPIDs = 0;
             int totalCollisionLoaded = 0;
             foreach (MeshGroup group in node.Link.CollisionGroups)
             {
-                if (group.ComponentPIDs == null)
-                {
-                    group.ComponentPIDs = new List<byte[]>();
-                }
-                group.Components = LoadSWComponents(model, group.ComponentPIDs);
-                totalCollisionPIDs += group.ComponentPIDs.Count;
+                ResolveMeshGroup(model, group);
                 totalCollisionLoaded += group.Components.Count;
-            }
-            if (totalCollisionLoaded != totalCollisionPIDs)
-            {
-                problemLinks.Add(node.Link.Name);
-                logger.Error("Link " + node.Link.Name + " did not fully load all collision components");
+                ReportMissing(problemLinks, node.Link.Name, "collision", group.UnresolvedComponentRefs);
             }
             logger.Info("Loaded " + totalCollisionLoaded + " collision components for link " + node.Link.Name +
                 " across " + node.Link.CollisionGroups.Count + " group(s)");
 
-            if (node.Link.InertialComponentPIDs == null)
-            {
-                node.Link.InertialComponentPIDs = new List<byte[]>();
-            }
-            node.Link.InertialComponents = LoadSWComponents(model, node.Link.InertialComponentPIDs);
-            if (node.Link.InertialComponents.Count != node.Link.InertialComponentPIDs.Count)
-            {
-                problemLinks.Add(node.Link.Name);
-                logger.Error("Link " + node.Link.Name + " did not fully load all inertial components");
-            }
+            ResolveInertial(model, node.Link);
+            ReportMissing(problemLinks, node.Link.Name, "inertial", node.Link.UnresolvedInertialRefs);
             logger.Info("Loaded " + node.Link.InertialComponents.Count + " inertial components for link " + node.Link.Name);
 
             if (node.Link.Sites == null)
@@ -563,6 +660,196 @@ namespace SW2RD.Export
             {
                 LoadSWComponents(model, Child, problemLinks);
             }
+        }
+
+        // Resolves a mesh group's saved references (PID + name/path) into live
+        // components, partitioning them into group.Components (resolved) and
+        // group.UnresolvedComponentRefs (failed). Index-guards the name/path
+        // lists since they may be shorter than ComponentPIDs for legacy configs.
+        private static void ResolveMeshGroup(ModelDoc2 model, MeshGroup group)
+        {
+            if (group.ComponentPIDs == null)
+            {
+                group.ComponentPIDs = new List<byte[]>();
+            }
+            if (group.ComponentNames == null)
+            {
+                group.ComponentNames = new List<string>();
+            }
+            if (group.ComponentPaths == null)
+            {
+                group.ComponentPaths = new List<string>();
+            }
+
+            ResolveRefs(
+                model,
+                group.ComponentPIDs,
+                group.ComponentNames,
+                group.ComponentPaths,
+                out List<Component2> resolved,
+                out List<ComponentRef> unresolved);
+
+            group.Components = resolved;
+            group.UnresolvedComponentRefs = unresolved;
+        }
+
+        // Inertial-list equivalent of ResolveMeshGroup.
+        private static void ResolveInertial(ModelDoc2 model, Link link)
+        {
+            if (link.InertialComponentPIDs == null)
+            {
+                link.InertialComponentPIDs = new List<byte[]>();
+            }
+            if (link.InertialComponentNames == null)
+            {
+                link.InertialComponentNames = new List<string>();
+            }
+            if (link.InertialComponentPaths == null)
+            {
+                link.InertialComponentPaths = new List<string>();
+            }
+
+            ResolveRefs(
+                model,
+                link.InertialComponentPIDs,
+                link.InertialComponentNames,
+                link.InertialComponentPaths,
+                out List<Component2> resolved,
+                out List<ComponentRef> unresolved);
+
+            link.InertialComponents = resolved;
+            link.UnresolvedInertialRefs = unresolved;
+        }
+
+        // Core resolver shared by the mesh-group and inertial paths.
+        private static void ResolveRefs(
+            ModelDoc2 model,
+            List<byte[]> pids,
+            List<string> names,
+            List<string> paths,
+            out List<Component2> resolved,
+            out List<ComponentRef> unresolved)
+        {
+            resolved = new List<Component2>();
+            unresolved = new List<ComponentRef>();
+            for (int i = 0; i < pids.Count; i++)
+            {
+                byte[] pid = pids[i];
+                string name = (i < names.Count) ? names[i] : null;
+                string path = (i < paths.Count) ? paths[i] : null;
+                Component2 component = ResolveComponentRef(model, pid, name, path);
+                if (component != null)
+                {
+                    resolved.Add(component);
+                }
+                else
+                {
+                    unresolved.Add(new ComponentRef(pid, name, path));
+                }
+            }
+        }
+
+        // Resolves a single saved reference: persistent ID first, then an
+        // instance-NAME fallback against the live assembly tree. The fallback
+        // exists because a persist reference can go stale (e.g. a PDM pull
+        // rebuilds the assembly) even though the SAME component instance still
+        // exists; matching by its instance name (Component2.Name2) re-binds it
+        // instead of silently dropping it.
+        //
+        // The saved document PATH is captured and round-tripped for display /
+        // diagnostics ONLY - it is deliberately NOT used to auto-rebind. A
+        // document path (Component2.GetPathName) identifies the PART FILE, which
+        // every instance of that part shares; it does NOT identify an INSTANCE.
+        // Re-binding by path therefore grabs an arbitrary sibling instance of
+        // the same part. The concrete bug this caused: a user inserted a second
+        // gripper instance (3_DOF_ARM_GRIPPER-2, same .SLDPRT as the existing
+        // -1), added it to a visual group, saved, then deleted instance -2.
+        // On reload the stale PID for -2 correctly failed, but the path fallback
+        // then matched the SURVIVING -1 instance, so the deleted reference was
+        // silently re-bound to the wrong component (listbox stuck at "2 comp.",
+        // no "missing" annotation) instead of being flagged missing. Name2 is
+        // unique per instance within an assembly and stable across PDM pulls,
+        // so it is the only sound rebind key.
+        public static Component2 ResolveComponentRef(
+            ModelDoc2 model, byte[] pid, string name, string path)
+        {
+            Component2 component = (pid != null) ? LoadSWComponent(model, pid) : null;
+            if (component != null)
+            {
+                return component;
+            }
+
+            Component2 byName = FindComponentByInstanceName(model, name);
+            if (byName != null)
+            {
+                logger.Warn("Re-bound component '" + name +
+                    "' by instance name after its persistent reference went stale");
+            }
+            return byName;
+        }
+
+        // Walks every component in the assembly (all levels, including suppressed
+        // / missing-file components) and returns the one whose instance name
+        // (Component2.Name2) exactly matches the saved name. Returns null when
+        // the name is empty, the document is not an assembly, or no instance
+        // matches (component deleted / renamed since save). Matching is by
+        // INSTANCE NAME ONLY - never by document path - because a path is shared
+        // by every instance of a part and cannot distinguish them (see
+        // ResolveComponentRef for the deleted-sibling-instance bug this avoids).
+        public static Component2 FindComponentByInstanceName(
+            ModelDoc2 model, string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return null;
+            }
+            if (!(model is AssemblyDoc assy))
+            {
+                return null;
+            }
+
+            object[] components = (object[])assy.GetComponents(false);
+            if (components == null)
+            {
+                return null;
+            }
+
+            foreach (object obj in components)
+            {
+                Component2 component = obj as Component2;
+                if (component == null)
+                {
+                    continue;
+                }
+
+                if (string.Equals(
+                        SafeComponentName(component), name, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return component;
+                }
+            }
+
+            return null;
+        }
+
+        // Adds a descriptive, user-facing line naming the missing component(s)
+        // for a link section, and logs an aggregate error. No-op when nothing is
+        // missing.
+        private static void ReportMissing(
+            List<string> problemLinks, string linkName, string section, List<ComponentRef> unresolved)
+        {
+            if (unresolved == null || unresolved.Count == 0)
+            {
+                return;
+            }
+            List<string> labels = new List<string>();
+            foreach (ComponentRef reference in unresolved)
+            {
+                labels.Add("'" + (reference?.DisplayLabel ?? "(unknown component)") + "'");
+            }
+            problemLinks.Add(linkName + " (" + section + "): " + string.Join(", ", labels));
+            logger.Error("Link " + linkName + " could not resolve " + unresolved.Count +
+                " " + section + " component(s): " + string.Join(", ", labels));
         }
 
         // Converts the PIDs to actual references to the components

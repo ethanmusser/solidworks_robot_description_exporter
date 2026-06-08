@@ -193,12 +193,21 @@ namespace SW2RD.Core
 
     /// <summary>
     /// SolidWorks component identity without carrying a live COM object. The
-    /// persistent ID is base64-ready so the upcoming JSON configuration layer
-    /// can store it without binding to SolidWorks.Interop.sldworks.Component2.
+    /// persistent ID is base64-ready so the JSON configuration layer can store
+    /// it without binding to SolidWorks.Interop.sldworks.Component2.
+    ///
+    /// <see cref="DisplayName"/> (the component instance Name2) and
+    /// <see cref="Path"/> (its document path) are persisted alongside the
+    /// persistent ID so that a stale reference - e.g. after a PDM pull
+    /// invalidates the persist reference even though the component still exists
+    /// in the assembly - can be re-bound by name/path on load instead of being
+    /// silently dropped. <see cref="Path"/> defaults to null so configs written
+    /// before this field existed still deserialize.
     /// </summary>
     public sealed record ComponentReferenceModel(
         string DisplayName,
-        byte[] PersistentId);
+        byte[] PersistentId,
+        string Path = null);
 
     public enum InertialSourceModel
     {

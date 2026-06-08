@@ -180,9 +180,14 @@ namespace SW2RD.Export
                 VisualGroups = ToLegacyMeshGroups(model.VisualGroups),
                 CollisionGroups = ToLegacyMeshGroups(model.CollisionGroups),
                 Sites = ToLegacySites(model.Sites),
-                InertialComponentPIDs = ToPersistentIds(model.InertialComponents),
                 WorldAttachment = model.WorldAttachment,
             };
+
+            PopulateLegacyRefs(
+                model.InertialComponents,
+                link.InertialComponentPIDs,
+                link.InertialComponentNames,
+                link.InertialComponentPaths);
 
             ApplyInertial(model.Inertial, link.Inertial);
             ApplyMaterial(model.Material, link.Visual.Material);
@@ -216,7 +221,10 @@ namespace SW2RD.Export
                 ToCoreMeshGroups(link.CollisionGroups),
                 link.CollisionUsesVisual,
                 ToCoreInertialSource(link.InertialSource),
-                ToComponentReferences(link.InertialComponentPIDs),
+                ToComponentReferences(
+                    link.InertialComponentPIDs,
+                    link.InertialComponentNames,
+                    link.InertialComponentPaths),
                 ToCoreSites(link.Sites),
                 isRoot ? null : ToCoreJoint(link.Joint),
                 link.Children?.Select(child => ToCore(child)).ToList() ?? new List<LinkModel>(),
@@ -377,13 +385,47 @@ namespace SW2RD.Export
 
             foreach (MeshGroupModel group in groups)
             {
-                result.Add(new MeshGroup(group.Name)
+                MeshGroup meshGroup = new MeshGroup(group.Name)
                 {
                     MeshFilename = group.MeshFilename ?? "",
-                    ComponentPIDs = ToPersistentIds(group.Components),
-                });
+                };
+                PopulateLegacyRefs(
+                    group.Components,
+                    meshGroup.ComponentPIDs,
+                    meshGroup.ComponentNames,
+                    meshGroup.ComponentPaths);
+                result.Add(meshGroup);
             }
             return result;
+        }
+
+        // Fills the index-aligned (PID, name, path) legacy lists from a list of
+        // ComponentReferenceModel records. Skips entries with no persistent ID so
+        // the three lists stay aligned. The lists are cleared first so this is
+        // safe to call against a freshly-constructed (empty) MeshGroup / Link.
+        private static void PopulateLegacyRefs(
+            IReadOnlyList<ComponentReferenceModel> references,
+            List<byte[]> pids,
+            List<string> names,
+            List<string> paths)
+        {
+            pids.Clear();
+            names.Clear();
+            paths.Clear();
+            if (references == null)
+            {
+                return;
+            }
+            foreach (ComponentReferenceModel reference in references)
+            {
+                if (reference?.PersistentId == null)
+                {
+                    continue;
+                }
+                pids.Add((byte[])reference.PersistentId.Clone());
+                names.Add(reference.DisplayName ?? "");
+                paths.Add(reference.Path ?? "");
+            }
         }
 
         private static List<SiteSpec> ToLegacySites(IReadOnlyList<SiteModel> sites)
@@ -396,23 +438,6 @@ namespace SW2RD.Export
             foreach (SiteModel site in sites)
             {
                 result.Add(new SiteSpec(site.Name, site.CoordinateSystemName));
-            }
-            return result;
-        }
-
-        private static List<byte[]> ToPersistentIds(IReadOnlyList<ComponentReferenceModel> references)
-        {
-            List<byte[]> result = new List<byte[]>();
-            if (references == null)
-            {
-                return result;
-            }
-            foreach (ComponentReferenceModel reference in references)
-            {
-                if (reference?.PersistentId != null)
-                {
-                    result.Add((byte[])reference.PersistentId.Clone());
-                }
             }
             return result;
         }
@@ -536,7 +561,10 @@ namespace SW2RD.Export
             return groups.Select(group => new MeshGroupModel(
                 group.Name ?? "",
                 group.MeshFilename ?? "",
-                ToComponentReferences(group.ComponentPIDs))).ToList();
+                ToComponentReferences(
+                    group.ComponentPIDs,
+                    group.ComponentNames,
+                    group.ComponentPaths))).ToList();
         }
 
         private static List<SiteModel> ToCoreSites(List<SiteSpec> sites)
@@ -551,19 +579,31 @@ namespace SW2RD.Export
                 EmptyPose())).ToList();
         }
 
-        private static List<ComponentReferenceModel> ToComponentReferences(List<byte[]> persistentIds)
+        // Builds the format-neutral ComponentReferenceModel list from the
+        // index-aligned legacy (PID, name, path) lists. The name/path lists may
+        // be shorter than the PID list for configs / migrations that predate
+        // them, so each lookup is index-guarded.
+        private static List<ComponentReferenceModel> ToComponentReferences(
+            List<byte[]> persistentIds,
+            List<string> names,
+            List<string> paths)
         {
             List<ComponentReferenceModel> result = new List<ComponentReferenceModel>();
             if (persistentIds == null)
             {
                 return result;
             }
-            foreach (byte[] pid in persistentIds)
+            for (int i = 0; i < persistentIds.Count; i++)
             {
-                if (pid != null)
+                byte[] pid = persistentIds[i];
+                if (pid == null)
                 {
-                    result.Add(new ComponentReferenceModel("", (byte[])pid.Clone()));
+                    continue;
                 }
+                string name = (names != null && i < names.Count) ? names[i] : "";
+                string path = (paths != null && i < paths.Count) ? paths[i] : "";
+                result.Add(new ComponentReferenceModel(
+                    name ?? "", (byte[])pid.Clone(), path ?? ""));
             }
             return result;
         }

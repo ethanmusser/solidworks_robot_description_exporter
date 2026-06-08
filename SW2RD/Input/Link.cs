@@ -85,6 +85,20 @@ namespace SW2RD.Input
 
         public List<byte[]> InertialComponentPIDs;
 
+        // Inertial component instance names / paths captured at save time,
+        // index-aligned with InertialComponentPIDs. Mirror of the per-MeshGroup
+        // ComponentNames / ComponentPaths so inertial references can re-bind by
+        // name/path when a persist reference goes stale. May be shorter than
+        // InertialComponentPIDs for legacy configs - readers MUST index-guard.
+        public List<string> InertialComponentNames;
+
+        public List<string> InertialComponentPaths;
+
+        // Runtime-only: inertial references that failed to resolve on load,
+        // preserved so a re-save does not erase them. Mirror of
+        // MeshGroup.UnresolvedComponentRefs.
+        public List<ComponentRef> UnresolvedInertialRefs;
+
         public byte[] SWMainComponentPID;
 
         // Drives which set of components ComputeInertialProperties consumes.
@@ -219,6 +233,9 @@ namespace SW2RD.Input
             SWComponentPIDs = new List<byte[]>();
             CollisionComponentPIDs = new List<byte[]>();
             InertialComponentPIDs = new List<byte[]>();
+            InertialComponentNames = new List<string>();
+            InertialComponentPaths = new List<string>();
+            UnresolvedInertialRefs = new List<ComponentRef>();
             Sites = new List<SiteSpec>();
             CollisionUsesVisual = DefaultCollisionUsesVisual;
             InertialSource = InertialSource.Visual;
@@ -265,6 +282,18 @@ namespace SW2RD.Input
             if (InertialComponents == null)
             {
                 InertialComponents = new List<Component2>();
+            }
+            if (InertialComponentNames == null)
+            {
+                InertialComponentNames = new List<string>();
+            }
+            if (InertialComponentPaths == null)
+            {
+                InertialComponentPaths = new List<string>();
+            }
+            if (UnresolvedInertialRefs == null)
+            {
+                UnresolvedInertialRefs = new List<ComponentRef>();
             }
 
             if (VisualGroups == null)
@@ -328,6 +357,23 @@ namespace SW2RD.Input
             InertialComponentPIDs = (externalLink.InertialComponentPIDs != null) ?
                 new List<byte[]>(externalLink.InertialComponentPIDs) :
                 new List<byte[]>();
+
+            InertialComponentNames = (externalLink.InertialComponentNames != null) ?
+                new List<string>(externalLink.InertialComponentNames) :
+                new List<string>();
+
+            InertialComponentPaths = (externalLink.InertialComponentPaths != null) ?
+                new List<string>(externalLink.InertialComponentPaths) :
+                new List<string>();
+
+            UnresolvedInertialRefs = new List<ComponentRef>();
+            if (externalLink.UnresolvedInertialRefs != null)
+            {
+                foreach (ComponentRef r in externalLink.UnresolvedInertialRefs)
+                {
+                    UnresolvedInertialRefs.Add((r != null) ? r.Clone() : null);
+                }
+            }
 
             Sites = new List<SiteSpec>();
             if (externalLink.Sites != null)
