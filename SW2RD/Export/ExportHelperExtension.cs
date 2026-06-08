@@ -1896,6 +1896,30 @@ namespace SW2RD.Export
             return null;
         }
 
+        // Read-only existence check for a named reference feature (coord system
+        // / axis) used by the configuration-load validation to surface a saved
+        // reference whose feature no longer exists in the assembly (renamed or
+        // deleted). Uses the same side-effect-free FeatureManager walk as
+        // GetRefAxis - it does NOT perturb SelectionMgr.
+        //
+        // Component-scoped names (carrying an "@component" or " <component>"
+        // suffix) cannot be validated by a top-level FeatureManager walk and
+        // would require an expensive per-component configuration switch, so they
+        // are conservatively reported as present to avoid false "missing"
+        // warnings. Only plain top-level names are actually verified.
+        public bool ReferenceFeatureExists(string typeName, string featureName)
+        {
+            if (string.IsNullOrEmpty(featureName))
+            {
+                return false;
+            }
+            if (featureName.IndexOf('@') >= 0 || featureName.IndexOf('<') >= 0)
+            {
+                return true;
+            }
+            return FindNamedFeature(ActiveSWModel, typeName, featureName) != null;
+        }
+
         // Creates a list of all the features of this type.
         private Dictionary<string, List<Feature>> GetFeaturesOfType(string featureName, bool topLevelOnly)
         {

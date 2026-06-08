@@ -1288,12 +1288,17 @@ namespace SW2RD.Export
             {
                 List<string> problemLinks = new List<string>();
                 CommonSwOperations.LoadSWComponents(ActiveSWModel, baseNode, problemLinks);
+                ValidateFeatureReferences(baseNode, problemLinks);
 
                 if (problemLinks.Count > 0)
                 {
-                    string msg = "The following links had issues loading their associated SolidWorks components. " +
-                        "Please inspect before exporting\r\n\r\n" +
-                        string.Join(", ", problemLinks);
+                    string msg = "Some saved references (components, coordinate systems, or axes) could " +
+                        "not be found in this assembly and are shown as missing. They were preserved in " +
+                        "the configuration so you can repair or remove them - re-pick a component or " +
+                        "feature to repair the reference, or delete it. (A reference can go missing if " +
+                        "its file / feature was renamed or deleted, or its reference went stale after a " +
+                        "PDM pull.)\r\n\r\n" +
+                        string.Join("\r\n", problemLinks);
                     MessageBox.Show(msg);
                 }
             }
@@ -1305,6 +1310,62 @@ namespace SW2RD.Export
             Tree.Nodes.Add(baseNode);
             Tree.ExpandAll();
             Tree.SelectedNode = Tree.Nodes[0];
+        }
+
+        // Walks the loaded link tree and flags any saved coordinate-system /
+        // joint-axis / site coordinate-system whose feature no longer exists in
+        // the assembly (renamed or deleted). Unlike components, these resolve by
+        // feature NAME (no persistent ID), so "missing" simply means the name is
+        // gone. Findings are appended to problemLinks and surfaced in the same
+        // load-time warning as missing components. The check is read-only and
+        // conservative: component-scoped names are skipped (see
+        // ExportHelper.ReferenceFeatureExists) so it never raises a false alarm.
+        private void ValidateFeatureReferences(LinkNode node, List<string> problemLinks)
+        {
+            if (node == null || node.Link == null || Exporter == null)
+            {
+                return;
+            }
+
+            Joint joint = node.Link.Joint;
+            if (joint != null)
+            {
+                if (!string.IsNullOrEmpty(joint.CoordinateSystemName) &&
+                    !Exporter.ReferenceFeatureExists("CoordSys", joint.CoordinateSystemName))
+                {
+                    problemLinks.Add(node.Name + " (coordinate system): '" + joint.CoordinateSystemName + "'");
+                }
+
+                // Axis only applies to nested links with an explicit (non
+                // auto-derived) axis pick. The legacy "Automatically Generate"
+                // sentinel is treated like auto-derive.
+                bool axisApplies = !node.IsBaseNode && !node.IsTopLevelBody &&
+                    !joint.AutoDeriveAxis &&
+                    !string.IsNullOrEmpty(joint.AxisName) &&
+                    joint.AxisName != "Automatically Generate";
+                if (axisApplies && !Exporter.ReferenceFeatureExists("RefAxis", joint.AxisName))
+                {
+                    problemLinks.Add(node.Name + " (joint axis): '" + joint.AxisName + "'");
+                }
+            }
+
+            if (node.Link.Sites != null)
+            {
+                foreach (SiteSpec site in node.Link.Sites)
+                {
+                    if (site != null && !string.IsNullOrEmpty(site.CoordinateSystemName) &&
+                        !Exporter.ReferenceFeatureExists("CoordSys", site.CoordinateSystemName))
+                    {
+                        problemLinks.Add(node.Name + " (site '" + (site.Name ?? "") +
+                            "' coordinate system): '" + site.CoordinateSystemName + "'");
+                    }
+                }
+            }
+
+            foreach (System.Windows.Forms.TreeNode child in node.Nodes)
+            {
+                ValidateFeatureReferences(child as LinkNode, problemLinks);
+            }
         }
 
         private static void NormalizeJointTypesForUi(LinkNode node)
