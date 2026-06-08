@@ -38,7 +38,7 @@ namespace SW2RD.Input
             {
                 return null;
             }
-            return UrdfFormat.TryParse(text, out double result) ? (double?)result : current;
+            return InvariantNumberFormat.TryParse(text, out double result) ? (double?)result : current;
         }
 
         public Dynamics Clone()
@@ -48,8 +48,8 @@ namespace SW2RD.Input
 
         public void FillBoxes(TextBox boxDamping, TextBox boxFriction, string format)
         {
-            boxDamping.Text = UrdfFormat.Format(damping, format);
-            boxFriction.Text = UrdfFormat.Format(friction, format);
+            boxDamping.Text = InvariantNumberFormat.Format(damping, format);
+            boxFriction.Text = InvariantNumberFormat.Format(friction, format);
         }
 
         public void SetValues(TextBox boxDamping, TextBox boxFriction)

@@ -23,6 +23,7 @@ THE SOFTWARE.
 using SW2RD.Core;
 using SW2RD.Export;
 using SW2RD.Input;
+using SW2RD.URDF;
 using System.IO;
 using System.Linq;
 using System.Xml;

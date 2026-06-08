@@ -29,7 +29,8 @@ namespace SW2RD.Core
     /// <summary>
     /// Format-neutral robot description extracted from SolidWorks and consumed
     /// by URDF / MJCF writers. This namespace intentionally has no dependency on
-    /// SolidWorks.Interop.*, URDFElement, MJCF writer types, or DataContract.
+    /// SolidWorks.Interop.*, the SW2RD.Input edit model, MJCF writer types, or
+    /// DataContract.
     ///
     /// The tree root is an explicit world <see cref="LinkModel"/> that owns the
     /// global frame and any worldbody-direct geometry (MJCF idiom: ground planes,

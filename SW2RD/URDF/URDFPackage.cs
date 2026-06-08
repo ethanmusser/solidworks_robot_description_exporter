@@ -24,7 +24,7 @@ using SW2RD.UI;
 using System;
 using System.IO;
 
-namespace SW2RD.Input
+namespace SW2RD.URDF
 {
     public class URDFPackage
     {

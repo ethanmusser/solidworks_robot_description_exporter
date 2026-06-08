@@ -25,6 +25,7 @@ using System.IO;
 using System.Xml;
 using SW2RD.Input;
 using SW2RD.MJCF;
+using SW2RD.URDF;
 
 namespace SW2RD.Validation
 {

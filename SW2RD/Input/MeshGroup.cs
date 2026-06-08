@@ -22,7 +22,6 @@ THE SOFTWARE.
 
 using SolidWorks.Interop.sldworks;
 using System.Collections.Generic;
-using System.Runtime.Serialization;
 
 namespace SW2RD.Input
 {
@@ -86,15 +85,12 @@ namespace SW2RD.Input
     // <geom> (MJCF) / one <visual> or <collision> element (URDF). Splitting a
     // concave shape across multiple groups gives MuJoCo a union of convex hulls
     // (the same idea works for URDF consumers like Bullet/ODE/Drake).
-    [DataContract(IsReference = true, Namespace = "http://schemas.datacontract.org/2004/07/SW2URDF")]
     public class MeshGroup
     {
-        [DataMember]
         public string Name;
 
         // Persistent reference IDs for this group's components. Survives save/load
         // of the SW configuration; resolved to live Component2 instances on demand.
-        [DataMember(IsRequired = false)]
         public List<byte[]> ComponentPIDs;
 
         // Component instance names (Component2.Name2) and document paths captured
@@ -103,10 +99,8 @@ namespace SW2RD.Input
         // they survive (as ComponentReferenceModel.DisplayName / Path) through the
         // canonical Config JSON. May be shorter than ComponentPIDs for configs
         // written before these fields existed - readers MUST index-guard.
-        [DataMember(IsRequired = false)]
         public List<string> ComponentNames;
 
-        [DataMember(IsRequired = false)]
         public List<string> ComponentPaths;
 
         // Runtime-only set of components, populated from ComponentPIDs after the

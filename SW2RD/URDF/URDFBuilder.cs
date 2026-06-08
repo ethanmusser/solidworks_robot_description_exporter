@@ -27,12 +27,12 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Xml;
 
-namespace SW2RD.Input
+namespace SW2RD.URDF
 {
     // Records-native URDF writer. Consumes the format-neutral KinematicTree
     // (SW2RD.Core) directly - the same canonical model MJCFBuilder consumes -
     // and emits a single-robot URDF document. All angular quantities on the
-    // tree are canonical RADIANS (the KinematicTreeAdapter converts the legacy
+    // tree are canonical RADIANS (the KinematicTreeAdapter converts the
     // degree-basis edit model at the ToCore boundary), and URDF expresses
     // angles in radians, so this writer emits scalar joint values and rpy
     // angles as-is with no unit conversion.
@@ -46,8 +46,8 @@ namespace SW2RD.Input
     {
         private static readonly log4net.ILog logger = Logger.GetLogger();
 
-        // Mirrors URDFAttribute's number formatting so output is
-        // byte-compatible with the retired embedded writer.
+        // Invariant en-US number formatting, kept byte-compatible with the
+        // retired embedded writer.
         private static readonly NumberFormatInfo Number = URDFNumberFormat();
 
         private static NumberFormatInfo URDFNumberFormat()
@@ -81,8 +81,8 @@ namespace SW2RD.Input
 
         // Reduces the multi-tree, world-aware KinematicTree down to the single
         // body URDF can describe. Warns (advisory only) on the three URDF
-        // degradation cases the legacy KinematicTreeAdapter.ToLegacyRobot used
-        // to surface.
+        // degradation cases: extra top-level bodies, a floating base, and
+        // world-level geometry.
         private static LinkModel SelectBaseLink(KinematicTree tree)
         {
             IReadOnlyList<LinkModel> topLevels = tree.TopLevelBodies ?? Array.Empty<LinkModel>();

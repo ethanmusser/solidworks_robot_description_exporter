@@ -22,9 +22,9 @@ namespace SW2RD.Export
     /// SolidWorks restarts and is not tied to any particular .SLDASM doc.
     ///
     /// Per-document configuration (the link tree, joint properties, etc.)
-    /// stays on the SW model attribute (DataContract) or the new
-    /// Config JSON; this class is ONLY for choices that should
-    /// pre-populate the Setup tab when the PMPage opens.
+    /// stays on the SW model attribute as canonical Config JSON; this class
+    /// is ONLY for choices that should pre-populate the Setup tab when the
+    /// PMPage opens.
     ///
     /// All operations are wrapped in try/catch so a missing / unreadable
     /// registry hive (e.g. on a locked-down machine) silently falls back

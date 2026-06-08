@@ -59,7 +59,7 @@ namespace SW2RD.Export
             error = false;
 
             // Canonical SW2RD v1 JSON.
-            return TryLoadV2Json(model, ConfigurationSwAttributeName);
+            return TryLoadConfigJson(model, ConfigurationSwAttributeName);
         }
 
         /// <summary>
@@ -77,8 +77,8 @@ namespace SW2RD.Export
 
         /// <summary>
         /// Deletes the canonical SW2RD v1 JSON configuration attribute from
-        /// the model. Legacy attributes are left untouched so the user can
-        /// still import them explicitly after clearing the SW2RD cache.
+        /// the model. Any unrelated attributes a model may carry are left
+        /// untouched; only the SW2RD v1 attribute is removed.
         /// </summary>
         public static bool ClearSavedConfiguration(ModelDoc2 model)
         {
@@ -117,7 +117,7 @@ namespace SW2RD.Export
         // JSON. Returns null if the attribute is missing, empty, or does not
         // parse as JSON (the leading-'{' payload-shape check guards against a
         // non-JSON attribute payload).
-        private static LinkNode TryLoadV2Json(ModelDoc2 model, string attributeName)
+        private static LinkNode TryLoadConfigJson(ModelDoc2 model, string attributeName)
         {
             string jsonData = ReadAttributeData(model, attributeName);
             if (string.IsNullOrWhiteSpace(jsonData))
@@ -137,7 +137,7 @@ namespace SW2RD.Export
             catch (Exception ex)
             {
                 logger.Error("Failed to read Config JSON from attribute \"" + attributeName +
-                    "\"; falling through to next probe.", ex);
+                    "\"; treating the model as having no SW2RD configuration.", ex);
                 logger.Error(jsonData);
                 return null;
             }

@@ -30,11 +30,9 @@ namespace SW2RD.Input
     // TreeView surface can carry per-link state alongside the SOLIDWORKS-side
     // Link payload.
     //
-    // LinkNode is not serialized directly; node persistence happens via
-    // the DataContract Link path in
-    // ConfigurationSerialization — and TreeNode.Clone() uses MemberwiseClone,
-    // not BinaryFormatter, so dropping these annotations has no behavior
-    // impact.
+    // LinkNode is not serialized directly; node persistence happens by
+    // bridging the Link tree to the canonical Config JSON (KinematicTree)
+    // via ConfigBridge / KinematicTreeAdapter in ConfigurationSerialization.
     //
     // The tree root is now an explicit <see cref="WorldNode"/> (a LinkNode
     // subclass) that owns the global frame and any worldbody-direct

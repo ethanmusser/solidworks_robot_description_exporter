@@ -40,9 +40,8 @@ namespace SW2RD.Test
         }
 
         // Verifies that a true value on Joint.AxisFlipped survives a
-        // SetElement copy (which is the authoritative clone path used by
-        // Link.Clone after every DataContractSerializer reload). Without the
-        // explicit `AxisFlipped = joint.AxisFlipped;` line in
+        // SetElement copy (the authoritative clone path used by Link.Clone).
+        // Without the explicit `AxisFlipped = joint.AxisFlipped;` line in
         // Joint.SetElement, this would silently reset to the zero-init
         // default.
         [Fact]

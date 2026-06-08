@@ -30,10 +30,11 @@ using System.Linq;
 namespace SW2RD.Export
 {
     /// <summary>
-    /// Boundary adapter between the new format-neutral Core records and the
-    /// legacy URDFElement-backed model. The translation stays explicit
-    /// so writers can grow KinematicTree entry points while existing export-time
-    /// mesh generation and serialization code continues to compile.
+    /// Boundary adapter between the format-neutral Core records (KinematicTree)
+    /// and the SolidWorks edit/compute model (SW2RD.Input: Robot / Link / Joint).
+    /// The translation stays explicit so the records-native URDF / MJCF writers
+    /// consume KinematicTree while the PMPage and export-time mesh / inertial /
+    /// kinematics computation continue to operate on the editable Input model.
     /// </summary>
     public static class KinematicTreeAdapter
     {
@@ -296,13 +297,10 @@ namespace SW2RD.Export
             target.Reference = angular ? RadiansToDegrees(source.Reference) : source.Reference;
             target.Armature = source.Armature;
 
-            // Legacy "Automatically Generate" axis sentinel migration on
-            // the Config path. Pre-AutoDeriveAxis JSON saves stored the
-            // sentinel literal in AxisName; map it onto the new boolean
-            // here so the SelectionBox-only UI sees a clean (true,
-            // empty) pair without depending on the DataContract
-            // [OnDeserialized] callback (which doesn't run for the JSON
-            // path).
+            // "Automatically Generate" axis sentinel migration on the Config
+            // path. Pre-AutoDeriveAxis JSON saves stored the sentinel literal
+            // in AxisName; map it onto the AutoDeriveAxis boolean here so the
+            // SelectionBox-only UI sees a clean (true, empty) pair.
             if (target.AxisName == "Automatically Generate")
             {
                 target.AutoDeriveAxis = true;

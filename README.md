@@ -101,9 +101,7 @@ sha256sum -c sw2rdSetup_<tag>.exe.sha256
 
 `SW2RD` is intentionally a separate add-in from the original SolidWorks URDF Exporter (`SW2URDF`): the DLL filename, COM CLSID, install directory, registry root, log directory, and Inno Setup AppId are all distinct. Both add-ins can coexist on the same machine.
 
-When `SW2RD` opens an existing `SW2URDF` assembly, it transparently reads the saved export configuration and writes the new attribute (`SW2RD Export Configuration (v1)`) on the next save. The old `URDF Export Configuration (v1.5)` attribute is preserved on the model so the `SW2URDF` exporter can still read it.
-
-Supported import paths are based on the saved configuration schema, not the `SW2URDF` product version. `SW2RD` imports the latest `SW2URDF` XML configuration schema (`URDF Export Configuration (v1.5)`) and older configurations stored as v1.3-v1.5 DataContract XML or pre-v1.3 `SerialNode` XML.
+`SW2RD` reads and writes its own configuration attribute (`SW2RD Export Configuration (v1)`) and does not import configurations saved by `SW2URDF`. Opening an assembly that was only ever configured in `SW2URDF` starts a fresh `SW2RD` export tree; any existing `SW2URDF` attribute is left untouched on the model so the `SW2URDF` exporter can still read it.
 
 ## Converting mesh format from 3dxml to dae
 

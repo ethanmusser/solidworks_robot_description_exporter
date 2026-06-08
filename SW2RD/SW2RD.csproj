@@ -85,7 +85,6 @@
     <Reference Include="System.Configuration" />
     <Reference Include="System.DirectoryServices" />
     <Reference Include="System.IO.Compression" />
-    <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Web" />
   </ItemGroup>
 

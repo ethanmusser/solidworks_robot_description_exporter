@@ -4,7 +4,7 @@ namespace SW2RD.UI
 {
     /// <summary>
     /// No-op <see cref="IMessageBox"/> used to run the URDF package creation path
-    /// headless. <see cref="URDFPackage.CreateDirectories"/> shows an
+    /// headless. <see cref="SW2RD.URDF.URDFPackage.CreateDirectories"/> shows an
     /// informational "Creating URDF Package ..." box on every URDF export; under
     /// the unattended SW-attached test suite that modal box deadlocks the test
     /// thread. The fixture injects this implementation so the export proceeds

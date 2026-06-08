@@ -20,21 +20,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-using System.Runtime.Serialization;
-
 namespace SW2RD.Input
 {
     // Specification for a MJCF <site> attached to a body. Sites are configured per-link
     // in the property manager: the user supplies a name and a SolidWorks reference
     // coordinate system. At export time the site's pos/quat is computed as the transform
     // from the parent body's coordinate system to the site's coordinate system.
-    [DataContract(IsReference = true, Namespace = "http://schemas.datacontract.org/2004/07/SW2URDF")]
     public class SiteSpec
     {
-        [DataMember]
         public string Name;
 
-        [DataMember]
         public string CoordinateSystemName;
 
         public SiteSpec()
