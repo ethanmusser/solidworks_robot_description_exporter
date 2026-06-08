@@ -33,7 +33,7 @@ namespace SW2RD.MJCF
     // The MJCF builder consumes the format-neutral KinematicTree
     // (SW2RD.Core) directly. Callers that still hold a Robot tree go
     // through KinematicTreeAdapter.ToCore at the boundary; the builder
-    // itself knows nothing about URDFElement / SolidWorks types.
+    // itself knows nothing about the SW2RD.Input edit model / SolidWorks types.
     //
     // Mapping rules:
     //   - URDF <joint><origin xyz=... rpy=.../></joint> for the joint

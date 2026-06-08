@@ -1,7 +1,7 @@
 using System.Text;
 using System.Xml;
 
-namespace SW2RD.Input
+namespace SW2RD.URDF
 {
     //Initiates the XMLWriter and its necessary settings
     public class URDFWriter

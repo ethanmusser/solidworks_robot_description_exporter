@@ -3,7 +3,7 @@ using SW2RD.Utilities;
 using System.Text;
 using System.Xml;
 
-namespace SW2RD.Input
+namespace SW2RD.URDF
 {
     //A class that just writes the bare minimum of the manifest file necessary for ROS packages.
     public class PackageXMLWriter

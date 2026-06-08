@@ -74,7 +74,7 @@ namespace SW2RD.Input
             {
                 return null;
             }
-            if (UrdfFormat.TryParse(text, out double result))
+            if (InvariantNumberFormat.TryParse(text, out double result))
             {
                 return result;
             }
@@ -96,10 +96,10 @@ namespace SW2RD.Input
         public void FillBoxes(TextBox boxLower, TextBox boxUpper,
             TextBox boxEffort, TextBox boxVelocity, string format)
         {
-            boxLower.Text = UrdfFormat.Format(lower, format);
-            boxUpper.Text = UrdfFormat.Format(upper, format);
-            boxEffort.Text = UrdfFormat.Format(effort, format);
-            boxVelocity.Text = UrdfFormat.Format(velocity, format);
+            boxLower.Text = InvariantNumberFormat.Format(lower, format);
+            boxUpper.Text = InvariantNumberFormat.Format(upper, format);
+            boxEffort.Text = InvariantNumberFormat.Format(effort, format);
+            boxVelocity.Text = InvariantNumberFormat.Format(velocity, format);
         }
 
         public void SetValues(TextBox boxLower, TextBox boxUpper,

@@ -28,6 +28,7 @@ using SW2RD.MJCF;
 using SW2RD.ROS;
 using SW2RD.Input;
 using SW2RD.UI;
+using SW2RD.URDF;
 using SW2RD.Utilities;
 using SW2RD.Validation;
 using System;

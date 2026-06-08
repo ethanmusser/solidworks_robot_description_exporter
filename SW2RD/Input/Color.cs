@@ -44,7 +44,7 @@ namespace SW2RD.Input
         public void FillBoxes(DomainUpDown boxRed, DomainUpDown boxGreen,
             DomainUpDown boxBlue, DomainUpDown boxAlpha, string format)
         {
-            string[] rgbaText = UrdfFormat.FormatArray(rgba, format);
+            string[] rgbaText = InvariantNumberFormat.FormatArray(rgba, format);
             if (rgbaText != null)
             {
                 boxRed.Text = rgbaText[0];
@@ -57,7 +57,7 @@ namespace SW2RD.Input
         public void Update(DomainUpDown boxRed, DomainUpDown boxGreen,
             DomainUpDown boxBlue, DomainUpDown boxAlpha)
         {
-            rgba = UrdfFormat.ParseArray(
+            rgba = InvariantNumberFormat.ParseArray(
                 new string[] { boxRed.Text, boxGreen.Text, boxBlue.Text, boxAlpha.Text });
         }
 

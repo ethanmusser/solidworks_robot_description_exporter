@@ -166,8 +166,9 @@ namespace SW2RD.Input
             return clone;
         }
 
-        // In-place copy from another Joint (replaces the legacy
-        // URDFElement.SetElement). Used by clone / duplicate-node paths.
+        // In-place copy from another Joint. Used by clone / duplicate-node
+        // paths. Because this is a plain-field copy (not attribute-driven),
+        // every new persistent Joint field must be added here explicitly.
         public void SetElement(Joint joint)
         {
             Name = joint.Name;

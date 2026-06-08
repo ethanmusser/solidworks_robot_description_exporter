@@ -38,12 +38,12 @@ namespace SW2RD.Input
         public void FillBoxes(TextBox boxIxx, TextBox boxIxy, TextBox boxIxz,
             TextBox boxIyy, TextBox boxIyz, TextBox boxIzz, string format)
         {
-            boxIxx.Text = UrdfFormat.Format(Ixx, format);
-            boxIxy.Text = UrdfFormat.Format(Ixy, format);
-            boxIxz.Text = UrdfFormat.Format(Ixz, format);
-            boxIyy.Text = UrdfFormat.Format(Iyy, format);
-            boxIyz.Text = UrdfFormat.Format(Iyz, format);
-            boxIzz.Text = UrdfFormat.Format(Izz, format);
+            boxIxx.Text = InvariantNumberFormat.Format(Ixx, format);
+            boxIxy.Text = InvariantNumberFormat.Format(Ixy, format);
+            boxIxz.Text = InvariantNumberFormat.Format(Ixz, format);
+            boxIyy.Text = InvariantNumberFormat.Format(Iyy, format);
+            boxIyz.Text = InvariantNumberFormat.Format(Iyz, format);
+            boxIzz.Text = InvariantNumberFormat.Format(Izz, format);
         }
 
         public void Update(TextBox boxIxx, TextBox boxIxy, TextBox boxIxz,
@@ -59,7 +59,7 @@ namespace SW2RD.Input
 
         private static double Parse(string text)
         {
-            return UrdfFormat.TryParse(text, out double parsed) ? parsed : 0.0;
+            return InvariantNumberFormat.TryParse(text, out double parsed) ? parsed : 0.0;
         }
 
         internal double[] GetMoment()

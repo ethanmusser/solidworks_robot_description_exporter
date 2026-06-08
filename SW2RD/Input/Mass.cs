@@ -19,12 +19,12 @@ namespace SW2RD.Input
 
         public void FillBoxes(TextBox box, string format)
         {
-            box.Text = UrdfFormat.Format(Value, format);
+            box.Text = InvariantNumberFormat.Format(Value, format);
         }
 
         public void Update(TextBox box)
         {
-            if (UrdfFormat.TryParse(box.Text, out double parsed))
+            if (InvariantNumberFormat.TryParse(box.Text, out double parsed))
             {
                 Value = parsed;
             }

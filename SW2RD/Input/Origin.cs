@@ -89,7 +89,7 @@ namespace SW2RD.Input
         public void FillBoxes(TextBox boxX, TextBox boxY, TextBox boxZ, TextBox boxRoll,
             TextBox boxPitch, TextBox boxYaw, string format)
         {
-            string[] xyzText = UrdfFormat.FormatArray(xyz, format);
+            string[] xyzText = InvariantNumberFormat.FormatArray(xyz, format);
             if (xyzText != null)
             {
                 boxX.Text = xyzText[0];
@@ -97,7 +97,7 @@ namespace SW2RD.Input
                 boxZ.Text = xyzText[2];
             }
 
-            string[] rpyText = UrdfFormat.FormatArray(rpy, format);
+            string[] rpyText = InvariantNumberFormat.FormatArray(rpy, format);
             if (rpyText != null)
             {
                 boxRoll.Text = rpyText[0];
@@ -109,8 +109,8 @@ namespace SW2RD.Input
         public void Update(TextBox boxX, TextBox boxY, TextBox boxZ,
             TextBox boxRoll, TextBox boxPitch, TextBox boxYaw)
         {
-            xyz = UrdfFormat.ParseArray(new string[] { boxX.Text, boxY.Text, boxZ.Text });
-            rpy = UrdfFormat.ParseArray(new string[] { boxRoll.Text, boxPitch.Text, boxYaw.Text });
+            xyz = InvariantNumberFormat.ParseArray(new string[] { boxX.Text, boxY.Text, boxZ.Text });
+            rpy = InvariantNumberFormat.ParseArray(new string[] { boxRoll.Text, boxPitch.Text, boxYaw.Text });
         }
     }
 }

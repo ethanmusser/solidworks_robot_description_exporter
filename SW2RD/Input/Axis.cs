@@ -48,7 +48,7 @@ namespace SW2RD.Input
 
         public void FillBoxes(TextBox boxX, TextBox boxY, TextBox boxZ, string format)
         {
-            string[] xyzText = UrdfFormat.FormatArray(xyz, format);
+            string[] xyzText = InvariantNumberFormat.FormatArray(xyz, format);
             if (xyzText != null)
             {
                 boxX.Text = xyzText[0];
@@ -59,7 +59,7 @@ namespace SW2RD.Input
 
         public void Update(TextBox boxX, TextBox boxY, TextBox boxZ)
         {
-            xyz = UrdfFormat.ParseArray(new string[] { boxX.Text, boxY.Text, boxZ.Text });
+            xyz = InvariantNumberFormat.ParseArray(new string[] { boxX.Text, boxY.Text, boxZ.Text });
         }
     }
 }

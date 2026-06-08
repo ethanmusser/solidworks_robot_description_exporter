@@ -34,9 +34,6 @@ namespace SW2RD.Export
 {
     public partial class ExportPropertyManager : PropertyManagerPage2Handler9
     {
-        public static readonly double ConfigurationVersion = 1.3;
-        public static readonly double SoapMinVersion = 1.3;
-
         public void SaveConfigTree(ModelDoc2 model, LinkNode BaseNode, bool warnUser)
         {
             CommonSwOperations.RetrieveSWComponentPIDs(model, BaseNode);
@@ -1225,7 +1222,7 @@ namespace SW2RD.Export
         {
             DialogResult answer = MessageBox.Show(
                 "Clear the saved SW2RD export configuration from this model and start a fresh tree?\r\n\r\n" +
-                "Legacy SW2URDF configuration attributes will be left in place and can still be imported explicitly.",
+                "This cannot be undone.",
                 "Clear Saved Export Configuration",
                 MessageBoxButtons.YesNo);
             if (answer != DialogResult.Yes)

@@ -622,9 +622,9 @@ namespace SW2RD.Export
             logger.Info("Loading SolidWorks components for " +
                 node.Link.Name + " from " + model.GetPathName());
 
-            // Make sure legacy fields have been migrated into VisualGroups /
-            // CollisionGroups in case the configuration was constructed by a
-            // path that bypassed the DataContract OnDeserialized callback.
+            // Make sure the flat single-list PID fields have been folded into
+            // VisualGroups / CollisionGroups in case the configuration was
+            // constructed by a path that bypassed that migration.
             node.Link.MigrateLegacyComponents();
 
             int totalVisualLoaded = 0;

@@ -22,6 +22,7 @@ THE SOFTWARE.
 
 using SW2RD.Core;
 using SW2RD.Input;
+using SW2RD.URDF;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
