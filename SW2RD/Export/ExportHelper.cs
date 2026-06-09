@@ -328,12 +328,14 @@ namespace SW2RD.Export
 
             string windowsModelFileName = package.WindowsModelsDirectory + URDFRobot.Name + package.ModelExtension;
 
-            // Auxiliary information that the MJCF builder needs but the URDF tree
-            // does not store. We populate it as we walk the tree below.
-            Dictionary<string, LinkAuxiliary> mjcfAux =
-                (outputFormat == ExportFormat.MJCF)
-                    ? new Dictionary<string, LinkAuxiliary>()
-                    : null;
+            // Auxiliary information that the writers need but the canonical tree
+            // does not store: per-link mesh asset refs (MJCF) and per-site
+            // body-local transforms (both formats). We populate it as we walk the
+            // tree below. Built for both URDF and MJCF now that URDF emits sites
+            // as empty link + fixed joint frames; URDF simply ignores the mesh
+            // refs (its mesh URIs are stamped onto MeshGroupModel directly).
+            Dictionary<string, LinkAuxiliary> auxByLinkName =
+                new Dictionary<string, LinkAuxiliary>();
 
             if (outputFormat == ExportFormat.URDF)
             {
@@ -372,7 +374,7 @@ namespace SW2RD.Export
             //       whole-assembly SelectAll + HideComponent2 + ShowAllComponents
             //       graphics churn (minutes on a large lightweight assembly) is
             //       pure waste and is skipped. ExportFiles still runs to populate
-            //       mjcfAux (mesh refs + sites); its per-link ExportLinkMesh call
+            //       auxByLinkName (mesh refs + sites); its per-link ExportLinkMesh call
             //       is itself gated on exportSTL + group membership, so it is a
             //       cheap no-op when there is nothing to write.
             //   (2) When we DO hide / show, viewport graphics updates are suppressed
@@ -428,19 +430,18 @@ namespace SW2RD.Export
             try
             {
                 logger.Info("Beginning individual files export");
-                ExportFiles(URDFRobot.BaseLink, package, 0, exportSTL, meshFormat, mjcfAux);
+                ExportFiles(URDFRobot.BaseLink, package, 0, exportSTL, meshFormat, auxByLinkName);
 
                 // World-level geometry / sites: MJCF only. Walks the
                 // WorldNode's visual / collision / site groups through
                 // the same SaveSTL / ComputeSiteTransforms paths used
                 // for body geometry, anchored to the world's global-
-                // origin coord-sys. URDF ignores world geometry by
-                // construction (already warned in
-                // KinematicTreeAdapter.ToLegacyRobot), and an empty
-                // / null ActiveWorldNode produces no aux entry, so
-                // legacy LinkNode-rooted callers see today's exact
-                // output.
-                if (mjcfAux != null && ActiveWorldNode != null)
+                // origin coord-sys. URDF drops world-level geometry /
+                // sites by construction (already warned in URDFBuilder),
+                // and an empty / null ActiveWorldNode produces no aux
+                // entry, so legacy LinkNode-rooted callers see today's
+                // exact output.
+                if (outputFormat == ExportFormat.MJCF && ActiveWorldNode != null)
                 {
                     ProcessLinkMeshes(
                         ActiveWorldNode.Link,
@@ -448,7 +449,7 @@ namespace SW2RD.Export
                         package,
                         exportSTL,
                         meshFormat,
-                        mjcfAux);
+                        auxByLinkName);
                 }
                 success = true;
             }
@@ -508,8 +509,8 @@ namespace SW2RD.Export
                     mjcfTree = KinematicTreeAdapter.ToCore(URDFRobot);
                 }
                 MaybeCaptureGoldenSnapshot(SnapshotReplay.MjcfFormat, windowsModelFileName, mjcfTree,
-                    package.MJCFMeshDir, mjcfAux);
-                MJCFModel mjcfModel = MJCFBuilder.Build(mjcfTree, package.MJCFMeshDir, mjcfAux, MJCFRotationFormat, MJCFAngleUnit);
+                    package.MJCFMeshDir, auxByLinkName);
+                MJCFModel mjcfModel = MJCFBuilder.Build(mjcfTree, package.MJCFMeshDir, auxByLinkName, MJCFRotationFormat, MJCFAngleUnit);
                 MJCFWriter mjcfWriter = new MJCFWriter(windowsModelFileName);
                 try
                 {
@@ -528,11 +529,11 @@ namespace SW2RD.Export
                 // is built from URDFRobot rather than ActiveWorldNode.
                 KinematicTree urdfTree = KinematicTreeAdapter.ToCore(URDFRobot);
                 MaybeCaptureGoldenSnapshot(SnapshotReplay.UrdfFormat, windowsModelFileName, urdfTree,
-                    null, null);
+                    null, auxByLinkName);
                 URDFWriter uWriter = new URDFWriter(windowsModelFileName);
                 try
                 {
-                    URDFBuilder.Write(urdfTree, uWriter.writer);
+                    URDFBuilder.Write(urdfTree, uWriter.writer, auxByLinkName);
                 }
                 finally
                 {
@@ -562,7 +563,7 @@ namespace SW2RD.Export
             string outputFileName,
             KinematicTree tree,
             string mjcfMeshDir,
-            Dictionary<string, LinkAuxiliary> mjcfAux)
+            Dictionary<string, LinkAuxiliary> auxByLinkName)
         {
             string flag = System.Environment.GetEnvironmentVariable("SW2RD_CAPTURE_GOLDEN");
             if (string.IsNullOrEmpty(flag))
@@ -577,7 +578,7 @@ namespace SW2RD.Export
                     ModelName = tree?.Name ?? URDFRobot?.Name ?? "",
                     Tree = tree,
                     MeshDir = mjcfMeshDir,
-                    Auxiliary = mjcfAux ?? new Dictionary<string, LinkAuxiliary>(),
+                    Auxiliary = auxByLinkName ?? new Dictionary<string, LinkAuxiliary>(),
                     MjcfRotationFormat = MJCFRotationFormat,
                     MjcfAngleUnit = MJCFAngleUnit,
                 };
@@ -646,7 +647,7 @@ namespace SW2RD.Export
         private void ExportFiles(Link link, ExportPackage package, int count,
             bool exportSTL = true,
             MeshExportFormat meshFormat = MeshExportFormat.STL,
-            Dictionary<string, LinkAuxiliary> mjcfAux = null)
+            Dictionary<string, LinkAuxiliary> auxByLinkName = null)
         {
             progressBar.UpdateProgress(count);
             progressBar.UpdateTitle("Exporting mesh: " + link.Name);
@@ -657,21 +658,21 @@ namespace SW2RD.Export
                 count += 1;
                 if (!child.isFixedFrame)
                 {
-                    ExportFiles(child, package, count, exportSTL, meshFormat, mjcfAux);
+                    ExportFiles(child, package, count, exportSTL, meshFormat, auxByLinkName);
                 }
             }
 
             if (!link.isFixedFrame)
             {
-                ProcessLinkMeshes(link, link.Name, package, exportSTL, meshFormat, mjcfAux);
+                ProcessLinkMeshes(link, link.Name, package, exportSTL, meshFormat, auxByLinkName);
             }
         }
 
         // Mesh-export work for one Link. Body links are keyed by link.Name in
-        // mjcfAux; the WorldNode's pseudo-link is keyed by MJCFBuilder.WorldAuxKey
+        // auxByLinkName; the WorldNode's pseudo-link is keyed by MJCFBuilder.WorldAuxKey
         // so the MJCF builder can lift its geoms/sites directly under <worldbody>.
         private void ProcessLinkMeshes(Link link, string assetKey, ExportPackage package,
-            bool exportSTL, MeshExportFormat meshFormat, Dictionary<string, LinkAuxiliary> mjcfAux)
+            bool exportSTL, MeshExportFormat meshFormat, Dictionary<string, LinkAuxiliary> auxByLinkName)
         {
             if (link == null)
             {
@@ -747,7 +748,7 @@ namespace SW2RD.Export
 
             // Per-link MJCF auxiliary, populated as we walk the groups below.
             LinkAuxiliary aux = null;
-            if (mjcfAux != null)
+            if (auxByLinkName != null)
             {
                 aux = new LinkAuxiliary();
             }
@@ -846,7 +847,7 @@ namespace SW2RD.Export
             if (aux != null)
             {
                 aux.Sites = ComputeSiteTransforms(link);
-                mjcfAux[assetKey ?? link.Name] = aux;
+                auxByLinkName[assetKey ?? link.Name] = aux;
             }
         }
 

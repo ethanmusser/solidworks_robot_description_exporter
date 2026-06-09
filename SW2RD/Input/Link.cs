@@ -104,7 +104,9 @@ namespace SW2RD.Input
         // Drives which set of components ComputeInertialProperties consumes.
         public InertialSource InertialSource;
 
-        // Sites attached to this link/body for MJCF export. Ignored by URDF.
+        // Named reference frames attached to this link/body. Exported to both
+        // formats: an MJCF <site>, and in URDF an empty <link> joined to this
+        // link by a fixed <joint>.
         public List<SiteSpec> Sites;
 
         // How a top-level body (immediate child of the world) attaches to the

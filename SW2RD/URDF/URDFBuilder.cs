@@ -21,6 +21,7 @@ THE SOFTWARE.
 */
 
 using SW2RD.Core;
+using SW2RD.Export;
 using SW2RD.Utilities;
 using System;
 using System.Collections.Generic;
@@ -55,7 +56,16 @@ namespace SW2RD.URDF
             return CultureInfo.CreateSpecificCulture("en-US").NumberFormat;
         }
 
-        public static void Write(KinematicTree tree, XmlWriter writer)
+        // `auxByLinkName` carries the export-computed per-site body-local
+        // transforms (keyed by LinkModel.Name), the same dictionary MJCFBuilder
+        // consumes. URDF has no native <site>, so each site is emitted as an
+        // empty <link> attached to its parent link by a fixed <joint> - a pure
+        // reference frame with no inertial / visual / collision content. Null is
+        // accepted (SW-less callers / single-part export) and yields no site
+        // frames.
+        public static void Write(
+            KinematicTree tree, XmlWriter writer,
+            Dictionary<string, LinkAuxiliary> auxByLinkName = null)
         {
             if (tree == null)
             {
@@ -73,7 +83,7 @@ namespace SW2RD.URDF
 
             writer.WriteStartElement("robot");
             writer.WriteAttributeString("name", tree.Name ?? "");
-            WriteLink(writer, baseLink);
+            WriteLink(writer, baseLink, auxByLinkName);
             writer.WriteEndElement(); // robot
 
             writer.WriteEndDocument();
@@ -117,8 +127,9 @@ namespace SW2RD.URDF
             if (LinkHasGeometry(tree.WorldBody))
             {
                 logger.Warn("URDF: world-level visual/collision/site geometry is dropped on URDF export. " +
-                    "URDF describes the robot only; pair with an SDFormat .world file or use MJCF if you need " +
-                    "scene geometry.");
+                    "(Per-link sites ARE exported, as empty links joined by fixed joints; this only affects " +
+                    "geometry/sites attached to the world body.) URDF describes the robot only; pair with an " +
+                    "SDFormat .world file or use MJCF if you need scene geometry.");
             }
 
             return chosen;
@@ -147,7 +158,8 @@ namespace SW2RD.URDF
                 "     For more information, please see https://github.com/ethanmusser/solidworks_robot_description_exporter ");
         }
 
-        private static void WriteLink(XmlWriter writer, LinkModel link)
+        private static void WriteLink(
+            XmlWriter writer, LinkModel link, Dictionary<string, LinkAuxiliary> auxByLinkName)
         {
             writer.WriteStartElement("link");
             writer.WriteAttributeString("name", link.Name ?? "");
@@ -166,15 +178,67 @@ namespace SW2RD.URDF
                 WriteJoint(writer, link.Joint);
             }
 
+            // Sites attached to this link become empty <link>s tied to the link
+            // by a fixed <joint>, emitted as siblings right after the link's own
+            // connecting joint.
+            WriteSiteFrames(writer, link, auxByLinkName);
+
             if (link.Children != null)
             {
                 foreach (LinkModel child in link.Children)
                 {
                     if (child != null)
                     {
-                        WriteLink(writer, child);
+                        WriteLink(writer, child, auxByLinkName);
                     }
                 }
+            }
+        }
+
+        // Emits each of the link's sites as an empty <link> + fixed <joint>.
+        // The site's pos/quat (from the export-computed LinkAuxiliary) is already
+        // expressed in the parent link's body frame, so it maps directly onto the
+        // fixed joint's <origin>. No-op when there is no aux entry / no sites.
+        private static void WriteSiteFrames(
+            XmlWriter writer, LinkModel link, Dictionary<string, LinkAuxiliary> auxByLinkName)
+        {
+            if (auxByLinkName == null || string.IsNullOrEmpty(link.Name))
+            {
+                return;
+            }
+            if (!auxByLinkName.TryGetValue(link.Name, out LinkAuxiliary aux)
+                || aux == null || aux.Sites == null)
+            {
+                return;
+            }
+
+            foreach (SiteTransform site in aux.Sites)
+            {
+                if (site == null || string.IsNullOrWhiteSpace(site.Name))
+                {
+                    continue;
+                }
+
+                // Empty reference-frame link: no inertial / visual / collision.
+                writer.WriteStartElement("link");
+                writer.WriteAttributeString("name", site.Name);
+                writer.WriteEndElement(); // link
+
+                writer.WriteStartElement("joint");
+                writer.WriteAttributeString("name", site.Name + "_joint");
+                writer.WriteAttributeString("type", "fixed");
+
+                WriteSiteOrigin(writer, site.Position, site.Quaternion);
+
+                writer.WriteStartElement("parent");
+                writer.WriteAttributeString("link", link.Name ?? "");
+                writer.WriteEndElement();
+
+                writer.WriteStartElement("child");
+                writer.WriteAttributeString("link", site.Name);
+                writer.WriteEndElement();
+
+                writer.WriteEndElement(); // joint
             }
         }
 
@@ -390,6 +454,23 @@ namespace SW2RD.URDF
             double[] rpy = MathOps.QuaternionToRPY(new[] { rot.W, rot.X, rot.Y, rot.Z });
             writer.WriteStartElement("origin");
             writer.WriteAttributeString("xyz", FormatTriple(pos.X, pos.Y, pos.Z));
+            writer.WriteAttributeString("rpy", FormatTriple(rpy[0], rpy[1], rpy[2]));
+            writer.WriteEndElement();
+        }
+
+        // Writes a fixed-joint <origin> from a site's body-local pos (meters) and
+        // quaternion (w x y z). Mirrors WriteOrigin's quaternion->rpy conversion.
+        private static void WriteSiteOrigin(XmlWriter writer, double[] position, double[] quaternion)
+        {
+            double[] pos = (position != null && position.Length >= 3)
+                ? position
+                : new double[] { 0, 0, 0 };
+            double[] quat = (quaternion != null && quaternion.Length >= 4)
+                ? quaternion
+                : new double[] { 1, 0, 0, 0 };
+            double[] rpy = MathOps.QuaternionToRPY(new[] { quat[0], quat[1], quat[2], quat[3] });
+            writer.WriteStartElement("origin");
+            writer.WriteAttributeString("xyz", FormatTriple(pos[0], pos[1], pos[2]));
             writer.WriteAttributeString("rpy", FormatTriple(rpy[0], rpy[1], rpy[2]));
             writer.WriteEndElement();
         }

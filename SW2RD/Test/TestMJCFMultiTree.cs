@@ -21,6 +21,7 @@ THE SOFTWARE.
 */
 
 using SW2RD.Core;
+using SW2RD.Export;
 using SW2RD.MJCF;
 using System;
 using System.Collections.Generic;

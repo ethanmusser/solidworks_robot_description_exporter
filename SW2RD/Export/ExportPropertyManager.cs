@@ -728,7 +728,7 @@ namespace SW2RD.Export
             PMInertialGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
                 InertialGroupID, "Inertial", visible);
             PMSitesGroup = (PropertyManagerPageGroup)PMPage.AddGroupBox(
-                SitesGroupID, "Sites (MJCF)", visible);
+                SitesGroupID, "Sites", visible);
 
             BuildTreeGroup();
             BuildLinkJointTab();

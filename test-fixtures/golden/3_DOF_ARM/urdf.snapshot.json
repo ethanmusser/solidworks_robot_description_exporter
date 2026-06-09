@@ -455,7 +455,91 @@
     }
   },
   "MeshDir": null,
-  "Auxiliary": {},
+  "Auxiliary": {
+    "effector_link": {
+      "VisualMeshes": [
+        {
+          "Name": "effector_link_effector",
+          "File": "effector_link_effector.STL"
+        },
+        {
+          "Name": "effector_link_gripper",
+          "File": "effector_link_gripper.STL"
+        }
+      ],
+      "CollisionMeshes": [
+        {
+          "Name": "effector_link_effector",
+          "File": "effector_link_effector.STL"
+        },
+        {
+          "Name": "effector_link_gripper",
+          "File": "effector_link_gripper.STL"
+        }
+      ],
+      "Sites": [
+        {
+          "Name": "gripper",
+          "Position": [
+            0,
+            0,
+            0.058964466094065221
+          ],
+          "Quaternion": [
+            0.70710678118654757,
+            1.0558238739218183E-16,
+            -1.0558238739218182E-16,
+            -0.70710678118654746
+          ]
+        }
+      ]
+    },
+    "dist_link": {
+      "VisualMeshes": [
+        {
+          "Name": "dist_link_visual",
+          "File": "dist_link_visual.STL"
+        }
+      ],
+      "CollisionMeshes": [
+        {
+          "Name": "dist_link_visual",
+          "File": "dist_link_visual.STL"
+        }
+      ],
+      "Sites": []
+    },
+    "prox_link": {
+      "VisualMeshes": [
+        {
+          "Name": "prox_link_visual",
+          "File": "prox_link_visual.STL"
+        }
+      ],
+      "CollisionMeshes": [
+        {
+          "Name": "prox_link_visual",
+          "File": "prox_link_visual.STL"
+        }
+      ],
+      "Sites": []
+    },
+    "base_link": {
+      "VisualMeshes": [
+        {
+          "Name": "base_link_visual",
+          "File": "base_link_visual.STL"
+        }
+      ],
+      "CollisionMeshes": [
+        {
+          "Name": "base_link_visual",
+          "File": "base_link_visual.STL"
+        }
+      ],
+      "Sites": []
+    }
+  },
   "MjcfRotationFormat": "AxisAngle",
   "MjcfAngleUnit": "Degree"
 }

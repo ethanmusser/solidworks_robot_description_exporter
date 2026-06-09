@@ -217,4 +217,17 @@
     <axis
       xyz="0 0 1" />
   </joint>
+  <link
+    name="gripper" />
+  <joint
+    name="gripper_joint"
+    type="fixed">
+    <origin
+      xyz="0 0 0.0589644660940652"
+      rpy="2.98632088395507E-16 0 -1.5707963267949" />
+    <parent
+      link="effector_link" />
+    <child
+      link="gripper" />
+  </joint>
 </robot>
