@@ -83,12 +83,28 @@ namespace SW2RD.Export
                     "        without components. Either select an axis or at least one component.\r\n";
             }
 
-            if (jointType != "fixed" && !node.Link.Joint.AutoDeriveAxis &&
+            // A reference-axis-sourced moving joint needs a picked axis. A
+            // coordinate-system basis axis or auto-derive resolves without one.
+            if (jointType != "fixed" &&
+                node.Link.Joint.AxisSource == JointAxisSource.ReferenceAxis &&
                 string.IsNullOrWhiteSpace(node.Link.Joint.AxisName))
             {
                 node.IsIncomplete = true;
                 node.WhyIncomplete +=
-                    "        Joint axis is empty. Pick a reference axis or enable auto-derive axis from kinematic chain.\r\n";
+                    "        Joint axis is empty. Pick a reference axis, a coordinate-system axis, " +
+                    "or enable auto-derive axis from the kinematic chain.\r\n";
+            }
+
+            // A coordinate-system basis axis needs the joint coordinate system
+            // it draws the basis vector from.
+            if (jointType != "fixed" &&
+                node.Link.Joint.UsesCoordinateSystemAxis &&
+                string.IsNullOrWhiteSpace(node.Link.Joint.CoordinateSystemName))
+            {
+                node.IsIncomplete = true;
+                node.WhyIncomplete +=
+                    "        Joint axis uses a coordinate-system basis vector but no coordinate " +
+                    "system is selected. Pick a coordinate system.\r\n";
             }
 
             if (node.Link.SWComponents.Count == 0 &&

@@ -210,13 +210,19 @@ namespace SW2RD.Export
                     // node-switch save is the safety net for any other path.
                     previouslySelectedNode.Link.Joint.AxisFlipped = currentAxisFlipped;
 
-                    // PMCheckAutoDeriveAxis is also written through on
-                    // every checkbox toggle via OnCheckboxCheck; this
-                    // node-switch save mirrors AxisFlipped above as the
-                    // safety net.
-                    if (PMCheckAutoDeriveAxis != null)
+                    // PMComboBoxAxisSource is also written through on every
+                    // dropdown change via OnComboboxSelectionChanged; this
+                    // node-switch save mirrors AxisFlipped above as the safety
+                    // net. Only commit it when the axis row is relevant
+                    // (nested non-fixed joint) so the dropdown's default
+                    // selection on irrelevant nodes never clobbers a saved
+                    // source.
+                    if (PMComboBoxAxisSource != null &&
+                        ResolveNodeRole(previouslySelectedNode) == NodeRole.NestedLink &&
+                        previouslySelectedNode.Link.Joint.Type != "fixed")
                     {
-                        previouslySelectedNode.Link.Joint.AutoDeriveAxis = PMCheckAutoDeriveAxis.Checked;
+                        previouslySelectedNode.Link.Joint.AxisSource =
+                            ClampAxisSource(PMComboBoxAxisSource.CurrentSelection);
                     }
 
                     // Joint Properties section. Each *OrClear setter
@@ -357,12 +363,13 @@ namespace SW2RD.Export
             {
                 node.IsBaseNode = false;
                 node.Link.Name = "empty_link";
-                // SelectionBox-only UI: empty AxisName with
-                // AutoDeriveAxis=false means the user still needs to pick
-                // a reference axis. Auto-derive is opt-in via the checkbox.
+                // SelectionBox-only UI: empty AxisName with the default
+                // ReferenceAxis source means the user still needs to pick a
+                // reference axis. Coordinate-system axes / auto-derive are
+                // opt-in via the "Joint axis source" dropdown.
                 node.Link.Joint.AxisName = "";
                 node.Link.Joint.CoordinateSystemName = "";
-                node.Link.Joint.AutoDeriveAxis = false;
+                node.Link.Joint.AxisSource = JointAxisSource.ReferenceAxis;
                 node.Link.Joint.Type = "";
                 node.Link.InertialComponents = new List<Component2>();
                 node.Link.Sites = new List<SiteSpec>();
@@ -391,7 +398,7 @@ namespace SW2RD.Export
             node.Link.Joint.Name = "";
             node.Link.Joint.AxisName = "";
             node.Link.Joint.CoordinateSystemName = "";
-            node.Link.Joint.AutoDeriveAxis = false;
+            node.Link.Joint.AxisSource = JointAxisSource.ReferenceAxis;
             node.Link.Joint.Type = "";
             node.Link.WorldAttachment = SW2RD.Core.WorldAttachmentModel.Welded;
             node.Link.InertialComponents = new List<Component2>();
@@ -508,16 +515,16 @@ namespace SW2RD.Export
                 // PopulateJointTypeComboForRole above (the single role-aware
                 // dropdown); no separate select needed here.
 
-                // Auto-derive axis toggle: the SelectionBox is disabled
-                // (and remains empty) when the toggle is on; otherwise
-                // LoadActiveJointAxisIntoSelectionBox above will have
-                // populated it.
-                if (PMCheckAutoDeriveAxis != null)
+                // Joint axis source dropdown: the reference-axis SelectionBox
+                // is disabled (and remains empty) for any source other than
+                // "Reference axis"; otherwise LoadActiveJointAxisIntoSelectionBox
+                // above will have populated it.
+                if (PMComboBoxAxisSource != null)
                 {
-                    PMCheckAutoDeriveAxis.Checked = node.Link.Joint.AutoDeriveAxis;
+                    PMComboBoxAxisSource.CurrentSelection = (short)(int)node.Link.Joint.AxisSource;
                 }
                 // Grey the whole axis row when this nested joint is "fixed"
-                // (axis irrelevant); otherwise honor the auto-derive toggle.
+                // (axis irrelevant); otherwise honor the axis-source choice.
                 UpdateAxisRowEnabledState(node);
 
                 // Restore the persisted "Reverse Direction" toggle for this
@@ -612,7 +619,10 @@ namespace SW2RD.Export
                 return;
             }
             Joint joint = node.Link?.Joint;
-            if (joint == null || joint.AutoDeriveAxis)
+            // The reference-axis SelectionBox is only populated in
+            // "Reference axis" mode; coordinate-system basis axes and
+            // auto-derive carry no reference-axis pick to rehydrate.
+            if (joint == null || joint.AxisSource != JointAxisSource.ReferenceAxis)
             {
                 return;
             }
@@ -995,7 +1005,7 @@ namespace SW2RD.Export
                     (PropertyManagerPageControl)PMTextBoxJointName,
                     (PropertyManagerPageControl)PMLabelJointName,
                     (PropertyManagerPageControl)PMLabelAxes,
-                    (PropertyManagerPageControl)PMCheckAutoDeriveAxis,
+                    (PropertyManagerPageControl)PMComboBoxAxisSource,
                     (PropertyManagerPageControl)PMSelectionJointAxis,
                     (PropertyManagerPageControl)PMBitmapAxisFlip,
                     (PropertyManagerPageControl)PMLabelJointProperties,

@@ -187,9 +187,10 @@ namespace SW2RD.Export
 
                 string axisName = active.Link.Joint.AxisName ?? "";
                 string coordSysName = active.Link.Joint.CoordinateSystemName ?? "";
+                JointAxisSource axisSource = active.Link.Joint.AxisSource;
                 logger.Info("[#" + seq + "] RefreshAxisDirectionPreview: link='" + (active.Link.Name ?? "") +
                             "' coordSys='" + coordSysName + "' axis='" + axisName +
-                            "' flipped=" + currentAxisFlipped);
+                            "' source=" + axisSource + " flipped=" + currentAxisFlipped);
 
                 // Do not call Extension.SelectByID2 here to color the picked
                 // axis line. With SingleEntityOnly feature pickers, a focused
@@ -208,7 +209,7 @@ namespace SW2RD.Export
 
                 logger.Info("[#" + seq + "] RefreshAxisDirectionPreview: calling PreviewAxisDirection");
                 ExportHelper.AxisPreview preview =
-                    Exporter.PreviewAxisDirection(coordSysName, axisName, currentAxisFlipped);
+                    Exporter.PreviewAxisDirection(coordSysName, axisName, currentAxisFlipped, axisSource);
                 logger.Info("[#" + seq + "] RefreshAxisDirectionPreview: PreviewAxisDirection returned IsValid=" + preview.IsValid);
 
                 if (!preview.IsValid)

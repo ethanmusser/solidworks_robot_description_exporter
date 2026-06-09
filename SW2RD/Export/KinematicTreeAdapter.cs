@@ -293,17 +293,25 @@ namespace SW2RD.Export
             target.AxisName = source.AxisName ?? "";
             target.AxisFlipped = source.AxisFlipped;
             target.AutoComputeLimits = source.AutoComputeLimits;
-            target.AutoDeriveAxis = source.AutoDeriveAxis;
+            target.AxisSource = (JointAxisSource)(int)source.AxisSource;
             target.Reference = angular ? RadiansToDegrees(source.Reference) : source.Reference;
             target.Armature = source.Armature;
 
+            // Legacy AutoDeriveAxis boolean (pre-AxisSource configs) migration:
+            // a true value with the default ReferenceAxis source means the old
+            // config requested kinematic-chain derivation.
+            if (source.AutoDeriveAxis && target.AxisSource == JointAxisSource.ReferenceAxis)
+            {
+                target.AxisSource = JointAxisSource.AutoDerive;
+            }
+
             // "Automatically Generate" axis sentinel migration on the Config
             // path. Pre-AutoDeriveAxis JSON saves stored the sentinel literal
-            // in AxisName; map it onto the AutoDeriveAxis boolean here so the
-            // SelectionBox-only UI sees a clean (true, empty) pair.
+            // in AxisName; map it onto AxisSource=AutoDerive + AxisName="" here
+            // so the SelectionBox-only UI sees a clean (auto-derive, empty) pair.
             if (target.AxisName == "Automatically Generate")
             {
-                target.AutoDeriveAxis = true;
+                target.AxisSource = JointAxisSource.AutoDerive;
                 target.AxisName = "";
             }
             ApplyPose(source.Origin, target.Origin);
@@ -512,7 +520,8 @@ namespace SW2RD.Export
                 friction,
                 joint.Armature,
                 reference,
-                joint.AutoDeriveAxis);
+                joint.AutoDeriveAxis,
+                (JointAxisSourceModel)(int)joint.AxisSource);
         }
 
         // Translates a legacy Limit element into the format-neutral
