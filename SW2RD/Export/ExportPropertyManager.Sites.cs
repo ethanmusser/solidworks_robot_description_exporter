@@ -66,9 +66,9 @@ namespace SW2RD.Export
             PMListBoxSites = (PropertyManagerPageListbox)PMSitesGroup.AddControl2(
                 SitesListBoxID, (short)controlType, "", (short)alignment, options,
                 "Sites already added to this link. Select one to edit it.");
-            // Match the link-tree box height (PMTree.Height = 163) so the
-            // site list is readable when a link has several sites, rather
-            // than a cramped two-row box.
+            // Sized for readability when a link has several sites, rather than
+            // a cramped two-row box. (The link-tree box height lives separately
+            // in LinkTreeBoxHeight and is no longer the same value.)
             PMListBoxSites.Height = 163;
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
