@@ -443,7 +443,11 @@ namespace SW2RD.Export
             }
             foreach (SiteModel site in sites)
             {
-                result.Add(new SiteSpec(site.Name, site.CoordinateSystemName));
+                result.Add(new SiteSpec(
+                    site.Name,
+                    (SiteSourceType)(int)site.Source,
+                    site.CoordinateSystemName,
+                    site.ReferencePointName ?? ""));
             }
             return result;
         }
@@ -583,7 +587,9 @@ namespace SW2RD.Export
             return sites.Select(site => new SiteModel(
                 site.Name ?? "",
                 site.CoordinateSystemName ?? "",
-                EmptyPose())).ToList();
+                EmptyPose(),
+                (SiteSourceTypeModel)(int)site.Source,
+                site.ReferencePointName ?? "")).ToList();
         }
 
         // Builds the format-neutral ComponentReferenceModel list from the

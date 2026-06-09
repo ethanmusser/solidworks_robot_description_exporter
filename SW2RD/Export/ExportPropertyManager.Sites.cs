@@ -84,16 +84,25 @@ namespace SW2RD.Export
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             PMSitesGroup.AddControl2(LabelSiteCoordSysHeaderID,
-                (short)controlType, "Site coordinate system", (short)alignment, options,
-                "Reference coordinate system that defines the site's pose relative to the parent body. Picked from the SW tree.");
+                (short)controlType, "Site coordinate system or point", (short)alignment, options,
+                "Reference that defines the site's location relative to the parent body. Pick a coordinate system for a full pose, or a reference point for position only (identity rotation).");
 
-            object coordSysFilterObj = new swSelectType_e[] { swSelectType_e.swSelCOORDSYS };
+            // The box accepts BOTH a coordinate system (full 6-DOF pose) and a
+            // reference point (position only). The commit path detects which kind
+            // was picked via Feature.GetTypeName2 ("CoordSys" vs "RefPoint") and
+            // routes it to the matching SiteSpec field; the SelectionBox is the
+            // single source of truth either way.
+            object siteFilterObj = new swSelectType_e[]
+            {
+                swSelectType_e.swSelCOORDSYS,
+                swSelectType_e.swSelDATUMPOINTS,
+            };
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             PMSelectionSiteCoordSys = (PropertyManagerPageSelectionbox)PMSitesGroup.AddControl2(
-                SelectionSiteCoordSysID, (short)controlType, "Pick site coord. system",
+                SelectionSiteCoordSysID, (short)controlType, "Pick site coord. system or point",
                 (short)alignment, options,
-                "Pick the reference coordinate system that defines the active site's pose.");
+                "Pick the reference coordinate system (full pose) OR reference point (position only) that defines the active site's location.");
             // SingleEntityOnly = true matches SW's own coord-system /
             // mate creation single-entity pickers - a new pick OVERWRITES
             // the prior pick in place. See PMSelectionJointCoordsys in
@@ -107,7 +116,7 @@ namespace SW2RD.Export
             PMSelectionSiteCoordSys.SingleEntityOnly = true;
             PMSelectionSiteCoordSys.AllowMultipleSelectOfSameEntity = false;
             PMSelectionSiteCoordSys.Height = 18;
-            PMSelectionSiteCoordSys.SetSelectionFilters(coordSysFilterObj);
+            PMSelectionSiteCoordSys.SetSelectionFilters(siteFilterObj);
             PMSelectionSiteCoordSys.Mark = SiteCoordSysSelectionMark;
 
             // Add / Remove buttons live AFTER the name + coord-system editors
@@ -221,11 +230,7 @@ namespace SW2RD.Export
                 site.Name = (PMTextBoxSiteName.Text ?? "").Trim();
             }
 
-            string picked = ReadMarkedFeatureName(SiteCoordSysSelectionMark);
-            if (!string.IsNullOrEmpty(picked))
-            {
-                site.CoordinateSystemName = picked;
-            }
+            ApplySitePickToSpec(site);
         }
 
         private void CommitActiveSiteCoordSysSelection(LinkNode node)
@@ -240,10 +245,38 @@ namespace SW2RD.Export
                 return;
             }
 
-            string picked = ReadMarkedFeatureName(SiteCoordSysSelectionMark);
-            if (!string.IsNullOrEmpty(picked))
+            ApplySitePickToSpec(node.Link.Sites[activeSiteIndex]);
+        }
+
+        // Routes whatever the user picked in the dual-filter site SelectionBox to
+        // the correct SiteSpec field. A reference point ("RefPoint") sets
+        // Source = ReferencePoint and stores the point name; anything else
+        // (coordinate systems) sets Source = CoordinateSystem. The opposite-kind
+        // name is cleared so the persisted spec carries only the field its Source
+        // actually uses. Empty marks (synthetic clears from rehydration /
+        // teardown) leave the spec untouched.
+        private void ApplySitePickToSpec(SiteSpec site)
+        {
+            if (site == null)
             {
-                node.Link.Sites[activeSiteIndex].CoordinateSystemName = picked;
+                return;
+            }
+            string picked = ReadMarkedFeatureNameAndKind(SiteCoordSysSelectionMark, out string typeName);
+            if (string.IsNullOrEmpty(picked))
+            {
+                return;
+            }
+            if (string.Equals(typeName, "RefPoint", StringComparison.Ordinal))
+            {
+                site.Source = SiteSourceType.ReferencePoint;
+                site.ReferencePointName = picked;
+                site.CoordinateSystemName = "";
+            }
+            else
+            {
+                site.Source = SiteSourceType.CoordinateSystem;
+                site.CoordinateSystemName = picked;
+                site.ReferencePointName = "";
             }
         }
 
@@ -299,12 +332,28 @@ namespace SW2RD.Export
                     return;
                 }
 
-                string name = node.Link.Sites[activeSiteIndex].CoordinateSystemName;
+                SiteSpec site = node.Link.Sites[activeSiteIndex];
+                // Rehydrate the box with the reference the active site actually
+                // uses, picking the SelectByID2 entity type that matches its
+                // Source (coord systems and reference points are bound through
+                // different selection types).
+                string name;
+                string selectByIdType;
+                if (site.Source == SiteSourceType.ReferencePoint)
+                {
+                    name = site.ReferencePointName;
+                    selectByIdType = "DATUMPOINT";
+                }
+                else
+                {
+                    name = site.CoordinateSystemName;
+                    selectByIdType = "COORDSYS";
+                }
                 if (!IsRealFeatureName(name))
                 {
                     return;
                 }
-                SelectFeatureIntoMark(name, "COORDSYS", SiteCoordSysSelectionMark);
+                SelectFeatureIntoMark(name, selectByIdType, SiteCoordSysSelectionMark);
             }
             finally
             {
@@ -370,7 +419,10 @@ namespace SW2RD.Export
             {
                 return "(unnamed)";
             }
-            return site.Name;
+            // Annotate the source kind so a coord-sys site and a point site are
+            // distinguishable in the listbox without reopening each one.
+            string suffix = site.Source == SiteSourceType.ReferencePoint ? " (point)" : " (coord. sys.)";
+            return site.Name + suffix;
         }
     }
 }

@@ -1939,6 +1939,74 @@ namespace SW2RD.Export
             return axis;
         }
 
+        // Returns the assembly-global position (meters) of the named SolidWorks
+        // reference point, or null if it cannot be resolved. Mirrors GetRefAxis:
+        // walks FeatureManager directly via FindNamedFeature so the live PM
+        // preview / export path never perturbs SelectionMgr, and lifts a
+        // part-local point into assembly-global coordinates via the
+        // sub-component transform. Reference points carry only a location (no
+        // basis vectors), so callers supply the site's rotation themselves
+        // (identity in the parent body frame, by design).
+        private double[] GetReferencePointGlobalPosition(string pointName)
+        {
+            if (string.IsNullOrEmpty(pointName))
+            {
+                return null;
+            }
+
+            ResolvedFeatureReference r = ResolveFeatureReference(pointName);
+
+            // GetSpecificFeature2/GetRefPoint read the part doc's currently-active
+            // configuration, so resolve inside the config-switched block; the
+            // returned point is in the owning doc's model frame and the component
+            // transform (applied outside) does not depend on the active config.
+            double[] localPoint = WithComponentConfiguration(r.OwningDoc, r.ConfigurationName, () =>
+            {
+                Feature feat = FindNamedFeature(r.OwningDoc, "RefPoint", r.FeatureName);
+                if (feat == null)
+                {
+                    return null;
+                }
+                IRefPoint refPoint = feat.GetSpecificFeature2() as IRefPoint;
+                if (refPoint == null)
+                {
+                    return null;
+                }
+                MathPoint mathPoint = refPoint.GetRefPoint();
+                double[] data = mathPoint?.ArrayData as double[];
+                if (data == null || data.Length < 3)
+                {
+                    return null;
+                }
+                return new double[] { data[0], data[1], data[2] };
+            });
+
+            if (localPoint == null)
+            {
+                return null;
+            }
+
+            return GlobalPoint(localPoint, r.ComponentTransform);
+        }
+
+        // Lifts a part-local point into assembly-global coordinates. Identical
+        // to GlobalAxis except the homogeneous w-coordinate is 1 (a position is
+        // affected by the transform's translation; a direction is not).
+        private static double[] GlobalPoint(double[] point, MathTransform componentTransform)
+        {
+            double[] result = new double[] { point[0], point[1], point[2] };
+            if (componentTransform != null)
+            {
+                Matrix<double> transform = MathOps.GetTransformation(componentTransform);
+                Vector<double> v = new DenseVector(new double[] { point[0], point[1], point[2], 1 });
+                v = transform * v;
+                result[0] = v[0];
+                result[1] = v[1];
+                result[2] = v[2];
+            }
+            return MathOps.Threshold(result, 0.00001);
+        }
+
         // Finds a single named Feature of the requested type-name
         // (e.g. "RefAxis", "CoordSys") by walking the document's
         // FeatureManager. Read-only - does NOT touch SelectionMgr,

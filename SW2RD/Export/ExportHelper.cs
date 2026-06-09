@@ -967,6 +967,50 @@ namespace SW2RD.Export
 
             foreach (SiteSpec spec in link.Sites)
             {
+                // Reference-point sites carry only a position; the orientation is
+                // identity in the parent body frame by design (a reference point
+                // has no basis vectors). We transform the global point into the
+                // parent body frame by reusing parentInv: building a
+                // translation-only matrix and reading the translation column of
+                // (parentInv * pointMat) yields the body-local position.
+                if (spec.Source == SiteSourceType.ReferencePoint)
+                {
+                    if (string.IsNullOrEmpty(spec.ReferencePointName))
+                    {
+                        logger.Warn("Site " + spec.Name + " on link " + link.Name +
+                            " has no reference point; using parent body frame as identity.");
+                        result.Add(new SiteTransform
+                        {
+                            Name = spec.Name,
+                            Position = new double[] { 0, 0, 0 },
+                            Quaternion = new double[] { 1, 0, 0, 0 },
+                        });
+                        continue;
+                    }
+
+                    double[] pointGlobal = GetReferencePointGlobalPosition(spec.ReferencePointName);
+                    if (pointGlobal == null)
+                    {
+                        logger.Warn("Failed to resolve site reference point " +
+                            spec.ReferencePointName + " for link " + link.Name);
+                        continue;
+                    }
+
+                    Matrix<double> pointMat = Matrix<double>.Build.DenseIdentity(4);
+                    pointMat[0, 3] = pointGlobal[0];
+                    pointMat[1, 3] = pointGlobal[1];
+                    pointMat[2, 3] = pointGlobal[2];
+                    Matrix<double> pointLocal = parentInv * pointMat;
+
+                    result.Add(new SiteTransform
+                    {
+                        Name = spec.Name,
+                        Position = MathOps.Threshold(MathOps.GetXYZ(pointLocal), 0.00001),
+                        Quaternion = new double[] { 1, 0, 0, 0 },
+                    });
+                    continue;
+                }
+
                 if (string.IsNullOrEmpty(spec.CoordinateSystemName))
                 {
                     logger.Warn("Site " + spec.Name + " on link " + link.Name +
