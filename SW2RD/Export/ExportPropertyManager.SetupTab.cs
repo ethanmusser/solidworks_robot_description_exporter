@@ -68,7 +68,10 @@ namespace SW2RD.Export
             PMTree = PMTreeGroup.AddControl2(dotNetTree,
                 (short)swPropertyManagerPageControlType_e.swControlType_WindowFromHandle,
                 "Link Tree", 0, options, "");
-            PMTree.Height = 163;
+            // Fixed height; the tree no longer grows with the node count at
+            // runtime (SW does not reflow the controls below it). Larger trees
+            // scroll via the TreeView's native vertical scrollbar.
+            PMTree.Height = LinkTreeBoxHeight;
 
             // Child-count spinner sits next to the tree so adding children
             // is part of building the tree, not a per-link side trip on

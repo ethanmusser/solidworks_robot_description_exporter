@@ -353,6 +353,15 @@ namespace SW2RD.Export
 
         private PropertyManagerPageWindowFromHandle PMTree;
 
+        // Fixed height (px) of the link-tree box and its WindowFromHandle host.
+        // The tree no longer grows with the node count at runtime: SW PMPage
+        // does NOT reflow sibling controls when a hosted control's height
+        // changes after build (it only re-flows a group on an expand/collapse
+        // pass), so a growing box overlapped the controls below it. The box is
+        // a fixed size and the WinForms TreeView's native vertical scrollbar
+        // handles overflow. Do NOT re-add runtime height growth.
+        private const int LinkTreeBoxHeight = 250;
+
         public TreeView Tree
         { get; set; }
 
@@ -916,8 +925,13 @@ namespace SW2RD.Export
         {
             Tree = new TreeView
             {
-                Height = 163,
-                Visible = true
+                Height = LinkTreeBoxHeight,
+                Visible = true,
+                // Native vertical scrollbar handles trees taller than the
+                // fixed box (default is true; set explicitly to document that
+                // scrolling - not runtime height growth - is how overflow is
+                // handled).
+                Scrollable = true
             };
 
             if (interactive)

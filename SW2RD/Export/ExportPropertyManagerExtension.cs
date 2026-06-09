@@ -107,14 +107,11 @@ namespace SW2RD.Export
             {
                 currentNode.Nodes.RemoveAt(currentNode.Nodes.Count - 1);
             }
-            int itemsCount = CommonSwOperations.GetCount(Tree.Nodes);
-            int itemHeight = 1 + itemsCount * Tree.ItemHeight;
-            int min = 163;
-            int max = 600;
-
-            int height = MathOps.Envelope(itemHeight, min, max);
-            Tree.Height = height;
-            PMTree.Height = height;
+            // The tree box is a fixed height (LinkTreeBoxHeight); do NOT grow it
+            // with the node count here. SW PMPage does not reflow sibling
+            // controls when a hosted WindowFromHandle's height changes at
+            // runtime, so growing it overlapped the controls below the tree.
+            // The WinForms TreeView's native vertical scrollbar handles overflow.
             currentNode.ExpandAll();
         }
 
