@@ -357,6 +357,22 @@ namespace SW2RD.Export
                 AddComponentSuffixName(joint.CoordinateSystemName, ownerNames);
                 AddComponentSuffixName(joint.AxisName, ownerNames);
             }
+            // Sites can reference a coordinate system OR a reference point that
+            // lives inside a sub-component; record those owners too so the
+            // targeted lightweight resolve loads them (a coord-sys / point read
+            // inside an unresolved component yields no transform).
+            if (node.Link.Sites != null)
+            {
+                foreach (SiteSpec site in node.Link.Sites)
+                {
+                    if (site == null)
+                    {
+                        continue;
+                    }
+                    AddComponentSuffixName(site.CoordinateSystemName, ownerNames);
+                    AddComponentSuffixName(site.ReferencePointName, ownerNames);
+                }
+            }
             foreach (LinkNode child in node.Nodes)
             {
                 CollectFeatureOwnerNames(child, ownerNames);

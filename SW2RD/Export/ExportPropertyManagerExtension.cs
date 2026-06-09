@@ -1357,7 +1357,20 @@ namespace SW2RD.Export
             {
                 foreach (SiteSpec site in node.Link.Sites)
                 {
-                    if (site != null && !string.IsNullOrEmpty(site.CoordinateSystemName) &&
+                    if (site == null)
+                    {
+                        continue;
+                    }
+                    if (site.Source == SiteSourceType.ReferencePoint)
+                    {
+                        if (!string.IsNullOrEmpty(site.ReferencePointName) &&
+                            !Exporter.ReferenceFeatureExists("RefPoint", site.ReferencePointName))
+                        {
+                            problemLinks.Add(node.Name + " (site '" + (site.Name ?? "") +
+                                "' reference point): '" + site.ReferencePointName + "'");
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(site.CoordinateSystemName) &&
                         !Exporter.ReferenceFeatureExists("CoordSys", site.CoordinateSystemName))
                     {
                         problemLinks.Add(node.Name + " (site '" + (site.Name ?? "") +

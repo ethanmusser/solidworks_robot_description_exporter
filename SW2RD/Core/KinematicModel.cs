@@ -124,7 +124,9 @@ namespace SW2RD.Core
     public sealed record SiteModel(
         string Name,
         string CoordinateSystemName,
-        PoseModel Pose);
+        PoseModel Pose,
+        SiteSourceTypeModel Source = SiteSourceTypeModel.CoordinateSystem,
+        string ReferencePointName = "");
 
     public sealed record MaterialModel(
         string Name,
@@ -229,5 +231,17 @@ namespace SW2RD.Core
         CoordinateSystemY = 2,
         CoordinateSystemZ = 3,
         AutoDerive = 4,
+    }
+
+    /// <summary>
+    /// Where a site's pose comes from. Mirrors the edit-model
+    /// <c>SW2RD.Input.SiteSourceType</c> (same integer values). Persisted as an
+    /// int in Config JSON; a missing value binds to <see cref="CoordinateSystem"/>,
+    /// which migrates legacy coord-sys-only sites transparently.
+    /// </summary>
+    public enum SiteSourceTypeModel
+    {
+        CoordinateSystem = 0,
+        ReferencePoint = 1,
     }
 }

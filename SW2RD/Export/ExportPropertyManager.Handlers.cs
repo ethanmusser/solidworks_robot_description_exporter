@@ -411,6 +411,17 @@ namespace SW2RD.Export
         // owning component and keep their bare name.
         private string ReadMarkedFeatureName(int mark)
         {
+            return ReadMarkedFeatureNameAndKind(mark, out _);
+        }
+
+        // Like ReadMarkedFeatureName, but also returns the picked feature's
+        // SolidWorks type-name via GetTypeName2 (e.g. "CoordSys" / "RefPoint").
+        // The sites SelectionBox accepts both coordinate systems and reference
+        // points, so the commit path needs the kind to route the pick to the
+        // correct SiteSpec field. typeName is null when nothing is marked.
+        private string ReadMarkedFeatureNameAndKind(int mark, out string typeName)
+        {
+            typeName = null;
             try
             {
                 SelectionMgr selMgr = ActiveSWModel?.SelectionManager;
@@ -429,6 +440,7 @@ namespace SW2RD.Export
                 {
                     return string.Empty;
                 }
+                typeName = feature.GetTypeName2();
 
                 // GetSelectedObjectsComponent4 returns the component the
                 // selected entity belongs to, or null for a feature that

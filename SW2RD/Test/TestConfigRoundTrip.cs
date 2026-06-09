@@ -515,8 +515,81 @@ namespace SW2RD.Test
             Assert.Equal(originalChild.Sites[0].Name, readChild.Sites[0].Name);
             Assert.Equal(originalChild.Sites[0].CoordinateSystemName,
                 readChild.Sites[0].CoordinateSystemName);
+            // A coordinate-system site round-trips with the default source.
+            Assert.Equal(SiteSourceTypeModel.CoordinateSystem, readChild.Sites[0].Source);
             Assert.Equal(originalChild.Inertial.Mass, readChild.Inertial.Mass);
             Assert.Equal(originalChild.Inertial.Inertia.Ixx, readChild.Inertial.Inertia.Ixx);
+        }
+
+        [Fact]
+        public void TestRoundTripPreservesPointSiteSource()
+        {
+            // A reference-point site stores its Source + point name (and no
+            // coordinate-system name); both must survive the JSON round-trip.
+            SiteModel pointSite = new SiteModel(
+                "grip_point", "", null,
+                SiteSourceTypeModel.ReferencePoint, "Point1");
+            LinkModel baseLink = SimpleLink("base") with { Sites = new[] { pointSite } };
+            KinematicTree tree = new KinematicTree(
+                "point_site_test", "Origin_global", WorldBody(baseLink));
+            Config original = new Config(
+                Config.CurrentSchemaVersion, "1.6.1-test", DateTime.UtcNow, tree);
+
+            string json = ConfigJsonSerializer.Serialize(original);
+            Config read = ConfigJsonSerializer.Deserialize(json);
+
+            SiteModel readSite = FirstTopLevel(read.Tree).Sites[0];
+            Assert.Equal("grip_point", readSite.Name);
+            Assert.Equal(SiteSourceTypeModel.ReferencePoint, readSite.Source);
+            Assert.Equal("Point1", readSite.ReferencePointName);
+        }
+
+        [Fact]
+        public void TestRoundTripDefaultsSiteSourceCoordinateSystemWhenMissing()
+        {
+            // Sites written before SiteSourceType existed carry only Name +
+            // CoordinateSystemName; the missing Source must bind to the record
+            // default (CoordinateSystem) and ReferencePointName to "".
+            string json = "{ \"SchemaVersion\": " + Config.CurrentSchemaVersion + ", " +
+                "\"ExporterVersion\": \"\", \"SavedAtUtc\": \"2024-01-01T00:00:00Z\", " +
+                "\"Tree\": { \"Name\": \"x\", " +
+                "\"GlobalOriginCoordinateSystemName\": \"\", " +
+                "\"WorldBody\": { \"Name\": \"world\", \"Inertial\": null, \"Material\": null, " +
+                "\"VisualGroups\": [], \"CollisionGroups\": [], \"CollisionUsesVisual\": false, " +
+                "\"InertialSource\": 0, \"InertialComponents\": [], \"Sites\": [], " +
+                "\"Joint\": null, \"Children\": [{ " +
+                "\"Name\": \"base\", \"Inertial\": null, \"Material\": null, " +
+                "\"VisualGroups\": [], \"CollisionGroups\": [], \"CollisionUsesVisual\": false, " +
+                "\"InertialSource\": 0, \"InertialComponents\": [], " +
+                "\"Sites\": [{ \"Name\": \"s1\", \"CoordinateSystemName\": \"lcs1\", \"Pose\": null }], " +
+                "\"Joint\": null, \"Children\": [] }] } } }";
+
+            Config read = ConfigJsonSerializer.Deserialize(json);
+            SiteModel site = FirstTopLevel(read.Tree).Sites[0];
+            Assert.Equal(SiteSourceTypeModel.CoordinateSystem, site.Source);
+            Assert.Equal("lcs1", site.CoordinateSystemName);
+            Assert.Equal("", site.ReferencePointName);
+        }
+
+        [Fact]
+        public void TestPointSiteRoundTripsThroughLegacyAdapter()
+        {
+            // Core -> edit -> core: a reference-point site survives both adapter
+            // directions (ToLegacySites / ToCoreSites) with Source + point name.
+            SiteModel pointSite = new SiteModel(
+                "grip_point", "", null,
+                SiteSourceTypeModel.ReferencePoint, "Point1");
+            LinkModel root = SimpleLink("base") with { Sites = new[] { pointSite } };
+
+            SW2RD.Input.Link legacyRoot =
+                SW2RD.Export.KinematicTreeAdapter.ToLegacyLink(root, null);
+            SiteSpec legacySite = legacyRoot.Sites[0];
+            Assert.Equal(SiteSourceType.ReferencePoint, legacySite.Source);
+            Assert.Equal("Point1", legacySite.ReferencePointName);
+
+            LinkModel back = SW2RD.Export.KinematicTreeAdapter.ToCore(legacyRoot);
+            Assert.Equal(SiteSourceTypeModel.ReferencePoint, back.Sites[0].Source);
+            Assert.Equal("Point1", back.Sites[0].ReferencePointName);
         }
 
         [Fact]
