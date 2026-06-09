@@ -23,6 +23,7 @@ THE SOFTWARE.
 using System;
 using System.IO;
 using System.Xml;
+using SW2RD.Export;
 using SW2RD.Input;
 using SW2RD.MJCF;
 using SW2RD.URDF;
@@ -73,7 +74,7 @@ namespace SW2RD.Validation
                     }
                     else
                     {
-                        URDFBuilder.Write(snapshot.Tree, writer);
+                        URDFBuilder.Write(snapshot.Tree, writer, snapshot.Auxiliary);
                     }
                 }
                 return stringWriter.ToString();

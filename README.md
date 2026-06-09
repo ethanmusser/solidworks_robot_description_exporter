@@ -36,7 +36,7 @@ The `Configure` panel holds the link tree above a set of collapsible sections th
 - `Visual` - Per-link specification of assembly components that should be exported and used for visualization.
 - `Collision` - Per-link specification of assembly components that should be exported and used for collision in a simulation environment.  Collision groups can be configured independently or made identical to the `Visual` section.
 - `Inertial` - Per-link specification of assembly components that should be used when computing the mass and inertia matrix of a link.  Inertial components can come from the `Visual` groups, the `Collision` groups, or a custom component selection.
-- `Sites (MJCF)` - Per-link specification of sites, which are named coordinate frames that are explicitly included in MJCF exports.  Sites are not present in URDF exports.
+- `Sites` - Per-link specification of sites, which are named coordinate frames attached to a body.  In MJCF they are exported as `<site>` elements; in URDF, which has no native site concept, each site is exported as an empty `<link>` connected to its parent link by a fixed `<joint>` (a pure reference frame with no inertial, visual, or collision content).  World-level sites are included in MJCF exports but dropped for URDF (URDF has no world body to attach them to).
 
 The `Export` panel holds the global export options - output format (URDF or MJCF), mesh format (STL or 3DXML), whether to regenerate meshes, fast per-part mesh export and its quality, and the MJCF-only rotation format and angle units - followed by the `Export` button.
 

@@ -30,9 +30,10 @@ using System.Windows.Forms;
 
 namespace SW2RD.Export
 {
-    // Per-link MJCF <site> editor: PMPage UI builder for the Sites tab,
-    // plus the runtime add / remove / refresh operations. Sites are
-    // MJCF-only (no URDF analog).
+    // Per-link site editor: PMPage UI builder for the Sites tab, plus the
+    // runtime add / remove / refresh operations. Sites are exported to both
+    // formats - as an MJCF <site> child of the body, and in URDF as an empty
+    // <link> connected to the parent link by a fixed <joint>.
     public sealed partial class ExportPropertyManager : PropertyManagerPage2Handler9, IDisposable
     {
         // Builds every control on the Sites tab. Layout mirrors the
@@ -45,17 +46,15 @@ namespace SW2RD.Export
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
 
-            // No "Sites (MJCF)" heading label here - the accordion group
-            // caption already reads "Sites (MJCF)", so repeating it in the
-            // body is redundant. The help label below carries the usage
-            // hint (and notes the MJCF-only / URDF-ignored behavior).
-            // LabelSitesHeaderID remains reserved (unused) in
-            // ExportPropertyManager.cs.
+            // No "Sites" heading label here - the accordion group caption
+            // already reads "Sites", so repeating it in the body is redundant.
+            // The help label below carries the usage hint. LabelSitesHeaderID
+            // remains reserved (unused) in ExportPropertyManager.cs.
             PMSitesGroup.AddControl2(
                 SitesHelpLabelID, (short)controlType,
-                "MJCF-only frames attached to a body (ignored for URDF). Select a site row, then edit its name and reference coordinate system below.",
+                "Named reference frames attached to a body (MJCF <site>; URDF empty link + fixed joint). Select a site row, then edit its name and reference coordinate system below.",
                 (short)alignment, options,
-                "Sites are MJCF-only frames attached to a body. They are ignored when exporting URDF.");
+                "Named reference frames attached to a body. Exported as an MJCF <site> and as a URDF empty link joined by a fixed joint.");
 
             PMSitesGroup.AddControl2(
                 SitesListLabelID, (short)controlType, "Sites defined for this link",
@@ -74,13 +73,13 @@ namespace SW2RD.Export
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             PMSitesGroup.AddControl2(
                 SitesNameLabelID, (short)controlType, "Site name", (short)alignment, options,
-                "Identifier that will appear as <site name=...> in the MJCF file.");
+                "Identifier for the frame: the MJCF <site name=...> and the URDF empty <link name=...>.");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Textbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             PMTextBoxSiteName = (PropertyManagerPageTextbox)PMSitesGroup.AddControl2(
                 SitesNameTextBoxID, (short)controlType, "", (short)alignment, options,
-                "Site name (will appear as <site name=...>)");
+                "Site name (MJCF <site name=...> / URDF empty <link name=...>)");
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;

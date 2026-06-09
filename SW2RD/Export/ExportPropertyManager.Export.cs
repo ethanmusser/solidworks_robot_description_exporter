@@ -76,28 +76,25 @@ namespace SW2RD.Export
                 return;
             }
 
-            // Sites-with-URDF warning runs pre-close so the user can flip the
-            // output format without losing the panel context. Walks the
-            // LinkNode tree directly instead of the Robot tree (which is only
+            // Output format drives the site-name check below (sites collide with
+            // link names only in URDF) and is threaded into FinishExport. Read
+            // pre-close (the LinkNode tree, not the Robot tree, which is only
             // built after PMPage.Close).
             ExportFormat outputFormat =
                 (PMComboBoxOutputFormat != null && PMComboBoxOutputFormat.CurrentSelection == 1)
                     ? ExportFormat.MJCF
                     : ExportFormat.URDF;
-            if (outputFormat == ExportFormat.URDF && AnyNodeHasSites((LinkNode)Tree.Nodes[0]))
+
+            // Site names must be unique among themselves (both formats), and for
+            // URDF must not collide with any link name (each site is exported as
+            // an empty <link>, so a name clash would emit a duplicate link ->
+            // invalid URDF). Runs pre-close so the user can fix names or flip the
+            // output format while the panel context is still visible.
+            UpdateValidationStatus("Status: Checking site names...");
+            if (!CheckSiteNamesAreValid((LinkNode)Tree.Nodes[0], outputFormat))
             {
-                UpdateValidationStatus("Status: URDF selected but sites are configured. Confirm in dialog.");
-                DialogResult siteWarn = MessageBox.Show(
-                    "Some links have MJCF <site> tags configured but you've selected URDF " +
-                    "output. URDF does not support sites; they will be omitted from the " +
-                    "exported file. Continue?",
-                    "Sites will be dropped",
-                    MessageBoxButtons.YesNo);
-                if (siteWarn == DialogResult.No)
-                {
-                    UpdateValidationStatus("Status: Export cancelled (sites would be dropped).");
-                    return;
-                }
+                UpdateValidationStatus("Status: Site name conflict. Fix the conflicts above before exporting.");
+                return;
             }
 
             UpdateValidationStatus("Status: Validation passed. Building robot...");
@@ -638,29 +635,6 @@ namespace SW2RD.Export
                     "Add a distance limit mate for this prismatic joint, or uncheck Auto-compute and enter Lower/Upper manually.";
             }
             return "Enter Lower and Upper manually in the Joint Properties section.";
-        }
-
-        // Pre-close walk over the WinForms LinkNode tree. The Robot tree
-        // doesn't exist yet at this point in ExportButtonPress, so we walk
-        // the SelectedNode hierarchy directly.
-        private static bool AnyNodeHasSites(LinkNode node)
-        {
-            if (node == null)
-            {
-                return false;
-            }
-            if (node.Link != null && node.Link.Sites != null && node.Link.Sites.Count > 0)
-            {
-                return true;
-            }
-            foreach (System.Windows.Forms.TreeNode child in node.Nodes)
-            {
-                if (AnyNodeHasSites(child as LinkNode))
-                {
-                    return true;
-                }
-            }
-            return false;
         }
     }
 }

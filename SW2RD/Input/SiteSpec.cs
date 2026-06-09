@@ -22,10 +22,13 @@ THE SOFTWARE.
 
 namespace SW2RD.Input
 {
-    // Specification for a MJCF <site> attached to a body. Sites are configured per-link
-    // in the property manager: the user supplies a name and a SolidWorks reference
-    // coordinate system. At export time the site's pos/quat is computed as the transform
-    // from the parent body's coordinate system to the site's coordinate system.
+    // Specification for a named reference frame attached to a body. Sites are
+    // configured per-link in the property manager: the user supplies a name and a
+    // SolidWorks reference coordinate system. At export time the site's pos/quat is
+    // computed as the transform from the parent body's coordinate system to the
+    // site's coordinate system. Exported to both formats: an MJCF <site> child of
+    // the body, and in URDF an empty <link> connected to the parent by a fixed
+    // <joint>.
     public class SiteSpec
     {
         public string Name;

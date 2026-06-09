@@ -25,6 +25,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using SW2RD.Core;
+using SW2RD.Export;
 using SW2RD.MJCF;
 
 namespace SW2RD.Validation
@@ -40,8 +41,10 @@ namespace SW2RD.Validation
     /// <para>The two writers need different payloads, so a snapshot carries both
     /// and the consumer reads the half that matches <see cref="Format"/>:</para>
     /// <list type="bullet">
-    /// <item>URDF: <see cref="Tree"/> only (mesh URIs are already stamped onto
-    /// the tree's <c>MeshGroupModel.MeshFilename</c>).</item>
+    /// <item>URDF: <see cref="Tree"/> plus <see cref="Auxiliary"/> (mesh URIs are
+    /// already stamped onto the tree's <c>MeshGroupModel.MeshFilename</c>, but the
+    /// per-site body-local transforms in <see cref="Auxiliary"/> are needed to emit
+    /// each site as an empty link + fixed joint).</item>
     /// <item>MJCF: <see cref="Tree"/> plus <see cref="Auxiliary"/> (per-link
     /// mesh asset refs + site transforms), <see cref="MeshDir"/>, and the
     /// rotation-format / angle-unit writer options.</item>

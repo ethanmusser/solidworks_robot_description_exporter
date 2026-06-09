@@ -31,10 +31,12 @@ namespace SW2RD.Export
 {
     // Pre-export validation: per-link "is this link complete?" checks
     // (CheckNodeXxxComplete + CheckNodesComplete), unresolved-component
-    // detection (CheckModelDocsExist), and link / joint name uniqueness
-    // (CheckIfNamesAreUnique). Carved out of ExportPropertyManagerExtension
-    // as part of the Phase 1 partial-class refactor; one concern per file
-    // makes locating a specific validator easier.
+    // detection (CheckModelDocsExist), link / joint name uniqueness
+    // (CheckIfNamesAreUnique), and site-name validity (CheckSiteNamesAreValid -
+    // sites must be unique among themselves and, for URDF, must not collide
+    // with link names since each site is exported as an empty <link>). Carved
+    // out of ExportPropertyManagerExtension as part of the Phase 1 partial-class
+    // refactor; one concern per file makes locating a specific validator easier.
     public sealed partial class ExportPropertyManager : PropertyManagerPage2Handler9, IDisposable
     {
         private void CheckNodeInertialComplete(LinkNode node)
@@ -377,6 +379,109 @@ namespace SW2RD.Export
             foreach (LinkNode child in currentNode.Nodes)
             {
                 CheckIfJointNamesAreUnique(basenode, child, conflicts);
+            }
+        }
+
+        // Validates site names ahead of export. Sites must be unique among
+        // themselves (both formats), and for URDF must not collide with any
+        // link name (each site is exported as an empty <link> joined by a fixed
+        // joint, so a clash would emit a duplicate <link> -> invalid URDF). For
+        // MJCF, site and body names occupy separate namespaces, so the
+        // site-vs-link check is gated on URDF. World-level sites are dropped for
+        // URDF, so they do not participate in either check in URDF mode.
+        // Returns true when valid; on failure fires a MessageBox listing the
+        // conflicts. Called by ExportButtonPress pre-close, after
+        // CheckIfNamesAreUnique / CheckNodesComplete.
+        public bool CheckSiteNamesAreValid(LinkNode node, ExportFormat outputFormat)
+        {
+            List<string> siteNames = new List<string>();
+            List<string> linkNames = new List<string>();
+            CollectSiteAndLinkNames(node, outputFormat, siteNames, linkNames);
+
+            // Duplicate site names (case-sensitive, matching the link / joint
+            // name checks), each reported once.
+            List<string> duplicateSites = new List<string>();
+            HashSet<string> seenSites = new HashSet<string>(StringComparer.Ordinal);
+            HashSet<string> reportedDuplicates = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string siteName in siteNames)
+            {
+                if (!seenSites.Add(siteName) && reportedDuplicates.Add(siteName))
+                {
+                    duplicateSites.Add(siteName);
+                }
+            }
+
+            // URDF only: a site name matching a link name emits a duplicate
+            // <link>.
+            List<string> siteLinkCollisions = new List<string>();
+            if (outputFormat == ExportFormat.URDF)
+            {
+                HashSet<string> linkSet = new HashSet<string>(linkNames, StringComparer.Ordinal);
+                HashSet<string> reportedCollisions = new HashSet<string>(StringComparer.Ordinal);
+                foreach (string siteName in siteNames)
+                {
+                    if (linkSet.Contains(siteName) && reportedCollisions.Add(siteName))
+                    {
+                        siteLinkCollisions.Add(siteName);
+                    }
+                }
+            }
+
+            if (duplicateSites.Count == 0 && siteLinkCollisions.Count == 0)
+            {
+                return true;
+            }
+
+            string errors = "";
+            if (duplicateSites.Count > 0)
+            {
+                errors += "The following SITE names are used more than once:\r\n\r\n     "
+                    + string.Join(", ", duplicateSites) + "\r\n\r\n";
+            }
+            if (siteLinkCollisions.Count > 0)
+            {
+                errors += "The following SITE names collide with LINK names (not allowed for URDF, "
+                    + "where each site is exported as an empty link):\r\n\r\n     "
+                    + string.Join(", ", siteLinkCollisions) + "\r\n\r\n";
+            }
+            MessageBox.Show(errors + "Please fix these errors before proceeding.");
+            return false;
+        }
+
+        // Walks the LinkNode tree gathering every site name and every (non-world)
+        // link name. The WorldNode's own link name is excluded from linkNames
+        // because URDF does not emit a world link, so a site cannot collide with
+        // it. World-level sites are excluded entirely in URDF mode (they are
+        // dropped on URDF export) but collected for MJCF.
+        private static void CollectSiteAndLinkNames(
+            LinkNode node, ExportFormat outputFormat, List<string> siteNames, List<string> linkNames)
+        {
+            if (node == null)
+            {
+                return;
+            }
+            bool isWorld = node is WorldNode;
+            if (node.Link != null)
+            {
+                if (!isWorld && !string.IsNullOrWhiteSpace(node.Link.Name))
+                {
+                    linkNames.Add(node.Link.Name);
+                }
+                bool includeSites = !(isWorld && outputFormat == ExportFormat.URDF);
+                if (includeSites && node.Link.Sites != null)
+                {
+                    foreach (SiteSpec site in node.Link.Sites)
+                    {
+                        if (site != null && !string.IsNullOrWhiteSpace(site.Name))
+                        {
+                            siteNames.Add(site.Name);
+                        }
+                    }
+                }
+            }
+            foreach (LinkNode child in node.Nodes)
+            {
+                CollectSiteAndLinkNames(child, outputFormat, siteNames, linkNames);
             }
         }
     }

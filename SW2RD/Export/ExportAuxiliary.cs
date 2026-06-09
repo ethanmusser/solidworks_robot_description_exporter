@@ -22,14 +22,18 @@ THE SOFTWARE.
 
 using System.Collections.Generic;
 
-namespace SW2RD.MJCF
+namespace SW2RD.Export
 {
-    // Site transform information used only when constructing the MJCF model. The
+    // Format-neutral export -> writer carrier types. ExportHelper produces these
+    // (it has access to the live SolidWorks coordinate systems / meshes) and BOTH
+    // writers consume them: MJCFBuilder reads mesh refs + site transforms, and
+    // URDFBuilder reads site transforms to emit empty link + fixed joint frames.
+    // They live in SW2RD.Export (not SW2RD.MJCF) so the URDF writer does not have
+    // to depend on the MJCF namespace.
+
+    // Site transform information used when constructing the output model. The
     // SolidWorks-side machinery is responsible for computing the body-local
-    // transform for each site; the builder simply consumes the result.
-    //
-    // Top-level (rather than nested in MJCFBuilder) so the analyzer doesn't fire
-    // CA1034 and so callers can name it without the MJCFBuilder prefix.
+    // transform for each site; the writers simply consume the result.
     internal class SiteTransform
     {
         public string Name;
@@ -47,21 +51,24 @@ namespace SW2RD.MJCF
         public string File;
     }
 
-    // Per-link auxiliary data that the export helper assembles. The builder
-    // does not know about SolidWorks, so the caller supplies the pieces that
-    // depend on SW state (mesh filenames, site transforms).
+    // Per-link auxiliary data that the export helper assembles. The writers do
+    // not know about SolidWorks, so the caller supplies the pieces that depend
+    // on SW state (mesh filenames, site transforms).
     internal class LinkAuxiliary
     {
         // One entry per visual group on the link. Empty list -> no <geom
         // class="visual"> emitted on this body. Each entry produces one
-        // <mesh> in <asset> and one <geom> in the body.
+        // <mesh> in <asset> and one <geom> in the body. (MJCF only; URDF
+        // stamps mesh URIs onto MeshGroupModel directly.)
         public List<MeshAssetRef> VisualMeshes = new List<MeshAssetRef>();
 
         // One entry per collision group on the link. Empty list -> no
         // <geom class="collision"> emitted unless the legacy single-mesh
-        // fallback below is used.
+        // fallback below is used. (MJCF only.)
         public List<MeshAssetRef> CollisionMeshes = new List<MeshAssetRef>();
 
+        // Per-site body-local pose. Consumed by both writers: MJCF emits a
+        // <site>, URDF emits an empty <link> + fixed <joint>.
         public List<SiteTransform> Sites = new List<SiteTransform>();
     }
 }
