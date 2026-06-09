@@ -57,4 +57,17 @@ namespace SW2RD.Input
         Collision = 1,
         Custom = 2,
     }
+
+    // Where a moving joint's motion axis comes from.
+    //   ReferenceAxis    - a picked SolidWorks reference axis feature (AxisName).
+    //   CoordinateSystemX/Y/Z - a basis vector of the joint coordinate system.
+    //   AutoDerive       - derived from the SolidWorks kinematic chain at export.
+    public enum JointAxisSource
+    {
+        ReferenceAxis = 0,
+        CoordinateSystemX = 1,
+        CoordinateSystemY = 2,
+        CoordinateSystemZ = 3,
+        AutoDerive = 4,
+    }
 }

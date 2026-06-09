@@ -355,14 +355,15 @@ namespace SW2RD.Export
                 if (!string.IsNullOrEmpty(picked) && !active.IsBaseNode && !active.IsTopLevelBody)
                 {
                     active.Link.Joint.AxisName = picked;
-                    // An explicit pick means the user no longer wants
-                    // automatic derivation. Clear the toggle and update
-                    // the checkbox to match.
-                    active.Link.Joint.AutoDeriveAxis = false;
-                    if (PMCheckAutoDeriveAxis != null)
+                    // An explicit reference-axis pick means the user wants the
+                    // reference-axis source. Snap the source dropdown and the
+                    // axis-row enabled state to match.
+                    active.Link.Joint.AxisSource = JointAxisSource.ReferenceAxis;
+                    if (PMComboBoxAxisSource != null)
                     {
-                        PMCheckAutoDeriveAxis.Checked = false;
+                        PMComboBoxAxisSource.CurrentSelection = 0;
                     }
+                    UpdateAxisRowEnabledState(active);
                     DeferRefreshAxisPreview();
                 }
             }
@@ -586,57 +587,6 @@ namespace SW2RD.Export
                 return;
             }
 
-            if (Id == CheckAutoDeriveAxisID)
-            {
-                LinkNode active = (LinkNode)Tree?.SelectedNode;
-                if (active != null && !active.IsBaseNode && active.Link?.Joint != null)
-                {
-                    active.Link.Joint.AutoDeriveAxis = Checked;
-                    if (Checked)
-                    {
-                        // Auto-derive ON: drop any picked axis name so
-                        // the export-time path falls back to
-                        // EstimateGlobalJointFromComponents. The axis
-                        // SelectionBox is also cleared so the UI matches
-                        // the data model.
-                        active.Link.Joint.AxisName = "";
-                        if (PMSelectionJointAxis != null)
-                        {
-                            try
-                            {
-                                bool prior = suppressGroupListboxRefresh;
-                                suppressGroupListboxRefresh = true;
-                                try
-                                {
-                                    // Scope the clear to this mark only -
-                                    // ClearSelection2(true) here would
-                                    // wipe every sibling SelectionBox in
-                                    // the same PMP.
-                                    CommonSwOperations.DeselectAllAtMark(
-                                        ActiveSWModel, PMSelectionJointAxis.Mark);
-                                }
-                                finally
-                                {
-                                    suppressGroupListboxRefresh = prior;
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                logger.Warn("Clearing axis SelectionBox on auto-derive toggle failed: " + ex.Message);
-                            }
-                        }
-                    }
-                    // Re-run the full axis-row gate so the picker honors both
-                    // the auto-derive toggle AND the fixed-joint rule.
-                    UpdateAxisRowEnabledState(active);
-                    // OnCheckboxCheck is dispatched from inside SW's
-                    // PMP event pump alongside OnSelectionboxListChanged;
-                    // defer the preview redraw for the same reason.
-                    DeferRefreshAxisPreview();
-                }
-                return;
-            }
-
             if (Id == CheckAutoComputeLimitsID)
             {
                 LinkNode active = (LinkNode)Tree?.SelectedNode;
@@ -677,25 +627,24 @@ namespace SW2RD.Export
             pageControl.Enabled = (source == InertialSource.Custom);
         }
 
-        // Toggle the joint-axis picker controls (SelectionBox + reverse-
-        // direction button) in lockstep with PMCheckAutoDeriveAxis. Auto-
-        // derive ON disables them; auto-derive OFF re-enables. Visibility
-        // is unchanged - the controls remain on screen so the user can
-        // see the relationship between the toggle and the picker.
-        private void SetAxisPickerEnabled(bool enabled)
+        // Toggle the joint-axis picker controls independently. The reference-
+        // axis SelectionBox is only meaningful in "Reference axis" mode; the
+        // reverse-direction button applies to any picked direction (reference
+        // axis OR a coordinate-system basis axis) but not to auto-derive
+        // (where the exporter resolves the sign itself). Visibility is
+        // unchanged - the controls stay on screen so the user can see the
+        // relationship between the source dropdown and the picker.
+        private void SetAxisPickerEnabled(bool selectionBoxEnabled, bool flipButtonEnabled)
         {
-            object[] controls = new object[]
+            IPropertyManagerPageControl axisBox = PMSelectionJointAxis as IPropertyManagerPageControl;
+            if (axisBox != null)
             {
-                PMSelectionJointAxis,
-                PMBitmapAxisFlip,
-            };
-            foreach (object ctl in controls)
+                axisBox.Enabled = selectionBoxEnabled;
+            }
+            IPropertyManagerPageControl flipButton = PMBitmapAxisFlip as IPropertyManagerPageControl;
+            if (flipButton != null)
             {
-                IPropertyManagerPageControl pageControl = ctl as IPropertyManagerPageControl;
-                if (pageControl != null)
-                {
-                    pageControl.Enabled = enabled;
-                }
+                flipButton.Enabled = flipButtonEnabled;
             }
         }
 
@@ -703,11 +652,11 @@ namespace SW2RD.Export
         // the active node's joint type. An axis is only relevant for a nested
         // link whose joint is NOT "fixed" (revolute / prismatic). For the
         // World root, top-level bodies (welded / free attachment), and nested
-        // "fixed" joints, the label, auto-derive checkbox, picker, and
-        // reverse-direction button are all disabled. When the axis IS
-        // relevant, the picker + reverse button additionally honor the
-        // auto-derive toggle (auto-derive ON disables the manual picker),
-        // which subsumes the standalone SetAxisPickerEnabled call.
+        // "fixed" joints, the label, source dropdown, picker, and reverse-
+        // direction button are all disabled. When the axis IS relevant, the
+        // reference-axis SelectionBox is enabled only for the "Reference axis"
+        // source, and the reverse-direction button is enabled for every source
+        // except auto-derive (the exporter resolves that sign itself).
         private void UpdateAxisRowEnabledState(LinkNode node)
         {
             NodeRole role = ResolveNodeRole(node);
@@ -721,15 +670,18 @@ namespace SW2RD.Export
             {
                 axisLabel.Enabled = axisRelevant;
             }
-            IPropertyManagerPageControl autoDerive = PMCheckAutoDeriveAxis as IPropertyManagerPageControl;
-            if (autoDerive != null)
+            IPropertyManagerPageControl axisSource = PMComboBoxAxisSource as IPropertyManagerPageControl;
+            if (axisSource != null)
             {
-                autoDerive.Enabled = axisRelevant;
+                axisSource.Enabled = axisRelevant;
             }
 
-            // The picker / reverse button stay disabled when auto-derive is on
-            // even for a relevant axis (the exporter resolves the axis itself).
-            SetAxisPickerEnabled(axisRelevant && !(joint?.AutoDeriveAxis ?? false));
+            JointAxisSource source = joint?.AxisSource ?? JointAxisSource.ReferenceAxis;
+            bool referenceMode = source == JointAxisSource.ReferenceAxis;
+            bool autoDerive = source == JointAxisSource.AutoDerive;
+            SetAxisPickerEnabled(
+                axisRelevant && referenceMode,
+                axisRelevant && !autoDerive);
         }
 
         void IPropertyManagerPage2Handler9.OnComboboxEditChanged(int Id, string Text)
@@ -839,6 +791,70 @@ namespace SW2RD.Export
                 }
                 return;
             }
+
+            if (Id == ComboBoxAxisSourceID)
+            {
+                // Item order matches AxisSourceComboItems and the
+                // JointAxisSource enum (0 = ReferenceAxis .. 4 = AutoDerive).
+                LinkNode active = (LinkNode)Tree?.SelectedNode;
+                if (active != null && !active.IsBaseNode && active.Link?.Joint != null)
+                {
+                    JointAxisSource source = ClampAxisSource(Item);
+                    active.Link.Joint.AxisSource = source;
+
+                    // Leaving "Reference axis" mode: the picked reference axis
+                    // no longer drives the joint, so clear AxisName and empty
+                    // the axis SelectionBox to keep the UI and data model in
+                    // sync. Coordinate-system basis axes and auto-derive both
+                    // resolve without a reference-axis pick.
+                    if (source != JointAxisSource.ReferenceAxis)
+                    {
+                        active.Link.Joint.AxisName = "";
+                        if (PMSelectionJointAxis != null)
+                        {
+                            try
+                            {
+                                bool prior = suppressGroupListboxRefresh;
+                                suppressGroupListboxRefresh = true;
+                                try
+                                {
+                                    // Scope the clear to this mark only -
+                                    // ClearSelection2(true) here would wipe
+                                    // every sibling SelectionBox in the PMP.
+                                    CommonSwOperations.DeselectAllAtMark(
+                                        ActiveSWModel, PMSelectionJointAxis.Mark);
+                                }
+                                finally
+                                {
+                                    suppressGroupListboxRefresh = prior;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.Warn("Clearing axis SelectionBox on axis-source change failed: " + ex.Message);
+                            }
+                        }
+                    }
+
+                    UpdateAxisRowEnabledState(active);
+                    // Dispatched from inside SW's PMP event pump; defer the
+                    // preview redraw for the same re-entrancy reason as the
+                    // SelectionBox handlers.
+                    DeferRefreshAxisPreview();
+                }
+                return;
+            }
+        }
+
+        // Maps a "Joint axis source" dropdown index to the enum, clamping
+        // out-of-range values to the ReferenceAxis default.
+        private static JointAxisSource ClampAxisSource(int item)
+        {
+            if (item >= 0 && item <= (int)JointAxisSource.AutoDerive)
+            {
+                return (JointAxisSource)item;
+            }
+            return JointAxisSource.ReferenceAxis;
         }
 
         void IPropertyManagerPage2Handler9.OnGroupCheck(int Id, bool Checked)

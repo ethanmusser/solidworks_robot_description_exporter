@@ -347,6 +347,117 @@ namespace SW2RD.Test
             Assert.Equal(string.Empty, legacyChild.Joint.AxisName);
         }
 
+        [Theory]
+        [InlineData(JointAxisSourceModel.ReferenceAxis)]
+        [InlineData(JointAxisSourceModel.CoordinateSystemX)]
+        [InlineData(JointAxisSourceModel.CoordinateSystemY)]
+        [InlineData(JointAxisSourceModel.CoordinateSystemZ)]
+        [InlineData(JointAxisSourceModel.AutoDerive)]
+        public void TestRoundTripPreservesAxisSourceField(JointAxisSourceModel source)
+        {
+            Config original = SampleConfigWithAxisSource(source);
+            string json = ConfigJsonSerializer.Serialize(original);
+            Config read = ConfigJsonSerializer.Deserialize(json);
+
+            JointModel readJoint = FirstTopLevel(read.Tree).Children[0].Joint;
+            Assert.Equal(source, readJoint.AxisSource);
+        }
+
+        [Fact]
+        public void TestRoundTripDefaultsAxisSourceReferenceAxisWhenMissing()
+        {
+            // Config documents written before AxisSource existed do not carry
+            // the field; System.Text.Json must bind it to the record default
+            // (ReferenceAxis).
+            string json = "{ \"SchemaVersion\": " + Config.CurrentSchemaVersion + ", " +
+                "\"ExporterVersion\": \"\", \"SavedAtUtc\": \"2024-01-01T00:00:00Z\", " +
+                "\"Tree\": { \"Name\": \"x\", " +
+                "\"GlobalOriginCoordinateSystemName\": \"\", " +
+                "\"WorldBody\": { \"Name\": \"world\", \"Inertial\": null, \"Material\": null, " +
+                "\"VisualGroups\": [], \"CollisionGroups\": [], \"CollisionUsesVisual\": false, " +
+                "\"InertialSource\": 0, \"InertialComponents\": [], \"Sites\": [], " +
+                "\"Joint\": null, \"Children\": [{ " +
+                "\"Name\": \"base\", \"Inertial\": null, \"Material\": null, " +
+                "\"VisualGroups\": [], \"CollisionGroups\": [], \"CollisionUsesVisual\": false, " +
+                "\"InertialSource\": 0, \"InertialComponents\": [], \"Sites\": [], " +
+                "\"Joint\": null, \"Children\": [{ " +
+                "\"Name\": \"link1\", \"Inertial\": null, \"Material\": null, " +
+                "\"VisualGroups\": [], \"CollisionGroups\": [], \"CollisionUsesVisual\": false, " +
+                "\"InertialSource\": 0, \"InertialComponents\": [], \"Sites\": [], " +
+                "\"Joint\": { \"Name\": \"j1\", \"Type\": \"revolute\", " +
+                "\"ParentLinkName\": \"base\", \"ChildLinkName\": \"link1\", " +
+                "\"Origin\": { \"Position\": { \"X\": 0, \"Y\": 0, \"Z\": 0 }, " +
+                "\"Rotation\": { \"Roll\": 0, \"Pitch\": 0, \"Yaw\": 0 } }, " +
+                "\"Axis\": { \"X\": 0, \"Y\": 0, \"Z\": 1 }, \"Limit\": null, " +
+                "\"CoordinateSystemName\": \"\", \"AxisName\": \"\", \"AxisFlipped\": false }, " +
+                "\"Children\": [] }] }] } } }";
+
+            Config read = ConfigJsonSerializer.Deserialize(json);
+            JointModel joint = FirstTopLevel(read.Tree).Children[0].Joint;
+            Assert.Equal(JointAxisSourceModel.ReferenceAxis, joint.AxisSource);
+        }
+
+        [Theory]
+        [InlineData(JointAxisSourceModel.CoordinateSystemX)]
+        [InlineData(JointAxisSourceModel.CoordinateSystemY)]
+        [InlineData(JointAxisSourceModel.CoordinateSystemZ)]
+        public void TestAxisSourceBasisRoundTripsThroughLegacyAdapter(JointAxisSourceModel source)
+        {
+            // Core -> edit model -> Core: the basis-axis source survives both
+            // adapter directions (ApplyJoint / ToCoreJoint).
+            Config original = SampleConfigWithAxisSource(source);
+            SW2RD.Input.Link legacyRoot =
+                SW2RD.Export.KinematicTreeAdapter.ToLegacyLink(
+                    FirstTopLevel(original.Tree), null);
+            Joint joint = legacyRoot.Children[0].Joint;
+
+            Assert.True(joint.UsesCoordinateSystemAxis);
+            Assert.False(joint.AutoDeriveAxis);
+            Assert.Equal((JointAxisSource)(int)source, joint.AxisSource);
+        }
+
+        [Fact]
+        public void TestLegacyAutoDeriveAxisBooleanMigratesToAxisSource()
+        {
+            // Pre-AxisSource configs carried AutoDeriveAxis=true with the
+            // default ReferenceAxis source (AxisSource did not exist on the
+            // wire). ApplyJoint must promote that to AxisSource.AutoDerive.
+            JointModel legacyJoint = new JointModel(
+                "joint1", "revolute", "base_link", "child_link",
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(0, 0, 0)),
+                new Vector3Model(0, 0, 1),
+                Limit: null,
+                CoordinateSystemName: "joint_coordsys",
+                AxisName: "",
+                AxisFlipped: false,
+                AutoDeriveAxis: true);
+
+            LinkModel root = new LinkModel(
+                "base_link", null, null,
+                Array.Empty<MeshGroupModel>(), Array.Empty<MeshGroupModel>(),
+                false, InertialSourceModel.Visual,
+                Array.Empty<ComponentReferenceModel>(),
+                Array.Empty<SiteModel>(),
+                null,
+                new[]
+                {
+                    new LinkModel(
+                        "child_link", null, null,
+                        Array.Empty<MeshGroupModel>(), Array.Empty<MeshGroupModel>(),
+                        false, InertialSourceModel.Visual,
+                        Array.Empty<ComponentReferenceModel>(),
+                        Array.Empty<SiteModel>(),
+                        legacyJoint,
+                        Array.Empty<LinkModel>())
+                });
+
+            SW2RD.Input.Link legacyRoot = SW2RD.Export.KinematicTreeAdapter.ToLegacyLink(root, null);
+            Joint joint = legacyRoot.Children[0].Joint;
+
+            Assert.Equal(JointAxisSource.AutoDerive, joint.AxisSource);
+            Assert.True(joint.AutoDeriveAxis);
+        }
+
         [Fact]
         public void TestRoundTripDefaultsAutoComputeLimitsFalseWhenMissing()
         {
@@ -730,6 +841,41 @@ namespace SW2RD.Test
             return new Config(
                 Config.CurrentSchemaVersion, "1.0", DateTime.UtcNow,
                 new KinematicTree("autoderive_robot",
+                    "",
+                    WorldBody(root)));
+        }
+
+        // Variant of SampleConfig that sets a specific AxisSource on the child
+        // joint so round-trip / adapter tests can verify the enum survives.
+        private static Config SampleConfigWithAxisSource(JointAxisSourceModel source)
+        {
+            bool referenceAxis = source == JointAxisSourceModel.ReferenceAxis;
+            JointModel childJoint = new JointModel(
+                "joint1", "revolute", "base_link", "child_link",
+                new PoseModel(new Vector3Model(0, 0, 0), TestRotations.Quat(0, 0, 0)),
+                new Vector3Model(0, 0, 1),
+                Limit: null,
+                CoordinateSystemName: "joint_coordsys",
+                AxisName: referenceAxis ? "joint_axis" : "",
+                AxisFlipped: false,
+                AxisSource: source);
+            LinkModel child = new LinkModel(
+                "child_link", null, null,
+                Array.Empty<MeshGroupModel>(), Array.Empty<MeshGroupModel>(), false,
+                InertialSourceModel.Visual,
+                Array.Empty<ComponentReferenceModel>(),
+                Array.Empty<SiteModel>(),
+                childJoint, Array.Empty<LinkModel>());
+            LinkModel root = new LinkModel(
+                "base_link", null, null,
+                Array.Empty<MeshGroupModel>(), Array.Empty<MeshGroupModel>(), false,
+                InertialSourceModel.Visual,
+                Array.Empty<ComponentReferenceModel>(),
+                Array.Empty<SiteModel>(),
+                null, new[] { child });
+            return new Config(
+                Config.CurrentSchemaVersion, "1.0", DateTime.UtcNow,
+                new KinematicTree("axissource_robot",
                     "",
                     WorldBody(root)));
         }

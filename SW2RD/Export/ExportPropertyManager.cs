@@ -129,13 +129,14 @@ namespace SW2RD.Export
         // Link.Joint.CoordinateSystemName.
         private PropertyManagerPageSelectionbox PMSelectionJointCoordsys;
         private PropertyManagerPageSelectionbox PMSelectionJointAxis;
-        // "Auto-derive axis from kinematic chain" toggle. When checked,
-        // the joint axis SelectionBox is disabled and AxisName is
-        // ignored at export time (CreateJoint /
-        // EstimateGlobalJointFromComponents resolve the axis from the
-        // SW mates instead). Mirrored to Joint.AutoDeriveAxis on every
-        // toggle and on SaveActiveNode.
-        private PropertyManagerPageCheckbox PMCheckAutoDeriveAxis;
+        // "Joint axis source" dropdown: Reference axis / Coordinate system
+        // X / Y / Z / Auto-derive from kinematic chain. Item order MUST match
+        // AxisSourceComboItems and the JointAxisSource enum (0..4). Drives
+        // Joint.AxisSource; gates the reference-axis SelectionBox (enabled
+        // only for "Reference axis") and the reverse-direction button
+        // (enabled for everything except Auto-derive). Round-trips on link
+        // switch via FillPropertyManager / SaveActiveNode.
+        private PropertyManagerPageCombobox PMComboBoxAxisSource;
 
         // Export-time choices shown on the Setup tab. These read together
         // as "what should the next export do".
@@ -474,7 +475,9 @@ namespace SW2RD.Export
         private const int TextBoxJointNameID = 140;
         private const int LabelJointTypeID = 141;
         private const int ComboBoxJointTypeID = 142;
-        private const int CheckAutoDeriveAxisID = 143;
+        // 143 retired (was CheckAutoDeriveAxisID); the auto-derive checkbox was
+        // merged into the role-aware "Joint axis source" dropdown
+        // (ComboBoxAxisSourceID = 162).
         private const int LabelLinkNameStaticID = 144;
         private const int LabelVisualComponentsHeaderID = 145;
         private const int LabelCollisionComponentsHeaderID = 146;
@@ -499,6 +502,9 @@ namespace SW2RD.Export
         // IDs (91-95) above.
         private const int TreeGroupID = 160;
         private const int ExportGroupID = 161;
+        // "Joint axis source" dropdown on the Link/Joint tab (replaces the
+        // retired auto-derive checkbox at slot 143).
+        private const int ComboBoxAxisSourceID = 162;
 
         // Marks for every PMP SelectionBox so SOLIDWORKS can attribute the
         // user's selection to the right list. CRITICAL:
@@ -607,9 +613,20 @@ namespace SW2RD.Export
             // accordion page, so the option is off and no dead arrows render;
             // the gate flips it on automatically once a second page is added
             // to wizardPages. Export mode never shows the arrows.
+            // swPropertyManagerOptions_GrayOutDisabledSelectionListboxes
+            // (65536) makes SW paint a disabled SelectionBox with a greyed
+            // background. SW does NOT grey disabled selection boxes by default
+            // (an empty disabled box looks identical to an empty enabled one),
+            // so without this flag the joint-axis SelectionBox stays visually
+            // "active" when the axis source is a coordinate-system basis axis
+            // or auto-derive even though it is functionally disabled. SW docs
+            // note hiding is the "standard" alternative, but we keep the box
+            // visible-but-greyed so the layout doesn't reflow when the user
+            // switches axis source.
             long options = (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_OkayButton +
                 (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_CancelButton +
-                (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_HandleKeystrokes;
+                (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_HandleKeystrokes +
+                (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_GrayOutDisabledSelectionListboxes;
             if (mode == ExportPmMode.Configure && TotalWizardPages > 1)
             {
                 options += (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_MultiplePages;

@@ -111,12 +111,26 @@ namespace SW2RD.Input
         // URDF has no analog; ignored on URDF export. null = attribute omitted.
         public double? Armature;
 
-        // When true, the joint axis is derived from the SolidWorks kinematic
-        // chain at export time and AxisName is ignored. Legacy configs stored
-        // the sentinel literal "Automatically Generate" in AxisName; that is
-        // migrated onto AutoDeriveAxis=true + AxisName="" in
-        // KinematicTreeAdapter.ApplyJoint (the Config-load path).
-        public bool AutoDeriveAxis;
+        // Where the joint motion axis comes from: a picked reference axis
+        // (AxisName), a basis vector of the joint coordinate system, or the
+        // SolidWorks kinematic chain. ReferenceAxis is the zero-init default.
+        // Legacy configs stored the sentinel literal "Automatically Generate"
+        // in AxisName (and/or AutoDeriveAxis=true); both are migrated onto
+        // AxisSource=AutoDerive + AxisName="" in KinematicTreeAdapter.ApplyJoint
+        // (the Config-load path).
+        public JointAxisSource AxisSource;
+
+        // Convenience view over AxisSource for the many export-side readers.
+        // AxisSource is the single writable source of truth; do not add a
+        // separate AutoDeriveAxis field.
+        public bool AutoDeriveAxis => AxisSource == JointAxisSource.AutoDerive;
+
+        // True when the axis is one of the joint coordinate system's basis
+        // vectors (X/Y/Z), which need no separate reference-axis pick.
+        public bool UsesCoordinateSystemAxis =>
+            AxisSource == JointAxisSource.CoordinateSystemX ||
+            AxisSource == JointAxisSource.CoordinateSystemY ||
+            AxisSource == JointAxisSource.CoordinateSystemZ;
 
         public Joint()
         {
@@ -159,7 +173,7 @@ namespace SW2RD.Input
                 AxisName = AxisName,
                 AxisFlipped = AxisFlipped,
                 AutoComputeLimits = AutoComputeLimits,
-                AutoDeriveAxis = AutoDeriveAxis,
+                AxisSource = AxisSource,
                 Reference = Reference,
                 Armature = Armature,
             };
@@ -183,7 +197,7 @@ namespace SW2RD.Input
             AxisName = joint.AxisName;
             AxisFlipped = joint.AxisFlipped;
             AutoComputeLimits = joint.AutoComputeLimits;
-            AutoDeriveAxis = joint.AutoDeriveAxis;
+            AxisSource = joint.AxisSource;
             Reference = joint.Reference;
             Armature = joint.Armature;
         }
@@ -194,7 +208,7 @@ namespace SW2RD.Input
             AxisName = joint.AxisName;
             AxisFlipped = joint.AxisFlipped;
             AutoComputeLimits = joint.AutoComputeLimits;
-            AutoDeriveAxis = joint.AutoDeriveAxis;
+            AxisSource = joint.AxisSource;
             Reference = joint.Reference;
             Armature = joint.Armature;
             Type = joint.Type;

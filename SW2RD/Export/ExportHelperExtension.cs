@@ -621,12 +621,14 @@ namespace SW2RD.Export
                 child.Joint.Type = jointType;
             }
             else if (!child.Joint.AutoDeriveAxis &&
+                !child.Joint.UsesCoordinateSystemAxis &&
                 string.IsNullOrEmpty(axisName) &&
                 jointType != "fixed")
             {
                 ExportErrorWhy = string.Format(
                     "The joint axis is empty for joint {0} from link {1} to {2}. " +
-                    "Pick a reference axis or enable auto-derive axis from kinematic chain.",
+                    "Pick a reference axis, a coordinate-system axis, or enable " +
+                    "auto-derive axis from kinematic chain.",
                     child.Joint.Name, child.Name, parent.Name);
                 return false;
             }
@@ -1592,6 +1594,33 @@ namespace SW2RD.Export
             return r.ComponentTransform == null ? local : local.Multiply(r.ComponentTransform);
         }
 
+        // Returns the global-frame unit basis vector (X=0, Y=1, Z=2) of the
+        // named coordinate system. The rotation columns of the coord-sys
+        // transform ARE its basis vectors expressed in assembly-global
+        // coordinates, so this is the coord-sys-axis analog of GetRefAxis:
+        // feed it through the same AxisFlipped negation + LocalizeJoint path
+        // and a basis axis collapses to a clean unit vector in the joint frame.
+        private double[] GetCoordinateSystemBasisAxis(string coordinateSystemName, int basisIndex)
+        {
+            MathTransform transform = GetCoordinateSystemTransform(coordinateSystemName);
+            if (transform == null)
+            {
+                throw new Exception(
+                    "Could not resolve coordinate system '" + (coordinateSystemName ?? "") +
+                    "' for its basis axis.");
+            }
+
+            double[] data = transform.ArrayData;
+            int offset = 3 * basisIndex;
+            double[] axis = new double[]
+            {
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+            };
+            return MathOps.PNorm(axis, 2);
+        }
+
         private void MoveOrigin(Link parent, Link nonLocalizedChild)
         {
             double xMax = Double.MinValue;
@@ -1634,7 +1663,9 @@ namespace SW2RD.Export
         // own sign on each export).
         private void EstimateAxis(Joint Joint)
         {
-            double[] axisXYZ = EstimateAxis(Joint.AxisName);
+            double[] axisXYZ = Joint.UsesCoordinateSystemAxis
+                ? GetCoordinateSystemBasisAxis(Joint.CoordinateSystemName, BasisIndexFor(Joint.AxisSource))
+                : EstimateAxis(Joint.AxisName);
             if (Joint.AxisFlipped)
             {
                 axisXYZ[0] = -axisXYZ[0];
@@ -1642,6 +1673,22 @@ namespace SW2RD.Export
                 axisXYZ[2] = -axisXYZ[2];
             }
             Joint.Axis.SetXYZ(axisXYZ);
+        }
+
+        // Maps a coordinate-system basis JointAxisSource to its 0/1/2 column
+        // index. Defaults to 0 (X) for non-basis sources; callers must gate
+        // on Joint.UsesCoordinateSystemAxis before relying on the result.
+        private static int BasisIndexFor(JointAxisSource source)
+        {
+            switch (source)
+            {
+                case JointAxisSource.CoordinateSystemY:
+                    return 1;
+                case JointAxisSource.CoordinateSystemZ:
+                    return 2;
+                default:
+                    return 0;
+            }
         }
 
         // Result of PreviewAxisDirection: enough information for the
@@ -1664,22 +1711,40 @@ namespace SW2RD.Export
         // "None"), or cannot be resolved.
         public AxisPreview PreviewAxisDirection(string coordsysName, string axisName, bool flipped)
         {
+            return PreviewAxisDirection(coordsysName, axisName, flipped, JointAxisSource.ReferenceAxis);
+        }
+
+        public AxisPreview PreviewAxisDirection(
+            string coordsysName, string axisName, bool flipped, JointAxisSource axisSource)
+        {
             AxisPreview empty = new AxisPreview { IsValid = false };
 
-            logger.Info("PreviewAxisDirection: enter coordsys='" + (coordsysName ?? "") +
-                        "' axis='" + (axisName ?? "") + "' flipped=" + flipped);
+            bool usesBasisAxis =
+                axisSource == JointAxisSource.CoordinateSystemX ||
+                axisSource == JointAxisSource.CoordinateSystemY ||
+                axisSource == JointAxisSource.CoordinateSystemZ;
 
-            if (string.IsNullOrWhiteSpace(coordsysName) ||
+            logger.Info("PreviewAxisDirection: enter coordsys='" + (coordsysName ?? "") +
+                        "' axis='" + (axisName ?? "") + "' flipped=" + flipped +
+                        " source=" + axisSource);
+
+            // A coord-sys basis axis needs only a resolvable coordinate system;
+            // the reference-axis name is irrelevant (and normally empty) in
+            // that mode. Auto-derive has no previewable geometry until export.
+            bool placeholderCoordsys =
+                string.IsNullOrWhiteSpace(coordsysName) ||
+                coordsysName == "Automatically Generate";
+            bool placeholderAxis =
                 string.IsNullOrWhiteSpace(axisName) ||
-                coordsysName == "Automatically Generate" ||
                 axisName == "Automatically Generate" ||
-                axisName == "None")
+                axisName == "None";
+
+            if (placeholderCoordsys || (!usesBasisAxis && placeholderAxis))
             {
                 // Empty / placeholder picks: nothing to preview. With
                 // the SelectionBox-only UI an empty AxisName combined
-                // with AutoDeriveAxis = true is the new "auto" state
-                // (no overlay until the kinematic chain has been
-                // resolved at export time).
+                // with auto-derive is the "auto" state (no overlay until
+                // the kinematic chain has been resolved at export time).
                 logger.Info("PreviewAxisDirection: placeholder/empty inputs -> IsValid=false");
                 return empty;
             }
@@ -1705,13 +1770,22 @@ namespace SW2RD.Export
                 double[] axis;
                 try
                 {
-                    logger.Info("PreviewAxisDirection: EstimateAxis ENTER");
-                    axis = EstimateAxis(axisName);
-                    logger.Info("PreviewAxisDirection: EstimateAxis RETURNED (null=" + (axis == null) + ")");
+                    if (usesBasisAxis)
+                    {
+                        logger.Info("PreviewAxisDirection: GetCoordinateSystemBasisAxis ENTER");
+                        axis = GetCoordinateSystemBasisAxis(coordsysName, BasisIndexFor(axisSource));
+                        logger.Info("PreviewAxisDirection: GetCoordinateSystemBasisAxis RETURNED (null=" + (axis == null) + ")");
+                    }
+                    else
+                    {
+                        logger.Info("PreviewAxisDirection: EstimateAxis ENTER");
+                        axis = EstimateAxis(axisName);
+                        logger.Info("PreviewAxisDirection: EstimateAxis RETURNED (null=" + (axis == null) + ")");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    logger.Warn("PreviewAxisDirection: EstimateAxis(" + axisName + ") failed: " + ex.Message);
+                    logger.Warn("PreviewAxisDirection: axis resolution failed: " + ex.Message);
                     return empty;
                 }
 

@@ -130,31 +130,48 @@ namespace SW2RD.Export
             PMSelectionJointCoordsys.Mark = JointCoordSysSelectionMark;
         }
 
+        // Item order MUST match the JointAxisSource enum (0..4) and the
+        // CurrentSelection mapping in FillPropertyManager / the
+        // ComboBoxAxisSourceID branch in OnComboboxSelectionChanged.
+        private static readonly string[] AxisSourceComboItems = new string[]
+        {
+            "Reference axis",
+            "Coordinate system X",
+            "Coordinate system Y",
+            "Coordinate system Z",
+            "Auto-derive from kinematic chain",
+        };
+
         private void BuildJointAxisControls(object axisFilterObj)
         {
             int controlType = (int)swPropertyManagerPageControlType_e.swControlType_Label;
             int alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge;
             int options = (int)swAddControlOptions_e.swControlOptions_Visible +
                 (int)swAddControlOptions_e.swControlOptions_Enabled;
-            string tip = "Pick the SolidWorks reference axis that defines the joint motion direction. Toggle the auto-derive checkbox to let the exporter resolve the axis from the kinematic chain instead.";
+            string tip = "Choose where the joint motion axis comes from: a picked SolidWorks reference axis, one of the joint coordinate system's basis axes (X/Y/Z), or auto-derived from the kinematic chain. The reverse-direction button flips the sign for reference and coordinate-system axes.";
             PMLabelAxes = (PropertyManagerPageLabel)PMLinkJointGroup.AddControl2(
                 LabelAxesID, (short)controlType, "Joint axis", (short)alignment, options, tip);
 
-            // "Auto-derive axis from kinematic chain" toggle. Defaults
-            // off so new joints require an explicit reference-axis pick
-            // unless the user opts into inference from mates.
-            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Checkbox;
-            PMCheckAutoDeriveAxis = (PropertyManagerPageCheckbox)PMLinkJointGroup.AddControl2(
-                CheckAutoDeriveAxisID, (short)controlType,
-                "Auto-derive axis from kinematic chain", (short)alignment, options,
-                "When checked, the joint axis is resolved from the SolidWorks mates at export time and the picker below is ignored.");
-            PMCheckAutoDeriveAxis.Checked = false;
+            // "Joint axis source" dropdown. Defaults to Reference axis so new
+            // joints behave as before (explicit reference-axis pick) unless
+            // the user selects a coordinate-system basis axis or auto-derive.
+            controlType = (int)swPropertyManagerPageControlType_e.swControlType_Combobox;
+            alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
+            PMComboBoxAxisSource = (PropertyManagerPageCombobox)PMLinkJointGroup.AddControl2(
+                ComboBoxAxisSourceID, (short)controlType, "Joint axis source",
+                (short)alignment, options,
+                "Reference axis: pick a SolidWorks reference axis below. Coordinate system X/Y/Z: use that basis axis of the joint coordinate system. Auto-derive: resolve the axis from the SolidWorks mates at export time.");
+            PMComboBoxAxisSource.Style =
+                (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
+            PMComboBoxAxisSource.AddItems(AxisSourceComboItems);
+            PMComboBoxAxisSource.CurrentSelection = 0;
 
             controlType = (int)swPropertyManagerPageControlType_e.swControlType_Selectionbox;
             alignment = (int)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent;
             PMSelectionJointAxis = (PropertyManagerPageSelectionbox)PMLinkJointGroup.AddControl2(
                 SelectionJointAxisID, (short)controlType, "Pick joint axis",
-                (short)alignment, options, tip);
+                (short)alignment, options,
+                "Pick the SolidWorks reference axis that defines the joint motion direction. Used only when the joint axis source is 'Reference axis'.");
             // SW-native single-entity overwrite UX - see
             // PMSelectionJointCoordsys above for the full rationale.
             // AllowSelectInMultipleBoxes = FALSE keeps the joint axis
@@ -176,7 +193,7 @@ namespace SW2RD.Export
             PMBitmapAxisFlip = (PropertyManagerPageBitmapButton)PMLinkJointGroup.AddControl2(
                 BitmapAxisFlipID, (short)controlType, "Reverse Direction",
                 (short)alignment, options,
-                "Reverse the positive direction of the reference axis");
+                "Reverse the positive direction of the joint axis (reference axis or coordinate-system basis axis)");
             PMBitmapAxisFlip.SetStandardBitmaps(
                 (int)swPropertyManagerPageBitmapButtons_e.swBitmapButtonImage_reverse_direction);
         }

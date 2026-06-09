@@ -113,7 +113,8 @@ namespace SW2RD.Core
         double? Friction = null,
         double? Armature = null,
         double? Reference = null,
-        bool AutoDeriveAxis = false);
+        bool AutoDeriveAxis = false,
+        JointAxisSourceModel AxisSource = JointAxisSourceModel.ReferenceAxis);
 
     public sealed record MeshGroupModel(
         string Name,
@@ -215,5 +216,18 @@ namespace SW2RD.Core
         Visual = 0,
         Collision = 1,
         Custom = 2,
+    }
+
+    /// <summary>
+    /// Where a moving joint's motion axis comes from. Mirrors the edit-model
+    /// <c>SW2RD.Input.JointAxisSource</c> (same integer members).
+    /// </summary>
+    public enum JointAxisSourceModel
+    {
+        ReferenceAxis = 0,
+        CoordinateSystemX = 1,
+        CoordinateSystemY = 2,
+        CoordinateSystemZ = 3,
+        AutoDerive = 4,
     }
 }
