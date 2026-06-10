@@ -796,10 +796,7 @@ namespace SW2RD.Export
                 }
                 Joint.Origin.SetXYZ(new double[] { 0, 0, 0 });
                 Joint.CoordinateSystemName = "Origin_global";
-                if (referenceSketchName == null)
-                {
-                    referenceSketchName = Setup3DSketch();
-                }
+                EnsureReferenceSketch();
                 CreateRefOrigin(Joint);
             }
         }
@@ -871,10 +868,7 @@ namespace SW2RD.Export
             string uniqueSuffix = Guid.NewGuid().ToString("N").Substring(0, 8);
             string tempName = TempExportFramePrefix + sanitisedLinkName + "_" + uniqueSuffix;
 
-            if (referenceSketchName == null)
-            {
-                referenceSketchName = Setup3DSketch();
-            }
+            EnsureReferenceSketch();
 
             try
             {
@@ -1122,9 +1116,26 @@ namespace SW2RD.Export
             return sketch.Name;
         }
 
+        // Guarantees the internal "Robot Description Reference" 3D sketch that
+        // every auto-generated reference origin / axis is drawn into exists.
+        // Must be called before any AddSketchGeometry path. referenceSketchName
+        // is only initialized lazily, and the base-link initializer
+        // (CreateBaseRefOrigin) is skipped whenever the user supplies an
+        // explicit global origin coord system - so a child joint left on
+        // "Automatically Generate" would otherwise hit AddSketchGeometry with a
+        // null referenceSketchName and throw "Reference sketch  does not exist".
+        private void EnsureReferenceSketch()
+        {
+            if (referenceSketchName == null)
+            {
+                referenceSketchName = Setup3DSketch();
+            }
+        }
+
         // Adds lines and a point to create the entities for a reference coordinates
         private object[] AddSketchGeometry(Origin Origin)
         {
+            EnsureReferenceSketch();
             //Find if the sketch exists first
             if (ActiveSWModel.SketchManager.ActiveSketch == null)
             {
@@ -1133,7 +1144,23 @@ namespace SW2RD.Export
                         referenceSketchName, "SKETCH", 0, 0, 0, false, 0, null, 0);
                 if (!sketchExists)
                 {
-                    throw new Exception("Reference sketch " + referenceSketchName + " does not exist");
+                    // EnsureReferenceSketch() above guarantees referenceSketchName
+                    // is set, so reaching here means the helper sketch was deleted
+                    // mid-export. Recreate it rather than aborting the whole export.
+                    logger.Warn("Reference sketch '" + (referenceSketchName ?? "<null>") +
+                        "' was missing when building an auto-generated joint frame; recreating it.");
+                    referenceSketchName = Setup3DSketch();
+                    if (!ActiveSWModel.Extension.SelectByID2(
+                            referenceSketchName, "SKETCH", 0, 0, 0, false, 0, null, 0))
+                    {
+                        throw new Exception(
+                            "Could not create the internal reference sketch needed to auto-generate a " +
+                            "joint coordinate system. This happens when a joint is left on " +
+                            "\"Automatically Generate\" for its reference coordinate system and the " +
+                            "exporter cannot insert a 3D sketch into the active assembly. Assign an " +
+                            "explicit reference coordinate system to the affected joint, or ensure the " +
+                            "active document is an editable assembly, and try again.");
+                    }
                 }
                 ActiveSWModel.SketchManager.Insert3DSketch(true);
             }
@@ -1182,6 +1209,7 @@ namespace SW2RD.Export
         //Inserts a sketch segment for use when creating a Reference Axis
         private SketchSegment AddSketchGeometry(Axis axis, Origin origin, string coordSysName)
         {
+            EnsureReferenceSketch();
             if (ActiveSWModel.SketchManager.ActiveSketch == null)
             {
                 ActiveSWModel.Extension.SelectByID2(
@@ -2601,6 +2629,7 @@ namespace SW2RD.Export
         {
             if (!string.IsNullOrEmpty(link.Joint.CoordinateSystemName) &&
                 link.Joint.CoordinateSystemName != "Automatically Generate" &&
+                !IsSubComponentReference(link.Joint.CoordinateSystemName) &&
                 !CheckRefCoordsysExists(link.Joint.CoordinateSystemName))
             {
                 link.Joint.CoordinateSystemName = "";
@@ -2608,10 +2637,32 @@ namespace SW2RD.Export
             if (!link.Joint.AutoDeriveAxis &&
                 !string.IsNullOrEmpty(link.Joint.AxisName) &&
                 link.Joint.AxisName != "Automatically Generate" &&
+                !IsSubComponentReference(link.Joint.AxisName) &&
                 !CheckRefAxisExists(link.Joint.AxisName))
             {
                 link.Joint.AxisName = "";
             }
+        }
+
+        // A reference name carrying a "<component path>" suffix points at
+        // geometry that lives INSIDE a sub-component (e.g.
+        // "SWING_JOINT_CS <100-01080-1/.../830-02157-33>"). The reference lists
+        // (ReferenceCoordinateSystemNames / ReferenceAxesNames) are built by
+        // FindRefGeoNames -> GetFeaturesOfType, which only enumerates the
+        // assembly plus its TOP-LEVEL components (GetComponents(true) + no
+        // recursion). Deeply-nested sub-component geometry therefore never
+        // appears in those lists, so a Contains() check produces a FALSE
+        // NEGATIVE and CheckRefGeometryExists would silently wipe a perfectly
+        // valid user-picked coordinate system / axis - which then collapses the
+        // joint into the auto-generate path. We cannot reliably validate
+        // sub-component references against the shallow list, so we leave them
+        // intact here; if such a reference is genuinely missing it surfaces
+        // later (and loudly) when GetCoordinateSystemTransform / GetRefAxis
+        // fails to resolve it, rather than being destroyed up front.
+        private static bool IsSubComponentReference(string name)
+        {
+            return !string.IsNullOrEmpty(name) &&
+                name.Contains("<") && name.Contains(">");
         }
 
         private bool CheckRefCoordsysExists(string OriginName)
