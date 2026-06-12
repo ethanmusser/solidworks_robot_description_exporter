@@ -115,6 +115,7 @@ namespace SW2RD.Export
             }
             bool exportMeshes = PMCheckExportMeshes == null || PMCheckExportMeshes.Checked;
             bool fastMeshExport = PMCheckFastMeshExport != null && PMCheckFastMeshExport.Checked;
+            bool keepResolved = PMCheckKeepResolved != null && PMCheckKeepResolved.Checked;
             int meshQuality = PMComboBoxMeshQuality != null
                 ? ExportPreferences.ClampMeshQuality(PMComboBoxMeshQuality.CurrentSelection)
                 : ExportPreferences.GetMeshQuality();
@@ -220,7 +221,7 @@ namespace SW2RD.Export
                 bool exportSuccess = Exporter.CreateRobotFromTreeView(BaseNode);
                 if (exportSuccess)
                 {
-                    FinishExport(outputFormat, meshFormat, exportMeshes, fastMeshExport, meshQuality, rotationFormat, angleUnit);
+                    FinishExport(outputFormat, meshFormat, exportMeshes, fastMeshExport, meshQuality, rotationFormat, angleUnit, keepResolved);
                 }
             }
             finally
@@ -230,8 +231,21 @@ namespace SW2RD.Export
                 // components we flipped are touched; anything the user had already
                 // resolved is left alone. If the full-resolve fallback ran, the
                 // extra components it resolved are intentionally left resolved,
-                // matching the legacy behavior.
-                RevertComponentsToLightweight(resolvedByUs);
+                // matching the legacy behavior. When the user opts to keep
+                // components resolved, both the targeted used set and the
+                // fast-mesh tessellation leaves stay resolved so a later export
+                // in the same session skips the resolve cost entirely.
+                if (!keepResolved)
+                {
+                    RevertComponentsToLightweight(resolvedByUs);
+                    RevertComponentsToLightweight(Exporter.TessellationResolvedComponents);
+                }
+                else
+                {
+                    logger.Info("Keeping " + resolvedByUs.Count + " targeted and " +
+                        Exporter.TessellationResolvedComponents.Count +
+                        " tessellation-resolved component(s) resolved per user setting.");
+                }
 
                 // Restore the user's "open referenced documents read-only" setting.
                 swApp.SetUserPreferenceToggle(
@@ -438,7 +452,8 @@ namespace SW2RD.Export
         // failures use MessageBox.Show; the pre-close in-page status panel
         // is unreachable from here.
         private void FinishExport(ExportFormat outputFormat, MeshExportFormat meshFormat,
-            bool exportMeshes, bool fastMeshExport, int meshQuality, int rotationFormat, int angleUnit)
+            bool exportMeshes, bool fastMeshExport, int meshQuality, int rotationFormat, int angleUnit,
+            bool keepResolved)
         {
             logger.Info("Completing export");
 
@@ -485,6 +500,7 @@ namespace SW2RD.Export
                 ExportPreferences.SetLastMeshFormat((int)meshFormat);
                 ExportPreferences.SetLastExportMeshes(exportMeshes);
                 ExportPreferences.SetFastMeshExport(fastMeshExport);
+                ExportPreferences.SetKeepResolvedAfterExport(keepResolved);
                 ExportPreferences.SetMeshQuality(meshQuality);
                 ExportPreferences.SetRotationFormat(rotationFormat);
                 ExportPreferences.SetAngleUnit(angleUnit);
