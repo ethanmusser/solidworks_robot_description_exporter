@@ -57,14 +57,15 @@ Local development uses the SolidWorks API DLLs from the developer's SolidWorks i
 
 ## Releasing
 
-The Inno Setup installer is built automatically by [.github/workflows/release.yml](.github/workflows/release.yml):
+Cutting a release is automated so the version references and the tag can never drift out of sync. The flow is two-phase, with two human gates (merge the PR, publish the draft), and requires no manual file edits:
 
-1. Publish a Release on GitHub (Releases tab -> Draft a new release). Pick or create the tag you want the release to point at and write release notes.
-1. The workflow builds `SW2RD.dll` in `Release` configuration against the vendored SolidWorks API DLLs under [SW2RD/lib/sw-api/](SW2RD/lib/sw-api/), compiles [INSTALL/Install.iss](INSTALL/Install.iss) with Inno Setup, and attaches two assets to the triggering release:
+1. **Prepare** - From the Actions tab, run the [Prepare Release](.github/workflows/prepare-release.yml) workflow and enter the new version in `X.Y.Z` form (no leading `v`, e.g. `0.2.0`). It runs [scripts/SetVersion.ps1](scripts/SetVersion.ps1) to stamp the version into [SW2RD/AssemblyInfo.cs](SW2RD/AssemblyInfo.cs) (`AssemblyVersion` + `AssemblyFileVersion` -> `X.Y.Z.0`) and [INSTALL/Install.iss](INSTALL/Install.iss) (`MyAppVersion` -> `X.Y.Z`), pushes a `release/vX.Y.Z` branch, and opens a labeled `release` PR to `master`.
+1. **Merge** - Review and merge that PR. Merging it triggers the [Tag and Draft Release](.github/workflows/tag-and-draft-release.yml) workflow, which tags the merge commit `vX.Y.Z` and creates a **draft** GitHub release with auto-generated notes.
+1. **Publish** - Review the draft release's notes on the Releases tab and click **Publish**. Publishing fires [.github/workflows/release.yml](.github/workflows/release.yml), which builds `SW2RD.dll` in `Release` configuration against the vendored SolidWorks API DLLs under [SW2RD/lib/sw-api/](SW2RD/lib/sw-api/), compiles [INSTALL/Install.iss](INSTALL/Install.iss) with Inno Setup, and attaches two assets to the release:
    - `sw2rdSetup_<tag>.exe` - the installer itself
-   - `sw2rdSetup_<tag>.exe.sha256` - SHA-256 checksum of the installer
-1. The workflow also mints a [GitHub Artifact Attestation](https://docs.github.com/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations) for the installer. The attestation cryptographically ties the .exe to this workflow file, the source commit, and the workflow run that produced it. See "Verifying downloads" below.
-1. The pipeline can also be invoked manually from the Actions tab (`workflow_dispatch`) to smoke-test changes without cutting a real release; in that mode the installer + checksum are uploaded only as workflow artifacts, not attached to a release.
+   - `sw2rdSetup_<tag>.exe.sha256` - SHA-256 checksum of the installer.
+
+The release pipeline can also be invoked manually from the Actions tab (`workflow_dispatch` on [release.yml](.github/workflows/release.yml)) to evaluate changes without cutting a real release. In that mode, the installer and checksum are uploaded only as workflow artifacts, not attached to a release. To bump the version locally without the workflow, run `scripts/SetVersion.ps1 -Version <X.Y.Z>` directly.
 
 ## Verifying downloads
 

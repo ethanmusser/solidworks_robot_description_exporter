@@ -1,0 +1,73 @@
+name: Tag and Draft Release
+
+# Phase 2 of the two-phase release flow. Fires when a release-prep PR (head
+# branch release/v<version>, opened by prepare-release.yml) is MERGED into
+# master. It tags the merge commit v<version> and creates a draft GitHub
+# release with auto-generated notes.
+#
+# The maintainer then reviews the draft and clicks Publish; that human action
+# fires release.yml (on `release: published`), which builds and attaches the
+# installer assets.
+#
+# Gated on the merged-PR head branch prefix so ordinary PRs never tag anything.
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  tag-and-draft:
+    name: Tag and draft release
+    # Only when a release/v* PR was actually merged (not just closed).
+    if: >
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout merge commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Derive version from branch
+        id: ver
+        run: |
+          $branch = '${{ github.event.pull_request.head.ref }}'
+          $version = $branch -replace '^release/v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Could not parse a X.Y.Z version from branch '$branch'."
+          }
+          $tag = "v$version"
+          Write-Host "Version: $version  Tag: $tag"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "tag=$tag"
+
+      - name: Create and push tag
+        run: |
+          $tag = '${{ steps.ver.outputs.tag }}'
+          git fetch --tags --force
+          if (git tag --list $tag) {
+            throw "Tag $tag already exists. Aborting to avoid clobbering an existing release."
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a $tag -m "Release $tag"
+          git push origin $tag
+
+      - name: Create draft release with auto-generated notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = '${{ steps.ver.outputs.tag }}'
+          gh release create $tag `
+            --draft `
+            --generate-notes `
+            --title $tag `
+            --target ${{ github.event.pull_request.merge_commit_sha }}
