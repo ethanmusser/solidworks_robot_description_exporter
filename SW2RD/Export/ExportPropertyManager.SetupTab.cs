@@ -178,6 +178,17 @@ namespace SW2RD.Export
             PMComboBoxMeshQuality.CurrentSelection =
                 (short)ExportPreferences.ClampMeshQuality(ExportPreferences.GetMeshQuality());
 
+            PMCheckKeepResolved = (PropertyManagerPageCheckbox)PMExportGroup.AddControl2(
+                KeepResolvedCheckID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Checkbox,
+                "Keep components resolved after export", (short)alignment, options,
+                "Leave components that were resolved for this export resolved when it " +
+                "finishes, instead of reverting them to lightweight. Speeds up repeated " +
+                "exports in the same session (only the first pays the resolve cost) at the " +
+                "cost of higher memory use. Uncheck to return the assembly to its prior " +
+                "lightweight state after each export.");
+            PMCheckKeepResolved.Checked = ExportPreferences.GetKeepResolvedAfterExport();
+
             // Fast mesh export only produces STL; grey it out unless STL is the
             // selected mesh format (CurrentSelection 0 = STL, 1 = 3DXML). Kept in
             // sync at runtime by OnComboboxSelectionChanged(MeshFormatComboID).

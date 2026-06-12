@@ -81,6 +81,17 @@ namespace SW2RD.Export
         { get; set; }
 
         /// <summary>
+        /// Leaf sub-components that the fast-mesh tessellation path resolved on
+        /// demand during the most recent export (see
+        /// EnsureComponentResolvedForTessellation). The export caller
+        /// (ExportPropertyManager) reverts these to lightweight after export
+        /// unless the user opted to keep components resolved. Cleared at the
+        /// start of each export run so it only reflects the current export.
+        /// </summary>
+        [XmlIgnore]
+        public readonly List<Component2> TessellationResolvedComponents = new List<Component2>();
+
+        /// <summary>
         /// The PMP-side <see cref="WorldNode"/> root used for the most recent
         /// <see cref="CreateRobotFromTreeView"/> call. Carries world-level
         /// metadata (global-origin coord-sys, world-direct visual / collision
@@ -314,6 +325,10 @@ namespace SW2RD.Export
             MeshExportFormat meshFormat,
             ExportFormat outputFormat)
         {
+            // Reset the tessellation-resolved tracking so it reflects only the
+            // components this export run resolves on demand.
+            TessellationResolvedComponents.Clear();
+
             //Setting up the progress bar
             logger.Info("Beginning the export process (format: " + outputFormat + ")");
             int progressBarBound = CommonSwOperations.GetCount(URDFRobot.BaseLink);
@@ -1389,6 +1404,9 @@ namespace SW2RD.Export
                 {
                     logger.Info("Resolving lightweight leaf '" + comp.Name2 + "' for tessellation.");
                     comp.SetSuppression2((int)swComponentSuppressionState_e.swComponentFullyResolved);
+                    // Record so the export caller can revert it to lightweight
+                    // afterward (unless the user opted to keep components resolved).
+                    TessellationResolvedComponents.Add(comp);
                 }
             }
             catch (Exception e)

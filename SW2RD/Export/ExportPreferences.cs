@@ -40,6 +40,7 @@ namespace SW2RD.Export
         private const string MeshQualityValueName = "MeshQuality";
         private const string RotationFormatValueName = "RotationFormat";
         private const string AngleUnitValueName = "AngleUnit";
+        private const string KeepResolvedValueName = "KeepResolvedAfterExport";
 
         // Defaults used when the user has not saved export preferences.
         // These match the Setup tab's standard initial state.
@@ -67,6 +68,12 @@ namespace SW2RD.Export
         // MJCFAngleUnit enum order.
         private const int DefaultAngleUnit = 0;
         private const int MaxAngleUnit = 1;
+        // Whether to keep components that were resolved for an export resolved
+        // afterward, instead of reverting them to lightweight. Default OFF so
+        // the export path returns the assembly to its prior low-memory /
+        // PDM-friendly state; users who run repeated exports in one session
+        // opt in to pay the resolve cost only once.
+        private const bool DefaultKeepResolvedAfterExport = false;
 
         private static readonly log4net.ILog logger = Logger.GetLogger();
 
@@ -108,6 +115,16 @@ namespace SW2RD.Export
         public static void SetFastMeshExport(bool value)
         {
             WriteInt(FastMeshExportValueName, value ? 1 : 0);
+        }
+
+        public static bool GetKeepResolvedAfterExport()
+        {
+            return ReadInt(KeepResolvedValueName, DefaultKeepResolvedAfterExport ? 1 : 0) != 0;
+        }
+
+        public static void SetKeepResolvedAfterExport(bool value)
+        {
+            WriteInt(KeepResolvedValueName, value ? 1 : 0);
         }
 
         public static int GetMeshQuality()

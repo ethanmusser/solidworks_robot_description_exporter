@@ -144,6 +144,7 @@ namespace SW2RD.Export
         private PropertyManagerPageCombobox PMComboBoxMeshFormat;
         private PropertyManagerPageCheckbox PMCheckExportMeshes;
         private PropertyManagerPageCheckbox PMCheckFastMeshExport;
+        private PropertyManagerPageCheckbox PMCheckKeepResolved;
         private PropertyManagerPageCombobox PMComboBoxMeshQuality;
         private PropertyManagerPageCombobox PMComboBoxRotationFormat;
         private PropertyManagerPageCombobox PMComboBoxAngleUnit;
@@ -514,6 +515,8 @@ namespace SW2RD.Export
         // "Joint axis source" dropdown on the Link/Joint tab (replaces the
         // retired auto-derive checkbox at slot 143).
         private const int ComboBoxAxisSourceID = 162;
+        // "Keep components resolved after export" checkbox on the Export group.
+        private const int KeepResolvedCheckID = 163;
 
         // Marks for every PMP SelectionBox so SOLIDWORKS can attribute the
         // user's selection to the right list. CRITICAL:
