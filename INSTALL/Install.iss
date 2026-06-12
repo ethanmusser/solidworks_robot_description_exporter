@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "SOLIDWORKS Robot Description Exporter"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.4.0"
 #define MyAppPublisher "Ethan J. Musser"
 #define MyAppURL "https://github.com/ethanmusser/solidworks_robot_description_exporter"
 
