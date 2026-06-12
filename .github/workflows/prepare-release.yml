@@ -1,0 +1,129 @@
+name: Prepare Release
+
+# Phase 1 of the two-phase release flow. A maintainer triggers this from the
+# Actions tab with the new X.Y.Z version. It stamps every hand-maintained
+# version reference via scripts/SetVersion.ps1 on a release/v<version> branch
+# and opens a PR to master.
+#
+# After the maintainer reviews and MERGES that PR, the companion
+# tag-and-draft-release.yml workflow fires (on the merged release/v* branch),
+# creates the v<version> tag, and drafts a GitHub release. Publishing that
+# draft then triggers release.yml to build and attach the installer assets.
+#
+# The PR is created with a GitHub App installation token (NOT the automatic
+# GITHUB_TOKEN). GitHub deliberately suppresses workflow runs for events
+# triggered by GITHUB_TOKEN, so a GITHUB_TOKEN-created PR would never start
+# release.yml's required `build` / `test` checks and would be unmergeable under
+# branch protection. An App token is a non-GITHUB_TOKEN identity, so the
+# `pull_request` event fires and the required checks run normally.
+#
+# Required repo secrets:
+#   APP_ID          - the GitHub App's numeric App ID
+#   APP_PRIVATE_KEY - the App's PEM private key
+# The App must be installed on this repo with Contents: Read/Write and
+# Pull requests: Read/Write permissions.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version in X.Y.Z form (no leading 'v', e.g. 0.2.0)"
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    name: Open release PR
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Validate version input
+        run: |
+          $v = '${{ github.event.inputs.version }}'
+          if ($v -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Version '$v' is not in X.Y.Z form (no leading 'v', e.g. 0.2.0)."
+          }
+          Write-Host "Preparing release v$v"
+
+      # Mint a short-lived installation token for the GitHub App. Using this
+      # (rather than GITHUB_TOKEN) to push the branch and open the PR ensures
+      # the pull_request event fires release.yml's required checks.
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout master
+        uses: actions/checkout@v5
+        with:
+          ref: master
+          fetch-depth: 0
+          # Persist the App token so `git push` below authenticates as the App.
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Abort if tag already exists
+        run: |
+          $tag = "v${{ github.event.inputs.version }}"
+          git fetch --tags --force
+          if (git tag --list $tag) {
+            throw "Tag $tag already exists. Pick a new version."
+          }
+
+      - name: Stamp version references
+        run: ./scripts/SetVersion.ps1 -Version '${{ github.event.inputs.version }}'
+
+      - name: Create release branch, commit, and open PR
+        env:
+          # App token (not GITHUB_TOKEN) so the PR-open event triggers the
+          # required release.yml checks.
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          $version = '${{ github.event.inputs.version }}'
+          $branch = "release/v$version"
+
+          # Attribute the bump commit to the SW2RD Bot account. GitHub links a
+          # commit to a (bot) account via the numeric user id embedded in the
+          # noreply email, so resolve it from the bot login.
+          $botLogin = "$($env:APP_SLUG)[bot]"
+          $botUserId = gh api "/users/$botLogin" --jq .id
+          git config user.name "SW2RD Bot"
+          git config user.email "$botUserId+$botLogin@users.noreply.github.com"
+
+          git checkout -b $branch
+          git add -A
+          git commit -m "release: bump version to v$version"
+          git push --force-with-lease origin $branch
+
+          # Ensure the 'release' label exists. gh exits non-zero if it already
+          # exists; swallow that so re-runs stay idempotent.
+          gh label create release --description "Automated release-prep PR" --color 0E8A16 2>$null
+          $global:LASTEXITCODE = 0
+
+          # Plain-text body: avoid backticks, which PowerShell treats as escape
+          # characters inside a double-quoted here-string.
+          $body = @"
+          Automated release preparation for v$version.
+
+          This PR bumps the version references via scripts/SetVersion.ps1:
+          - SW2RD/AssemblyInfo.cs (AssemblyVersion + AssemblyFileVersion -> $version.0)
+          - INSTALL/Install.iss (MyAppVersion -> $version)
+
+          On merge, the Tag and Draft Release workflow will tag v$version and
+          create a draft GitHub release. Review the draft's notes, then publish it
+          to build and attach the installer assets.
+          "@
+          gh pr create `
+            --base master `
+            --head $branch `
+            --title "release: v$version" `
+            --label release `
+            --body $body
