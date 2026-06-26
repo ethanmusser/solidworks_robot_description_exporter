@@ -1333,10 +1333,17 @@ namespace SW2RD.Export
 
                 degreesOfFreedom = remainingDOFs;
 
-                // Convert the gotten degrees of freedom to a joint type, origin and axis
+                // Convert the gotten degrees of freedom to a joint type, origin and axis.
+                // Use the root-relative total transform (reflects flexible /
+                // nested sub-assembly repositioning), NOT Transform2 -- same
+                // invariant as ResolveFeatureReference. Resolve once to avoid
+                // repeated COM round trips; fall back to Transform2 only if SW
+                // cannot compute the total transform.
+                MathTransform mainCompTransform =
+                    child.SWMainComponent.GetTotalTransform(true) ?? child.SWMainComponent.Transform2;
                 child.Joint.Type = "fixed";
-                child.Joint.Origin.SetXYZ(MathOps.GetXYZ(child.SWMainComponent.Transform2));
-                child.Joint.Origin.SetRPY(MathOps.GetRPY(child.SWMainComponent.Transform2));
+                child.Joint.Origin.SetXYZ(MathOps.GetXYZ(mainCompTransform));
+                child.Joint.Origin.SetRPY(MathOps.GetRPY(mainCompTransform));
 
                 if (degreesOfFreedom == 0 && (R1Status + L1Status > 0))
                 {
@@ -1346,15 +1353,15 @@ namespace SW2RD.Export
                         child.Joint.Type = "continuous";
                         child.Joint.Axis.SetXYZ(RDir1.ArrayData);
                         child.Joint.Origin.SetXYZ(RPoint1.ArrayData);
-                        child.Joint.Origin.SetRPY(MathOps.GetRPY(child.SWMainComponent.Transform2));
+                        child.Joint.Origin.SetRPY(MathOps.GetRPY(mainCompTransform));
                         MoveOrigin(parent, child);
                     }
                     else if (L1Status == 1)
                     {
                         child.Joint.Type = "prismatic";
                         child.Joint.Axis.SetXYZ(LDir1.ArrayData);
-                        child.Joint.Origin.SetXYZ(MathOps.GetXYZ(child.SWMainComponent.Transform2));
-                        child.Joint.Origin.SetRPY(MathOps.GetRPY(child.SWMainComponent.Transform2));
+                        child.Joint.Origin.SetXYZ(MathOps.GetXYZ(mainCompTransform));
+                        child.Joint.Origin.SetRPY(MathOps.GetRPY(mainCompTransform));
                         MoveOrigin(parent, child);
                     }
                 }
@@ -1407,13 +1414,24 @@ namespace SW2RD.Export
             public ModelDoc2 OwningDoc;
             // Bare feature name with the "<...>" suffix stripped.
             public string FeatureName;
-            // null for top-level features; comp.Transform2 for sub-component
-            // features so callers can multiply local -> assembly global.
+            // null for top-level features; comp.GetTotalTransform(true) for
+            // sub-component features so callers can multiply local -> assembly
+            // ROOT global. Must be the total (root) transform, NOT Transform2:
+            // Transform2 does not reflect flexible sub-assembly repositioning or
+            // multi-level nesting, so the feature would resolve at the
+            // sub-assembly's stored layout instead of its moved top-level pose.
             public MathTransform ComponentTransform;
             // null for top-level features; comp.ReferencedConfiguration for
             // sub-component features so callers can switch the part doc to the
             // right config before reading.
             public string ConfigurationName;
+            // null for top-level features; the owning Component2 for
+            // sub-component features. Used by GetRefAxis / GetReferencePoint to
+            // convert a model-context feature pointer into the ASSEMBLY context
+            // via IComponent2.GetCorresponding, which yields IN-CONTEXT (flexible
+            // sub-assembly-aware) reference-axis params / reference-point
+            // positions in root-global coordinates.
+            public Component2 OwningComponent;
         }
 
         // Single source of truth for "Coordinate System 1 <Comp-Name>"-style
@@ -1427,6 +1445,19 @@ namespace SW2RD.Export
         // were always read in the part doc's currently-active configuration,
         // typically Default, regardless of which configuration the assembly
         // instance referenced).
+        //
+        // ComponentTransform is captured via comp.GetTotalTransform(true)
+        // (component-local -> root-assembly), the SAME primitive the mesh
+        // tessellation path uses (SaveSTLViaTessellation). This is the
+        // root-relative total transform: it composes every parent
+        // sub-assembly transform AND reflects flexible sub-assembly internal
+        // repositioning driven by top-level mates, so a coord system / axis /
+        // reference point that lives inside a moved (flexible or deeply
+        // nested) sub-assembly resolves at its actual top-level pose. Do NOT
+        // revert to comp.Transform2 here: Transform2 is the stored/immediate
+        // transform and ignores flexible repositioning, which silently exports
+        // joints at the original sub-assembly layout while the meshes (which
+        // use GetTotalTransform) land at the moved pose.
         //
         // KNOWN LIMITATION: per SOLIDWORKS forum guidance,
         // IComponent2.ReferencedConfiguration is unreliable for components
@@ -1461,7 +1492,11 @@ namespace SW2RD.Export
                 if (comp.Name2 == componentStr)
                 {
                     r.OwningDoc = comp.GetModelDoc2();
-                    r.ComponentTransform = comp.Transform2;
+                    r.OwningComponent = comp;
+                    // Root-relative total transform (reflects flexible / nested
+                    // sub-assembly repositioning); fall back to the immediate
+                    // Transform2 only if SW cannot compute the total transform.
+                    r.ComponentTransform = comp.GetTotalTransform(true) ?? comp.Transform2;
                     r.ConfigurationName = comp.ReferencedConfiguration;
                     break;
                 }
@@ -1600,6 +1635,27 @@ namespace SW2RD.Export
 
             ResolvedFeatureReference r = ResolveFeatureReference(CoordinateSystemName);
 
+            // PRIMARY PATH for sub-component coordinate systems: resolve the
+            // coord-sys feature IN THE ASSEMBLY CONTEXT (see ResolveInContextFeature
+            // - FeatureByName / GetCorresponding) and read its transform via
+            // ICoordinateSystemFeatureData.Transform. The assembly-context
+            // definition reflects flexible sub-assembly repositioning (the parts'
+            // moved top-level pose). NOTE: GetCoordinateSystemTransformByName
+            // CANNOT be used for this - per SW docs it always returns the
+            // transform in the DEFINING DOCUMENT's frame (standalone), even with
+            // a component-qualified name, which is exactly the original bug. The
+            // assembly-context transform is already root-global, so there is NO
+            // component-transform multiply. Falls through to the standalone
+            // compose path when the in-context resolution is unavailable.
+            if (r.OwningComponent != null)
+            {
+                MathTransform inContext = TryGetInContextCoordSysTransform(r);
+                if (inContext != null)
+                {
+                    return inContext;
+                }
+            }
+
             string cacheKey = FeatureLookupCacheKey("coord", r);
             MathTransform local;
             if (IsFeatureLookupCacheEnabled() &&
@@ -1619,7 +1675,649 @@ namespace SW2RD.Export
                 }
             }
 
-            return r.ComponentTransform == null ? local : local.Multiply(r.ComponentTransform);
+            MathTransform composed =
+                r.ComponentTransform == null ? local : local.Multiply(r.ComponentTransform);
+
+            return composed;
+        }
+
+        // In-context coordinate-system transform for a coord system that lives
+        // inside a (possibly flexible) sub-assembly.
+        //
+        // Unlike reference axes / points (whose GetRefAxisParams / GetRefPoint
+        // EVALUATE the geometry, so an assembly-context feature pointer yields
+        // the flexed pose directly), a coordinate system exposes only its
+        // DEFINITION (ICoordinateSystemFeatureData.Transform / the by-name
+        // getter), which is always in the defining document's frame (standalone,
+        // un-flexed) regardless of how the feature pointer was obtained. SW has
+        // NO evaluated coord-sys transform getter (verified by reflection).
+        //
+        // So we RECONSTRUCT the flexed pose: a coordinate system is rigidly
+        // attached to the part its origin references, and that leaf part's
+        // GetTotalTransform(true) DOES reflect flexible repositioning. We compute
+        // the part's flex delta (flexed-global * unflexed-global^-1) and apply it
+        // to the standalone-composed coord-sys transform:
+        //   coordsysFlexed = coordsysUnflexed expressed in anchor frame, then
+        //                    lifted by the anchor's flexed-global pose.
+        // Returns null (caller falls back to the standalone compose path, which
+        // is correct when nothing moved) if the anchor cannot be resolved.
+        //
+        // LIMITATION: single-anchor. A coord system whose origin and axes
+        // reference DIFFERENT moving parts is only approximated (anchored to the
+        // origin part). Pure-axis joints avoid this entirely via the evaluated
+        // reference-axis path; document a top-of-assembly coord system if exact
+        // multi-part flex behaviour is required.
+        private MathTransform TryGetInContextCoordSysTransform(ResolvedFeatureReference r)
+        {
+            try
+            {
+                MathTransform subAsmGlobal = r.ComponentTransform;
+
+                MathTransform localStd = WithComponentConfiguration(
+                    r.OwningDoc, r.ConfigurationName,
+                    () => r.OwningDoc.Extension.GetCoordinateSystemTransformByName(r.FeatureName));
+                if (localStd == null)
+                {
+                    return null;
+                }
+                MathTransform coordsysUnflexedGlobal =
+                    subAsmGlobal == null ? localStd : (MathTransform)localStd.Multiply(subAsmGlobal);
+
+                // Resolve the anchor leaf part (the component whose geometry the
+                // coord-sys origin references) in the standalone sub-assembly doc.
+                Component2 anchorStandalone = GetCoordSysAnchorComponent(r);
+                if (anchorStandalone == null)
+                {
+                    logger.Info("In-context coord system '" + r.FeatureName +
+                        "' anchor component unresolved; falling back to standalone read.");
+                    return null;
+                }
+
+                MathTransform anchorSubAsmLocal = anchorStandalone.Transform2;
+                if (anchorSubAsmLocal == null)
+                {
+                    return null;
+                }
+                MathTransform anchorUnflexedGlobal = subAsmGlobal == null
+                    ? anchorSubAsmLocal : (MathTransform)anchorSubAsmLocal.Multiply(subAsmGlobal);
+
+                // Same anchor part, but its in-context instance under the root
+                // assembly (whose total transform reflects the flexible solve).
+                string targetName = r.OwningComponent.Name2 + "/" + anchorStandalone.Name2;
+                Component2 anchorInContext = FindComponentByName2InAssembly(targetName);
+                if (anchorInContext == null)
+                {
+                    logger.Info("In-context coord system '" + r.FeatureName +
+                        "' anchor '" + targetName + "' not found in assembly; falling back.");
+                    return null;
+                }
+                MathTransform anchorFlexedGlobal =
+                    anchorInContext.GetTotalTransform(true) ?? anchorInContext.Transform2;
+                if (anchorFlexedGlobal == null)
+                {
+                    return null;
+                }
+
+                // coordsysFlexed = (coordsysUnflexed in anchor frame) lifted by flexed anchor.
+                // This rigidly carries the WHOLE coord-sys frame by the ORIGIN
+                // part's motion - correct for the origin (translation) and for a
+                // single-part coord system, but NOT for the basis of a coord
+                // system whose axes are RELATIVE directions spanning two moving
+                // parts (e.g. a two-point axis between part A and part B). We use
+                // its translation as the origin and refine the basis below.
+                MathTransform anchorUnflexedInv = (MathTransform)anchorUnflexedGlobal.Inverse();
+                MathTransform coordsysInAnchor =
+                    (MathTransform)coordsysUnflexedGlobal.Multiply(anchorUnflexedInv);
+                MathTransform coordsysFlexedGlobal =
+                    (MathTransform)coordsysInAnchor.Multiply(anchorFlexedGlobal);
+
+                // Refine the basis from the coord system's OWN defining reference
+                // axes evaluated in-context (GetRefAxisParams reflects the flexed
+                // pose). This corrects multi-part / relative-axis coord systems
+                // that the single-anchor carry cannot. Falls back to the carried
+                // basis when no defining axis is evaluable.
+                MathTransform refined =
+                    RefineCoordSysBasisInContext(r, coordsysUnflexedGlobal, coordsysFlexedGlobal);
+                return refined ?? coordsysFlexedGlobal;
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("In-context coord-sys resolution for '" + r.FeatureName +
+                    "' failed (" + ex.Message + "); falling back to standalone read.");
+                return null;
+            }
+        }
+
+        // Rebuilds the coordinate system's BASIS from its own defining reference
+        // axes evaluated IN-CONTEXT, returning a transform with that basis and the
+        // carried origin. A coord-sys basis is frequently a RELATIVE direction
+        // (e.g. a two-point reference axis spanning two moving parts); the
+        // single-anchor flex carry pins it to one part and gets such a basis wrong
+        // whenever the OTHER part moves. Reference axes, by contrast, evaluate
+        // correctly in-context (GetRefAxisParams), so we:
+        //   1. find the coord system's direct-parent RefAxis features,
+        //   2. match each (by standalone direction) to the X/Y/Z column it defines,
+        //   3. read its in-context direction,
+        //   4. compute the rotation delta mapping the standalone specified
+        //      column(s) to their in-context direction(s), and apply it to the
+        //      WHOLE standalone basis (so auto-derived columns are carried
+        //      rigidly - the best continuation without replicating SW's private
+        //      axis-completion rule).
+        // Returns null (caller keeps the carried frame) when no defining axis is
+        // evaluable. Origin (translation) always comes from the carried frame
+        // (the origin part's flex), independent of the basis.
+        private MathTransform RefineCoordSysBasisInContext(
+            ResolvedFeatureReference r, MathTransform unflexedGlobal, MathTransform carriedFlexed)
+        {
+            double[] s = unflexedGlobal.ArrayData as double[];
+            if (s == null)
+            {
+                return null;
+            }
+            double[][] stdCols =
+            {
+                new[] { s[0], s[1], s[2] },
+                new[] { s[3], s[4], s[5] },
+                new[] { s[6], s[7], s[8] },
+            };
+
+            Feature feat = FindNamedFeature(r.OwningDoc, "CoordSys", r.FeatureName);
+            var axisNames = DirectParentFeatureNames(feat, "RefAxis");
+            if (axisNames.Count == 0)
+            {
+                return null;
+            }
+
+            var stdMatched = new System.Collections.Generic.List<double[]>();
+            var ctxMatched = new System.Collections.Generic.List<double[]>();
+            var usedColumns = new System.Collections.Generic.HashSet<int>();
+            foreach (string axisName in axisNames)
+            {
+                double[] rawStd = StandaloneAxisDirGlobal(r, axisName);
+                if (rawStd == null)
+                {
+                    continue;
+                }
+                int best = -1;
+                double bestAbs = 0.0;
+                for (int i = 0; i < 3; i++)
+                {
+                    double d = Math.Abs(Vec.Dot(rawStd, stdCols[i]));
+                    if (d > bestAbs) { bestAbs = d; best = i; }
+                }
+                if (best < 0 || bestAbs < 0.9 || usedColumns.Contains(best))
+                {
+                    continue;
+                }
+                ResolvedFeatureReference ar = r;
+                ar.FeatureName = axisName;
+                double[] rawCtx = TryGetInContextAxisDirection(ar);
+                if (rawCtx == null)
+                {
+                    continue;
+                }
+                double sign = Vec.Dot(rawStd, stdCols[best]) < 0 ? -1.0 : 1.0;
+                usedColumns.Add(best);
+                stdMatched.Add(Vec.Normalize(stdCols[best]));
+                ctxMatched.Add(Vec.Normalize(Vec.Scale(rawCtx, sign)));
+            }
+
+            if (stdMatched.Count == 0)
+            {
+                return null;
+            }
+
+            double[][] rDelta = stdMatched.Count == 1
+                ? Vec.RotationAligning(stdMatched[0], ctxMatched[0])
+                : Vec.RotationFromTwoCorrespondences(
+                    stdMatched[0], ctxMatched[0], stdMatched[1], ctxMatched[1]);
+            if (rDelta == null)
+            {
+                return null;
+            }
+
+            double[] Xf = Vec.MatVec(rDelta, stdCols[0]);
+            double[] Yf = Vec.MatVec(rDelta, stdCols[1]);
+            double[] Zf = Vec.MatVec(rDelta, stdCols[2]);
+
+            double[] cf = carriedFlexed.ArrayData as double[];
+            double ox = cf != null ? cf[9] : 0.0;
+            double oy = cf != null ? cf[10] : 0.0;
+            double oz = cf != null ? cf[11] : 0.0;
+
+            double[] data =
+            {
+                Xf[0], Xf[1], Xf[2],
+                Yf[0], Yf[1], Yf[2],
+                Zf[0], Zf[1], Zf[2],
+                ox, oy, oz,
+                1.0, 0.0, 0.0, 0.0,
+            };
+            return swMath?.CreateTransform(data) as MathTransform;
+        }
+
+        // Names of a feature's DIRECT parent features of the given SW type
+        // (e.g. "RefAxis"). Used to find a coordinate system's axis-defining
+        // reference features without descending into their own dependencies.
+        private System.Collections.Generic.List<string> DirectParentFeatureNames(
+            Feature feat, string swTypeName)
+        {
+            var names = new System.Collections.Generic.List<string>();
+            if (feat == null)
+            {
+                return names;
+            }
+            object parentsObj = null;
+            try { parentsObj = feat.GetParents(); } catch { }
+            if (parentsObj is object[] parents)
+            {
+                foreach (object po in parents)
+                {
+                    if (!(po is Feature pf))
+                    {
+                        continue;
+                    }
+                    string tn = null;
+                    try { tn = pf.GetTypeName2(); } catch { }
+                    if (tn == swTypeName)
+                    {
+                        names.Add(pf.Name);
+                    }
+                }
+            }
+            return names;
+        }
+
+        // Standalone (un-flexed) root-global direction of a named reference axis
+        // owned by the coord system's sub-assembly. Read-only FeatureManager walk
+        // (no SelectionMgr), lifted into root-global by the sub-assembly transform.
+        private double[] StandaloneAxisDirGlobal(ResolvedFeatureReference r, string axisName)
+        {
+            Feature af = FindNamedFeature(r.OwningDoc, "RefAxis", axisName);
+            RefAxis ax = af?.GetSpecificFeature2() as RefAxis;
+            double[] p = ax?.GetRefAxisParams();
+            if (p == null || p.Length < 6)
+            {
+                return null;
+            }
+            double[] v = MathOps.PNorm(new[] { p[0] - p[3], p[1] - p[4], p[2] - p[5] }, 2);
+            if (Math.Abs(v[0]) < 1e-12 && Math.Abs(v[1]) < 1e-12 && Math.Abs(v[2]) < 1e-12)
+            {
+                return null;
+            }
+            return GlobalAxis(v, r.ComponentTransform);
+        }
+
+        // Minimal 3-vector / 3x3-rotation helpers for in-context coord-sys basis
+        // reconstruction. Rotations are row-major jagged matrices (R[row][col]);
+        // MatVec computes R*v. Frame vectors are global-frame unit basis columns.
+        private static class Vec
+        {
+            public static double Dot(double[] a, double[] b)
+                => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+            public static double[] Cross(double[] a, double[] b) => new[]
+            {
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            };
+
+            public static double[] Scale(double[] a, double s) => new[] { a[0] * s, a[1] * s, a[2] * s };
+
+            public static double[] Sub(double[] a, double[] b) => new[] { a[0] - b[0], a[1] - b[1], a[2] - b[2] };
+
+            public static double Norm(double[] a) => Math.Sqrt(Dot(a, a));
+
+            public static double[] Normalize(double[] a)
+            {
+                double n = Norm(a);
+                return n < 1e-12 ? new[] { a[0], a[1], a[2] } : Scale(a, 1.0 / n);
+            }
+
+            public static double[] MatVec(double[][] m, double[] v) => new[]
+            {
+                m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+                m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+                m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+            };
+
+            public static double[][] Identity() => new[]
+            {
+                new[] { 1.0, 0.0, 0.0 },
+                new[] { 0.0, 1.0, 0.0 },
+                new[] { 0.0, 0.0, 1.0 },
+            };
+
+            private static double[][] MatMul(double[][] a, double[][] b)
+            {
+                var r = new double[3][];
+                for (int i = 0; i < 3; i++)
+                {
+                    r[i] = new double[3];
+                    for (int j = 0; j < 3; j++)
+                    {
+                        r[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
+                    }
+                }
+                return r;
+            }
+
+            private static double[][] Transpose(double[][] a) => new[]
+            {
+                new[] { a[0][0], a[1][0], a[2][0] },
+                new[] { a[0][1], a[1][1], a[2][1] },
+                new[] { a[0][2], a[1][2], a[2][2] },
+            };
+
+            // Matrix whose COLUMNS are c1, c2, c3 (row-major storage).
+            private static double[][] FrameColumns(double[] c1, double[] c2, double[] c3) => new[]
+            {
+                new[] { c1[0], c2[0], c3[0] },
+                new[] { c1[1], c2[1], c3[1] },
+                new[] { c1[2], c2[2], c3[2] },
+            };
+
+            private static double[] AnyPerp(double[] a)
+            {
+                double[] t = Math.Abs(a[0]) < 0.9 ? new[] { 1.0, 0.0, 0.0 } : new[] { 0.0, 1.0, 0.0 };
+                return Normalize(Cross(a, t));
+            }
+
+            // Rodrigues rotation about unit axis k by angle (radians).
+            private static double[][] AxisAngle(double[] k, double angle)
+            {
+                double c = Math.Cos(angle), s = Math.Sin(angle), t = 1.0 - c;
+                double x = k[0], y = k[1], z = k[2];
+                return new[]
+                {
+                    new[] { t * x * x + c,     t * x * y - s * z, t * x * z + s * y },
+                    new[] { t * x * y + s * z, t * y * y + c,     t * y * z - s * x },
+                    new[] { t * x * z - s * y, t * y * z + s * x, t * z * z + c     },
+                };
+            }
+
+            // Minimal rotation mapping unit vector a onto unit vector b.
+            public static double[][] RotationAligning(double[] a, double[] b)
+            {
+                double[] ua = Normalize(a), ub = Normalize(b);
+                double c = Dot(ua, ub);
+                double[] v = Cross(ua, ub);
+                double sLen = Norm(v);
+                if (sLen < 1e-9)
+                {
+                    return c >= 0 ? Identity() : AxisAngle(AnyPerp(ua), Math.PI);
+                }
+                return AxisAngle(Scale(v, 1.0 / sLen), Math.Atan2(sLen, c));
+            }
+
+            // Rotation mapping the source frame built from (a1, a2) onto the target
+            // frame built from (b1, b2): R = F * Eᵀ where E/F have the orthonormal
+            // frame vectors as columns. Maps a1->b1 exactly and the a2/b2 plane
+            // consistently. Falls back to single-axis alignment if a2/b2 are
+            // degenerate relative to a1/b1.
+            public static double[][] RotationFromTwoCorrespondences(
+                double[] a1, double[] b1, double[] a2, double[] b2)
+            {
+                double[] e1 = Normalize(a1);
+                double[] e2raw = Sub(a2, Scale(e1, Dot(a2, e1)));
+                double[] f1 = Normalize(b1);
+                double[] f2raw = Sub(b2, Scale(f1, Dot(b2, f1)));
+                if (Norm(e2raw) < 1e-6 || Norm(f2raw) < 1e-6)
+                {
+                    return RotationAligning(a1, b1);
+                }
+                double[] e2 = Normalize(e2raw);
+                double[] e3 = Cross(e1, e2);
+                double[] f2 = Normalize(f2raw);
+                double[] f3 = Cross(f1, f2);
+                return MatMul(FrameColumns(f1, f2, f3), Transpose(FrameColumns(e1, e2, e3)));
+            }
+        }
+
+        // Returns the (standalone sub-assembly-doc) component the coord system's
+        // ORIGIN is built on - the part it rigidly translates with. Used to
+        // compute the origin's flex delta for in-context coord-sys reconstruction.
+        // The origin is usually defined via an intermediate reference point / axis
+        // rather than part geometry directly, so this descends the coord system's
+        // dependency tree (FindAnchorComponentRecursive) to reach the moving part.
+        // Returns null when the origin is sub-assembly-root geometry (no moving
+        // part) or cannot be resolved (caller falls back to the standalone read).
+        private Component2 GetCoordSysAnchorComponent(ResolvedFeatureReference r)
+        {
+            Feature feat = FindNamedFeature(r.OwningDoc, "CoordSys", r.FeatureName);
+            if (feat == null)
+            {
+                return null;
+            }
+            return FindAnchorComponentRecursive(feat, r.OwningDoc, 0);
+        }
+
+        // Walks a feature's reference geometry (and, failing that, its parent
+        // features) looking for the first sub-component the feature is built on.
+        // A coordinate system is frequently anchored to a part only indirectly -
+        // its origin / axes are themselves reference points / axes defined at the
+        // sub-assembly level, whose OWN selections point at the moving part. So a
+        // direct GetComponent() on the coord-sys entities returns null and we have
+        // to descend one (or more) reference levels via GetParents(). Depth-capped
+        // to avoid cycles.
+        private Component2 FindAnchorComponentRecursive(Feature feat, ModelDoc2 doc, int depth)
+        {
+            if (feat == null || depth > 5)
+            {
+                return null;
+            }
+            // A MateGroup lists every mated component and gives no anchor signal -
+            // descending into it would pick an arbitrary (likely wrong) part.
+            string tname = null;
+            try { tname = feat.GetTypeName2(); } catch { }
+            if (tname == "MateGroup")
+            {
+                return null;
+            }
+            Component2 own = ComponentFromFeatureSelections(feat, doc);
+            if (own != null)
+            {
+                return own;
+            }
+            object parentsObj = null;
+            try { parentsObj = feat.GetParents(); } catch { }
+            if (parentsObj is object[] parents)
+            {
+                foreach (object po in parents)
+                {
+                    Component2 c = FindAnchorComponentRecursive(po as Feature, doc, depth + 1);
+                    if (c != null)
+                    {
+                        return c;
+                    }
+                }
+            }
+            return null;
+        }
+
+        // Reads the reference entities backing a feature (coord system, reference
+        // point, reference axis) and returns the first owning sub-component.
+        // Returns null for features whose references are all owning-doc-level
+        // geometry.
+        private Component2 ComponentFromFeatureSelections(Feature feat, ModelDoc2 doc)
+        {
+            string tn = null;
+            try { tn = feat.GetTypeName2(); } catch { }
+
+            // A component instance appears in the FeatureManager / dependency tree
+            // as a feature of type "Reference"; GetSpecificFeature2 yields its
+            // Component2. This is how the moving part is reached when the coord
+            // system's origin / axes are defined via intermediate reference
+            // geometry (reference points / axes) rather than part faces directly.
+            if (tn == "Reference")
+            {
+                Component2 comp = null;
+                try { comp = feat.GetSpecificFeature2() as Component2; } catch { }
+                if (comp == null)
+                {
+                    // The dependency-tree "Reference" proxy doesn't always expose
+                    // the Component2 via GetSpecificFeature2; resolve the real
+                    // component instance in the owning doc by name instead.
+                    comp = FindComponentInDocByName(doc, feat.Name);
+                }
+                return comp;
+            }
+
+            object def = null;
+            try { def = feat.GetDefinition(); } catch { }
+
+            Component2 result = null;
+            if (def is ICoordinateSystemFeatureData cs)
+            {
+                bool acc = false;
+                try { acc = cs.AccessSelections(doc, null); } catch { }
+                try
+                {
+                    result = EntityObjToComponent(SafeGet(() => cs.OriginEntity))
+                          ?? EntityObjToComponent(SafeGet(() => cs.XAxisEntities))
+                          ?? EntityObjToComponent(SafeGet(() => cs.YAxisEntities))
+                          ?? EntityObjToComponent(SafeGet(() => cs.ZAxisEntities));
+                }
+                finally { if (acc) { try { cs.ReleaseSelectionAccess(); } catch { } } }
+            }
+            else if (def is IRefPointFeatureData rp)
+            {
+                bool acc = false;
+                try { acc = rp.AccessSelections(doc, null); } catch { }
+                try { result = EntityObjToComponent(SafeGet(() => rp.Selections)); }
+                finally { if (acc) { try { rp.ReleaseSelectionAccess(); } catch { } } }
+            }
+            else if (def is IRefAxisFeatureData ra)
+            {
+                bool acc = false;
+                try { acc = ra.AccessSelections(doc, null); } catch { }
+                try { result = EntityObjToComponent(ra.GetSelections(out object _)); } catch { }
+                finally { if (acc) { try { ra.ReleaseSelectionAccess(); } catch { } } }
+            }
+
+            return result;
+        }
+
+        private object SafeGet(Func<object> getter)
+        {
+            try { return getter(); } catch { return null; }
+        }
+
+        // Extracts the first owning Component2 from a reference returned by a
+        // feature definition (a single IEntity or an object[] of entities).
+        // Returns null if none resolve to a component (owning-doc-level geometry).
+        private Component2 EntityObjToComponent(object entityObj)
+        {
+            if (entityObj == null)
+            {
+                return null;
+            }
+            if (entityObj is object[] arr)
+            {
+                foreach (object e in arr)
+                {
+                    Component2 c = (e as IEntity)?.GetComponent() as Component2;
+                    if (c != null)
+                    {
+                        return c;
+                    }
+                }
+                return null;
+            }
+            return (entityObj as IEntity)?.GetComponent() as Component2;
+        }
+
+        // Finds a component in a SPECIFIC assembly document by name. The
+        // dependency-tree "Reference" feature carries the component name (e.g.
+        // "LINK-1") but does not reliably yield the Component2 via
+        // GetSpecificFeature2; this resolves the real instance in the owning doc.
+        // Matches Name2 exactly first, then by the leaf path segment (handles the
+        // bare "LINK-1" feature name vs a "LINK-1-1" instance Name2). Logs the
+        // available names once when nothing matches so the case is diagnosable.
+        private Component2 FindComponentInDocByName(ModelDoc2 doc, string name)
+        {
+            if (doc == null || string.IsNullOrEmpty(name) || !(doc is AssemblyDoc asm))
+            {
+                return null;
+            }
+            try
+            {
+                object[] comps = asm.GetComponents(false);
+                if (comps == null)
+                {
+                    return null;
+                }
+                foreach (object o in comps)
+                {
+                    if (o is Component2 c && c.Name2 == name)
+                    {
+                        return c;
+                    }
+                }
+                string Leaf(string n)
+                {
+                    int slash = n.LastIndexOf('/');
+                    return slash >= 0 ? n.Substring(slash + 1) : n;
+                }
+                foreach (object o in comps)
+                {
+                    if (o is Component2 c)
+                    {
+                        string leaf = Leaf(c.Name2);
+                        if (leaf == name || leaf.StartsWith(name + "-") || name.StartsWith(leaf))
+                        {
+                            return c;
+                        }
+                    }
+                }
+                var names = new System.Collections.Generic.List<string>();
+                foreach (object o in comps)
+                {
+                    if (o is Component2 c) { names.Add(c.Name2); }
+                }
+                logger.Warn("Coord-sys anchor component '" + name +
+                    "' not found in sub-assembly doc; in-context basis refinement may " +
+                    "fall back to the carried frame. Available components: [" +
+                    string.Join(", ", names) + "]");
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("FindComponentInDocByName('" + name + "') failed: " + ex.Message);
+            }
+            return null;
+        }
+
+        // Finds the first component (at any sub-assembly depth) whose Name2
+        // matches, walking the active assembly's full component list. Mirrors the
+        // lookup in ResolveFeatureReference; used by the in-context coord-sys
+        // reconstruction to locate the anchor part's in-context instance.
+        private Component2 FindComponentByName2InAssembly(string name2)
+        {
+            if (string.IsNullOrEmpty(name2) || !(ActiveSWModel is AssemblyDoc assy))
+            {
+                return null;
+            }
+            try
+            {
+                object[] components = assy.GetComponents(false);
+                if (components == null)
+                {
+                    return null;
+                }
+                foreach (Component2 comp in components)
+                {
+                    if (comp != null && comp.Name2 == name2)
+                    {
+                        return comp;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("FindComponentByName2InAssembly('" + name2 + "') failed: " + ex.Message);
+            }
+            return null;
         }
 
         // Returns the global-frame unit basis vector (X=0, Y=1, Z=2) of the
@@ -1864,6 +2562,23 @@ namespace SW2RD.Export
         {
             ResolvedFeatureReference r = ResolveFeatureReference(axisStr);
 
+            // PRIMARY PATH for sub-component reference axes: convert the
+            // model-context RefAxis pointer into the ASSEMBLY context via
+            // IComponent2.GetCorresponding, then read GetRefAxisParams. That
+            // returns the axis IN-CONTEXT (reflecting flexible sub-assembly
+            // repositioning) in root-global coordinates, so the direction needs
+            // NO further component transform. Read-only (no SelectionMgr / doc
+            // mutation), so safe on the live-preview path. Falls through to the
+            // standalone sub-assembly-document read when unavailable.
+            if (r.OwningComponent != null)
+            {
+                double[] inContextDir = TryGetInContextAxisDirection(r);
+                if (inContextDir != null)
+                {
+                    return inContextDir;
+                }
+            }
+
             // The SelectByID2 -> SelectionManager -> GetRefAxisParams chain
             // implicitly reads from the part doc's currently-active
             // configuration, so it has to live inside the config-switched
@@ -1920,6 +2635,103 @@ namespace SW2RD.Export
             }
 
             return GlobalAxis(axisVector, r.ComponentTransform);
+        }
+
+        // Resolves the named feature in the owning component's ASSEMBLY context
+        // (reflecting flexible sub-assembly repositioning) rather than the
+        // component's standalone underlying-model document. Two mechanisms, both
+        // documented as assembly-context-aware:
+        //   1. IComponent2.FeatureByName - returns the feature in the context of
+        //      the assembly (codestack assembly-context overview).
+        //   2. IComponent2.GetCorresponding(Feature) - converts a model-context
+        //      Feature pointer into the assembly context. NOTE: must be passed
+        //      the Feature, NOT the specific feature (RefAxis / IRefPoint) -
+        //      passing the specific feature returns null (the bug in the first
+        //      cut of this fix).
+        // Returns null for top-level features (no owning component) or when
+        // neither mechanism resolves the feature.
+        private Feature ResolveInContextFeature(ResolvedFeatureReference r, string swTypeName)
+        {
+            if (r.OwningComponent == null)
+            {
+                return null;
+            }
+            try
+            {
+                Feature byName = r.OwningComponent.FeatureByName(r.FeatureName);
+                if (byName != null)
+                {
+                    return byName;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("In-context FeatureByName('" + r.FeatureName + "') failed: " + ex.Message);
+            }
+            try
+            {
+                Feature modelFeat = FindNamedFeature(r.OwningDoc, swTypeName, r.FeatureName);
+                if (modelFeat != null)
+                {
+                    Feature corr = r.OwningComponent.GetCorresponding(modelFeat) as Feature;
+                    if (corr != null)
+                    {
+                        return corr;
+                    }
+                    logger.Info("In-context GetCorresponding(Feature) for '" + r.FeatureName +
+                        "' returned null.");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("In-context GetCorresponding('" + r.FeatureName + "') failed: " + ex.Message);
+            }
+            return null;
+        }
+
+        // In-context reference-axis direction for a feature that lives inside a
+        // (possibly flexible) sub-assembly. Resolves the RefAxis in the assembly
+        // context (see ResolveInContextFeature) so GetRefAxisParams reflects
+        // flexible repositioning. Assembly-context geometry is returned in
+        // root-global coordinates, so the direction is NOT multiplied by
+        // ComponentTransform. Returns a PNorm-normalised global direction, or
+        // null if unavailable (caller falls back to the standalone read).
+        private double[] TryGetInContextAxisDirection(ResolvedFeatureReference r)
+        {
+            try
+            {
+                Feature feat = ResolveInContextFeature(r, "RefAxis");
+                RefAxis axis = feat?.GetSpecificFeature2() as RefAxis;
+                if (axis == null)
+                {
+                    logger.Info("In-context axis '" + r.FeatureName +
+                        "' unresolved; falling back to standalone read.");
+                    return null;
+                }
+
+                double[] p = axis.GetRefAxisParams();
+                if (p == null || p.Length < 6)
+                {
+                    return null;
+                }
+
+                double[] v = new double[]
+                {
+                    p[0] - p[3], p[1] - p[4], p[2] - p[5]
+                };
+                if (Math.Abs(v[0]) < 1e-12 && Math.Abs(v[1]) < 1e-12 && Math.Abs(v[2]) < 1e-12)
+                {
+                    return null;
+                }
+
+                return MathOps.PNorm(v, 2);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("In-context axis resolution for '" + r.FeatureName +
+                    "' failed (" + ex.Message + "); falling back to standalone read.");
+                return null;
+            }
         }
 
         //This is called whenever the pull down menu is changed and the axis needs to be
@@ -1984,6 +2796,22 @@ namespace SW2RD.Export
 
             ResolvedFeatureReference r = ResolveFeatureReference(pointName);
 
+            // PRIMARY PATH for sub-component reference points (e.g. a site point
+            // in a flexible sub-assembly): convert the model-context RefPoint
+            // pointer into the ASSEMBLY context via IComponent2.GetCorresponding,
+            // then read GetRefPoint. That returns the point IN-CONTEXT (reflecting
+            // flexible repositioning) in root-global coordinates, so it needs NO
+            // further component transform. Read-only, safe on any path. Falls
+            // through to the standalone sub-assembly-document read when unavailable.
+            if (r.OwningComponent != null)
+            {
+                double[] inContextPoint = TryGetInContextPointGlobal(r);
+                if (inContextPoint != null)
+                {
+                    return inContextPoint;
+                }
+            }
+
             // GetSpecificFeature2/GetRefPoint read the part doc's currently-active
             // configuration, so resolve inside the config-switched block; the
             // returned point is in the owning doc's model frame and the component
@@ -2015,6 +2843,42 @@ namespace SW2RD.Export
             }
 
             return GlobalPoint(localPoint, r.ComponentTransform);
+        }
+
+        // In-context reference-point position for a feature that lives inside a
+        // (possibly flexible) sub-assembly. Resolves the RefPoint in the assembly
+        // context (see ResolveInContextFeature) so GetRefPoint reflects flexible
+        // repositioning. Assembly-context geometry is returned in root-global
+        // coordinates, so it is NOT multiplied by ComponentTransform. Returns the
+        // thresholded global position, or null if unavailable (caller falls back
+        // to the standalone read).
+        private double[] TryGetInContextPointGlobal(ResolvedFeatureReference r)
+        {
+            try
+            {
+                Feature feat = ResolveInContextFeature(r, "RefPoint");
+                IRefPoint refPoint = feat?.GetSpecificFeature2() as IRefPoint;
+                if (refPoint == null)
+                {
+                    logger.Info("In-context point '" + r.FeatureName +
+                        "' unresolved; falling back to standalone read.");
+                    return null;
+                }
+
+                double[] data = refPoint.GetRefPoint()?.ArrayData as double[];
+                if (data == null || data.Length < 3)
+                {
+                    return null;
+                }
+
+                return MathOps.Threshold(new double[] { data[0], data[1], data[2] }, 0.00001);
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("In-context point resolution for '" + r.FeatureName +
+                    "' failed (" + ex.Message + "); falling back to standalone read.");
+                return null;
+            }
         }
 
         // Lifts a part-local point into assembly-global coordinates. Identical
