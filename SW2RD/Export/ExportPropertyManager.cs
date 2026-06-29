@@ -146,6 +146,11 @@ namespace SW2RD.Export
         private PropertyManagerPageCheckbox PMCheckFastMeshExport;
         private PropertyManagerPageCheckbox PMCheckKeepResolved;
         private PropertyManagerPageCombobox PMComboBoxMeshQuality;
+        // Manual mesh-quality overrides, shown/enabled only when the quality
+        // dropdown is set to "Custom" (and the fast STL path is active).
+        private PropertyManagerPageNumberbox PMNumberBoxCustomChordFraction;
+        private PropertyManagerPageNumberbox PMNumberBoxCustomAngle;
+        private PropertyManagerPageNumberbox PMNumberBoxCustomMaxChord;
         private PropertyManagerPageCombobox PMComboBoxRotationFormat;
         private PropertyManagerPageCombobox PMComboBoxAngleUnit;
         private PropertyManagerPageLabel PMLabelConfigurationCache;
@@ -517,6 +522,11 @@ namespace SW2RD.Export
         private const int ComboBoxAxisSourceID = 162;
         // "Keep components resolved after export" checkbox on the Export group.
         private const int KeepResolvedCheckID = 163;
+        // Manual mesh-quality override numberboxes, active only for the "Custom"
+        // quality level (chord fraction %, angle tolerance deg, max chord mm).
+        private const int CustomChordFractionNumberID = 164;
+        private const int CustomAngleNumberID = 165;
+        private const int CustomMaxChordNumberID = 166;
 
         // Marks for every PMP SelectionBox so SOLIDWORKS can attribute the
         // user's selection to the right list. CRITICAL:

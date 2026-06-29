@@ -213,6 +213,24 @@ namespace SW2RD.Export
             {
                 LinkNode node = (LinkNode)Tree.SelectedNode;
                 CreateNewNodes(node);
+                return;
+            }
+
+            // Persist the Custom mesh-quality overrides as the user edits them so
+            // they pre-populate the next export (mirrors the other Setup-tab
+            // preferences). The chord field is shown as a percent; store the
+            // fraction. Clamping happens in ExportPreferences.
+            if (Id == CustomChordFractionNumberID)
+            {
+                ExportPreferences.SetCustomChordFraction(Value / 100.0);
+            }
+            else if (Id == CustomAngleNumberID)
+            {
+                ExportPreferences.SetCustomAngleDeg(Value);
+            }
+            else if (Id == CustomMaxChordNumberID)
+            {
+                ExportPreferences.SetCustomMaxChordMm(Value);
             }
         }
 
@@ -728,6 +746,14 @@ namespace SW2RD.Export
                 SetFastMeshExportEnabled(Item == 0);
                 // Quality depends on BOTH format (STL) and the fast-export
                 // checkbox, so re-evaluate it whenever the format changes too.
+                UpdateMeshQualityEnabled();
+                return;
+            }
+
+            if (Id == MeshQualityComboID)
+            {
+                // Show/hide the Custom override fields when the user switches
+                // into or out of the "Custom" level (index 5).
                 UpdateMeshQualityEnabled();
                 return;
             }

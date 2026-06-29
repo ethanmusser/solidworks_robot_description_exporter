@@ -174,9 +174,51 @@ namespace SW2RD.Export
                 "independent detail. Finer = smoother curves and larger files.");
             PMComboBoxMeshQuality.Style =
                 (int)swPropMgrPageComboBoxStyle_e.swPropMgrPageComboBoxStyle_EditBoxReadOnly;
-            PMComboBoxMeshQuality.AddItems(new string[] { "Coarse", "Medium", "Fine", "Very fine" });
+            // Item order MUST match the MeshQualityLevel mapping in ExportHelper
+            // and ExportPreferences (0 = Very coarse .. 4 = Very fine, 5 = Custom).
+            PMComboBoxMeshQuality.AddItems(new string[]
+            {
+                "Very coarse", "Coarse", "Medium", "Fine", "Very fine", "Custom",
+            });
             PMComboBoxMeshQuality.CurrentSelection =
                 (short)ExportPreferences.ClampMeshQuality(ExportPreferences.GetMeshQuality());
+
+            // Manual override fields for the "Custom" quality level. Shown always
+            // but enabled only when Custom is selected (see UpdateMeshQualityEnabled).
+            // Values are unitless so no document-unit conversion is involved:
+            // chord as a percent of each part's bbox diagonal, angle in degrees,
+            // max chord clamp in millimeters.
+            PMNumberBoxCustomChordFraction = (PropertyManagerPageNumberbox)PMExportGroup.AddControl2(
+                CustomChordFractionNumberID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Numberbox,
+                "Custom chord (% of part)", (short)alignment, options,
+                "Custom mesh quality only. Per-part chord tolerance as a percentage of " +
+                "that part's bounding-box diagonal. Larger = coarser / fewer faces.");
+            PMNumberBoxCustomChordFraction.SetRange2(
+                (int)swNumberboxUnitType_e.swNumberBox_UnitlessDouble, 0.01, 50.0, true, 0.1, 0.1, 0.01);
+            PMNumberBoxCustomChordFraction.Value =
+                ExportPreferences.GetCustomChordFraction() * 100.0;
+
+            PMNumberBoxCustomAngle = (PropertyManagerPageNumberbox)PMExportGroup.AddControl2(
+                CustomAngleNumberID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Numberbox,
+                "Custom angle (deg)", (short)alignment, options,
+                "Custom mesh quality only. Surface-plane angle tolerance in degrees. " +
+                "Larger = coarser curves / fewer faces.");
+            PMNumberBoxCustomAngle.SetRange2(
+                (int)swNumberboxUnitType_e.swNumberBox_UnitlessDouble, 1.0, 60.0, true, 1.0, 1.0, 0.5);
+            PMNumberBoxCustomAngle.Value = ExportPreferences.GetCustomAngleDeg();
+
+            PMNumberBoxCustomMaxChord = (PropertyManagerPageNumberbox)PMExportGroup.AddControl2(
+                CustomMaxChordNumberID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Numberbox,
+                "Custom max chord (mm)", (short)alignment, options,
+                "Custom mesh quality only. Upper clamp on the per-part chord tolerance " +
+                "in millimeters, so very large parts can coarsen further. Raise to allow " +
+                "coarser meshes on big bodies.");
+            PMNumberBoxCustomMaxChord.SetRange2(
+                (int)swNumberboxUnitType_e.swNumberBox_UnitlessDouble, 0.01, 1000.0, true, 1.0, 1.0, 0.1);
+            PMNumberBoxCustomMaxChord.Value = ExportPreferences.GetCustomMaxChordMm();
 
             PMCheckKeepResolved = (PropertyManagerPageCheckbox)PMExportGroup.AddControl2(
                 KeepResolvedCheckID,
@@ -302,7 +344,16 @@ namespace SW2RD.Export
         {
             bool stl = PMComboBoxMeshFormat != null && PMComboBoxMeshFormat.CurrentSelection == 0;
             bool fast = PMCheckFastMeshExport != null && PMCheckFastMeshExport.Checked;
-            SetControlEnabled(PMComboBoxMeshQuality, stl && fast);
+            bool qualityActive = stl && fast;
+            SetControlEnabled(PMComboBoxMeshQuality, qualityActive);
+
+            // The manual override fields apply only to the "Custom" level (index
+            // 5), and only when the quality dropdown itself is active.
+            bool custom = qualityActive && PMComboBoxMeshQuality != null &&
+                PMComboBoxMeshQuality.CurrentSelection == 5;
+            SetControlEnabled(PMNumberBoxCustomChordFraction, custom);
+            SetControlEnabled(PMNumberBoxCustomAngle, custom);
+            SetControlEnabled(PMNumberBoxCustomMaxChord, custom);
         }
 
         // Greys out the MJCF "Rotation Format" dropdown when the selected output

@@ -119,6 +119,18 @@ namespace SW2RD.Export
             int meshQuality = PMComboBoxMeshQuality != null
                 ? ExportPreferences.ClampMeshQuality(PMComboBoxMeshQuality.CurrentSelection)
                 : ExportPreferences.GetMeshQuality();
+            // Custom (level 5) mesh-quality overrides. The chord box is shown as a
+            // percent, so divide back to a fraction. Captured before PMPage.Close
+            // for the same reason as the other Setup-tab values.
+            double customChordFraction = PMNumberBoxCustomChordFraction != null
+                ? ExportPreferences.ClampCustomChordFraction(PMNumberBoxCustomChordFraction.Value / 100.0)
+                : ExportPreferences.GetCustomChordFraction();
+            double customAngleDeg = PMNumberBoxCustomAngle != null
+                ? ExportPreferences.ClampCustomAngleDeg(PMNumberBoxCustomAngle.Value)
+                : ExportPreferences.GetCustomAngleDeg();
+            double customMaxChordMm = PMNumberBoxCustomMaxChord != null
+                ? ExportPreferences.ClampCustomMaxChordMm(PMNumberBoxCustomMaxChord.Value)
+                : ExportPreferences.GetCustomMaxChordMm();
             int rotationFormat = PMComboBoxRotationFormat != null
                 ? ExportPreferences.ClampRotationFormat(PMComboBoxRotationFormat.CurrentSelection)
                 : ExportPreferences.GetRotationFormat();
@@ -230,7 +242,9 @@ namespace SW2RD.Export
                 bool exportSuccess = Exporter.CreateRobotFromTreeView(BaseNode);
                 if (exportSuccess)
                 {
-                    FinishExport(outputFormat, meshFormat, exportMeshes, fastMeshExport, meshQuality, rotationFormat, angleUnit, keepResolved);
+                    FinishExport(outputFormat, meshFormat, exportMeshes, fastMeshExport, meshQuality,
+                        customChordFraction, customAngleDeg, customMaxChordMm,
+                        rotationFormat, angleUnit, keepResolved);
                 }
             }
             finally
@@ -467,7 +481,9 @@ namespace SW2RD.Export
         // failures use MessageBox.Show; the pre-close in-page status panel
         // is unreachable from here.
         private void FinishExport(ExportFormat outputFormat, MeshExportFormat meshFormat,
-            bool exportMeshes, bool fastMeshExport, int meshQuality, int rotationFormat, int angleUnit,
+            bool exportMeshes, bool fastMeshExport, int meshQuality,
+            double customChordFraction, double customAngleDeg, double customMaxChordMm,
+            int rotationFormat, int angleUnit,
             bool keepResolved)
         {
             logger.Info("Completing export");
@@ -517,11 +533,17 @@ namespace SW2RD.Export
                 ExportPreferences.SetFastMeshExport(fastMeshExport);
                 ExportPreferences.SetKeepResolvedAfterExport(keepResolved);
                 ExportPreferences.SetMeshQuality(meshQuality);
+                ExportPreferences.SetCustomChordFraction(customChordFraction);
+                ExportPreferences.SetCustomAngleDeg(customAngleDeg);
+                ExportPreferences.SetCustomMaxChordMm(customMaxChordMm);
                 ExportPreferences.SetRotationFormat(rotationFormat);
                 ExportPreferences.SetAngleUnit(angleUnit);
 
                 Exporter.UseTessellationMeshExport = fastMeshExport;
                 Exporter.MeshQualityLevel = meshQuality;
+                Exporter.CustomChordFraction = customChordFraction;
+                Exporter.CustomAngleRad = customAngleDeg * Math.PI / 180.0;
+                Exporter.CustomMaxChordTolerance = customMaxChordMm / 1000.0;
                 Exporter.MJCFRotationFormat = (MJCF.MJCFRotationFormat)ExportPreferences.ClampRotationFormat(rotationFormat);
                 Exporter.MJCFAngleUnit = (MJCF.MJCFAngleUnit)ExportPreferences.ClampAngleUnit(angleUnit);
 

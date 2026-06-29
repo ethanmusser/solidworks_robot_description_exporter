@@ -179,12 +179,21 @@ namespace SW2RD.Export
         // before ExportRobot. Default false keeps the proven SaveAs path.
         public bool UseTessellationMeshExport { get; set; }
 
-        // Mesh quality level for the tessellation path: 0=Coarse, 1=Medium,
-        // 2=Fine, 3=Very fine. Set from ExportPreferences.GetMeshQuality() by
-        // the PMP before ExportRobot. Default Fine (2). Maps to a per-body
-        // relative chord tolerance (fraction of the body's own bbox diagonal)
-        // plus an angle tolerance - see MeshQualityToTolerances.
-        public int MeshQualityLevel { get; set; } = 2;
+        // Mesh quality level for the tessellation path: 0=Very coarse, 1=Coarse,
+        // 2=Medium, 3=Fine, 4=Very fine, 5=Custom. Set from
+        // ExportPreferences.GetMeshQuality() by the PMP before ExportRobot.
+        // Default Fine (3). The standard levels map to a per-body relative chord
+        // tolerance (fraction of the body's own bbox diagonal) plus an angle
+        // tolerance - see MeshQualityToTolerances. The Custom level (5) instead
+        // uses CustomChordFraction / CustomAngleRad / CustomMaxChordTolerance.
+        public int MeshQualityLevel { get; set; } = 3;
+
+        // Manual override parameters used only when MeshQualityLevel == 5
+        // (Custom). Set from ExportPreferences by the PMP before ExportRobot.
+        // Defaults mirror the Coarse preset (with the default max-chord clamp).
+        public double CustomChordFraction { get; set; } = 0.010;
+        public double CustomAngleRad { get; set; } = 30.0 * Math.PI / 180.0;
+        public double CustomMaxChordTolerance { get; set; } = MaxBodyChordTolerance;
 
         // How MJCF frame orientations are serialized (axisangle / quat / euler).
         // Set from ExportPreferences.GetRotationFormat() by the PMP before
@@ -1296,9 +1305,10 @@ namespace SW2RD.Export
             // nested inside a sub-assembly group, which ExpandWithChildren has
             // already decomposed into their individual leaf bodies. The quality
             // level only picks the relative fraction + angle tolerance here.
-            MeshQualityToTolerances(MeshQualityLevel, out double qualityFraction, out double angle);
+            ResolveMeshTolerances(out double qualityFraction, out double angle, out double maxChord);
             logger.Info(link.Name + ": tessellation quality level=" + MeshQualityLevel +
-                " (bbox fraction=" + qualityFraction + ", angle=" + angle + " rad).");
+                " (bbox fraction=" + qualityFraction + ", angle=" + angle + " rad, max chord=" +
+                maxChord + " m).");
 
             // Expand sub-assembly group members to their leaf parts (mirrors the
             // SaveAs path's ShowComponents expansion) so a group that names a
@@ -1326,7 +1336,7 @@ namespace SW2RD.Export
                 {
                     if (bodyObj is Body2 body)
                     {
-                        double deviation = ComputeBodyChordTolerance(body, qualityFraction);
+                        double deviation = ComputeBodyChordTolerance(body, qualityFraction, maxChord);
                         AppendBodyTessellation(body, compToLink, deviation, angle, triangles);
                     }
                 }
@@ -1341,6 +1351,13 @@ namespace SW2RD.Export
                     "is empty and will not load in MuJoCo. Check that the link's components are resolved " +
                     "(not lightweight/suppressed) and contain solid bodies.");
                 return false;
+            }
+            if (triangles.Count > MujocoMaxFaces)
+            {
+                logger.Warn(link.Name + ": tessellation produced " + triangles.Count +
+                    " faces, exceeding MuJoCo's " + MujocoMaxFaces + "-face STL limit. " +
+                    "MuJoCo will refuse to load this mesh. Choose a coarser mesh quality, " +
+                    "or run: sw2rd-postprocess prepare <exported .xml> to decimate it.");
             }
             return true;
         }
@@ -1429,33 +1446,65 @@ namespace SW2RD.Export
             }
         }
 
+        // MuJoCo's STL decoder rejects meshes with more than this many faces, so
+        // a tessellation that exceeds it will not load. We do not auto-decimate
+        // here (that is the job of the sw2rd-postprocess tool); we only warn.
+        private const int MujocoMaxFaces = 200_000;
+
         // Absolute clamps on the per-body chord tolerance (meters). The lower
         // bound stops a tiny body from generating a runaway triangle count; the
         // upper bound stops a very large body from coming out visibly faceted
-        // even at Coarse.
-        private const double MinBodyChordTolerance = 1.0e-5;  // 0.01 mm
-        private const double MaxBodyChordTolerance = 5.0e-3;  // 5 mm
+        // even at the coarsest preset. Raised from 5 mm so the coarse end of the
+        // quality range can actually coarsen large bodies (the previous 5 mm cap
+        // left big dense parts over MuJoCo's face limit even at Coarse). The
+        // Custom quality level supplies its own clamp instead of this default.
+        private const double MinBodyChordTolerance = 1.0e-5;   // 0.01 mm
+        private const double MaxBodyChordTolerance = 25.0e-3;  // 25 mm
 
-        // Maps the mesh-quality level (0=Coarse..3=Very fine) to a relative
-        // chord-tolerance fraction (of each body's bbox diagonal) and an angle
-        // tolerance (radians). Finer levels -> smaller fraction + tighter angle.
+        // Resolves the mesh-quality level into the per-body chord-tolerance
+        // fraction, angle tolerance (radians), and the max-chord clamp to apply.
+        // Standard levels (0..4) use the MeshQualityToTolerances table and the
+        // default MaxBodyChordTolerance clamp; the Custom level (5) uses the
+        // user-supplied override parameters instead.
+        private void ResolveMeshTolerances(out double fraction, out double angleRad, out double maxChord)
+        {
+            if (MeshQualityLevel == 5)
+            {
+                fraction = CustomChordFraction;
+                angleRad = CustomAngleRad;
+                maxChord = CustomMaxChordTolerance;
+                return;
+            }
+            MeshQualityToTolerances(MeshQualityLevel, out fraction, out angleRad);
+            maxChord = MaxBodyChordTolerance;
+        }
+
+        // Maps a standard mesh-quality level (0=Very coarse..4=Very fine) to a
+        // relative chord-tolerance fraction (of each body's bbox diagonal) and an
+        // angle tolerance (radians). Finer levels -> smaller fraction + tighter
+        // angle. The Custom level (5) is handled by ResolveMeshTolerances, not
+        // here.
         private static void MeshQualityToTolerances(int level, out double fraction, out double angleRad)
         {
             switch (level)
             {
-                case 0: // Coarse
+                case 0: // Very coarse
+                    fraction = 0.020;
+                    angleRad = 45.0 * Math.PI / 180.0;
+                    break;
+                case 1: // Coarse
                     fraction = 0.010;
                     angleRad = 30.0 * Math.PI / 180.0;
                     break;
-                case 1: // Medium
+                case 2: // Medium
                     fraction = 0.005;
                     angleRad = 20.0 * Math.PI / 180.0;
                     break;
-                case 3: // Very fine
+                case 4: // Very fine
                     fraction = 0.001;
                     angleRad = 8.0 * Math.PI / 180.0;
                     break;
-                case 2: // Fine (default)
+                case 3: // Fine (default)
                 default:
                     fraction = 0.002;
                     angleRad = 12.0 * Math.PI / 180.0;
@@ -1468,7 +1517,7 @@ namespace SW2RD.Export
         // body's OWN size keeps perceived detail uniform regardless of how big
         // the part is or where it sits in the assembly. Falls back to the Fine-
         // level absolute clamp midpoint if the body box can't be read.
-        private double ComputeBodyChordTolerance(Body2 body, double fraction)
+        private double ComputeBodyChordTolerance(Body2 body, double fraction, double maxChord)
         {
             double diagonal = 0.0;
             try
@@ -1489,7 +1538,7 @@ namespace SW2RD.Export
             {
                 return MinBodyChordTolerance;
             }
-            return MathOps.Envelope(diagonal * fraction, MinBodyChordTolerance, MaxBodyChordTolerance);
+            return MathOps.Envelope(diagonal * fraction, MinBodyChordTolerance, maxChord);
         }
 
         // Transforms a 3D point by a 4x4 homogeneous matrix (column-vector
