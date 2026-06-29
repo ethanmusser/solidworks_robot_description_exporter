@@ -175,7 +175,7 @@ namespace SW2RD.Export
                 // component), escalate to a full assembly resolve as a last
                 // resort so we never regress correctness relative to the legacy
                 // behavior.
-                List<string> unresolvedComponents = new List<string>();
+                List<UnresolvedComponentEntry> unresolvedComponents = new List<UnresolvedComponentEntry>();
                 CheckModelDocsExist(baseNodeForResolve, unresolvedComponents);
                 if (unresolvedComponents.Count > 0)
                 {
@@ -204,11 +204,20 @@ namespace SW2RD.Export
                     CheckModelDocsExist(baseNodeForResolve, unresolvedComponents);
                     if (unresolvedComponents.Count > 0)
                     {
-                        string componentNames = string.Join("\r\n", unresolvedComponents);
+                        string detail = FormatUnresolvedComponents(unresolvedComponents);
                         logger.Error("SolidWorks told us the resolve succeeded, but ModelDocs" +
-                            " could not be obtained for: " + componentNames);
-                        MessageBox.Show("Model Documents could not be obtained for the following" +
-                            " components. Please resolve them:\r\n" + componentNames);
+                            " could not be obtained for:" + detail);
+                        MessageBox.Show(
+                            "Model documents could not be obtained for the components listed " +
+                            "below, so the export cannot continue. Each one is usually suppressed, " +
+                            "or its part file was renamed/moved/deleted (in PDM, not gotten-latest " +
+                            "or not checked out).\r\n\r\n" +
+                            "To fix each one, open the Robot Description Exporter, select the link " +
+                            "shown, expand the listed section in the accordion, and either re-select " +
+                            "the correct component or remove it from that group:\r\n" + detail +
+                            "\r\nTip: if a component shows as suppressed or \"not found\" in the " +
+                            "SolidWorks FeatureManager, resolve it there first, then re-export.",
+                            "Unresolved components");
                         return;
                     }
                 }

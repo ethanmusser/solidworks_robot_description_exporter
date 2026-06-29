@@ -25,6 +25,7 @@ using SolidWorks.Interop.swpublished;
 using SW2RD.Input;
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Windows.Forms;
 
 namespace SW2RD.Export
@@ -167,17 +168,34 @@ namespace SW2RD.Export
             }
         }
 
+        // One component reference that failed to resolve to a ModelDoc, carrying
+        // enough PMPage context (owning link, accordion section, and - for
+        // visual / collision - the specific mesh group) that the user can
+        // navigate straight to it. Inertial components have no mesh group, so
+        // GroupName stays null for the Inertial section.
+        internal sealed class UnresolvedComponentEntry
+        {
+            public string LinkName;
+            public string Section;
+            public string GroupName;
+            public string ComponentName;
+        }
+
         // After the user clicks Preview/Export but before the pipeline
         // tries to read transforms / mass props from each component, walk
         // every selected component for every link and report any whose
         // ModelDoc2 is null. Lightweight components in unresolved bodies
         // surface here, as do components that the user deleted in SW
-        // since the last save without first updating the PM tree.
-        private void CheckModelDocsExist(LinkNode node, List<string> problemComponents)
+        // since the last save without first updating the PM tree. We iterate
+        // the per-group lists directly (rather than the flattened
+        // VisualComponents / CollisionComponents accessors) so each failing
+        // component can be attributed to the exact group the user must open.
+        private void CheckModelDocsExist(LinkNode node, List<UnresolvedComponentEntry> problemComponents)
         {
-            CheckModelDocsExistFor(node.Link.VisualComponents, problemComponents);
-            CheckModelDocsExistFor(node.Link.CollisionComponents, problemComponents);
-            CheckModelDocsExistFor(node.Link.InertialComponents, problemComponents);
+            string linkName = string.IsNullOrWhiteSpace(node.Link?.Name) ? node.Text : node.Link.Name;
+            CheckModelDocsExistInGroups(linkName, "Visual", node.Link.VisualGroups, problemComponents);
+            CheckModelDocsExistInGroups(linkName, "Collision", node.Link.CollisionGroups, problemComponents);
+            CheckModelDocsExistFor(linkName, "Inertial", null, node.Link.InertialComponents, problemComponents);
 
             foreach (LinkNode child in node.Nodes)
             {
@@ -185,7 +203,24 @@ namespace SW2RD.Export
             }
         }
 
-        private static void CheckModelDocsExistFor(List<Component2> components, List<string> problemComponents)
+        private static void CheckModelDocsExistInGroups(
+            string linkName, string section, List<MeshGroup> groups,
+            List<UnresolvedComponentEntry> problemComponents)
+        {
+            if (groups == null)
+            {
+                return;
+            }
+            foreach (MeshGroup group in groups)
+            {
+                string groupName = string.IsNullOrWhiteSpace(group?.Name) ? "(unnamed group)" : group.Name;
+                CheckModelDocsExistFor(linkName, section, groupName, group?.Components, problemComponents);
+            }
+        }
+
+        private static void CheckModelDocsExistFor(
+            string linkName, string section, string groupName,
+            List<Component2> components, List<UnresolvedComponentEntry> problemComponents)
         {
             if (components == null)
             {
@@ -193,12 +228,57 @@ namespace SW2RD.Export
             }
             foreach (Component2 component in components)
             {
+                if (component == null)
+                {
+                    continue;
+                }
                 ModelDoc2 doc = component.GetModelDoc2();
                 if (doc == null)
                 {
-                    problemComponents.Add(component.Name2);
+                    problemComponents.Add(new UnresolvedComponentEntry
+                    {
+                        LinkName = linkName,
+                        Section = section,
+                        GroupName = groupName,
+                        ComponentName = component.Name2,
+                    });
                 }
             }
+        }
+
+        // Formats the unresolved-component entries into an indented, grouped
+        // block: one stanza per link, then per accordion section / mesh group,
+        // then the offending component names. Entries arrive grouped by link in
+        // tree order (CheckModelDocsExist finishes a link's Visual, Collision,
+        // then Inertial sets before recursing), and contiguous within a
+        // section / group, so a single pass without sorting preserves that
+        // structure.
+        internal static string FormatUnresolvedComponents(List<UnresolvedComponentEntry> problemComponents)
+        {
+            StringBuilder builder = new StringBuilder();
+            string currentLink = null;
+            string currentSectionGroup = null;
+            foreach (UnresolvedComponentEntry entry in problemComponents)
+            {
+                if (!string.Equals(entry.LinkName, currentLink, StringComparison.Ordinal))
+                {
+                    currentLink = entry.LinkName;
+                    currentSectionGroup = null;
+                    builder.Append("\r\n  Link '").Append(currentLink).Append("'\r\n");
+                }
+
+                string sectionGroup = entry.GroupName == null
+                    ? entry.Section
+                    : entry.Section + " section  >  group '" + entry.GroupName + "'";
+                if (!string.Equals(sectionGroup, currentSectionGroup, StringComparison.Ordinal))
+                {
+                    currentSectionGroup = sectionGroup;
+                    builder.Append("      ").Append(sectionGroup).Append("\r\n");
+                }
+
+                builder.Append("          - ").Append(entry.ComponentName).Append("\r\n");
+            }
+            return builder.ToString();
         }
 
         // Recursive function to iterate through nodes and build a message
