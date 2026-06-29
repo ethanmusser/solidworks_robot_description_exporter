@@ -104,6 +104,23 @@ sha256sum -c sw2rdSetup_<tag>.exe.sha256
 
 `SW2RD` reads and writes its own configuration attribute (`SW2RD Export Configuration (v1)`) and does not import configurations saved by `SW2URDF`. Opening an assembly that was only ever configured in `SW2URDF` starts a fresh `SW2RD` export tree; any existing `SW2URDF` attribute is left untouched on the model so the `SW2URDF` exporter can still read it.
 
+## Post-process exported meshes for simulation
+
+The companion post-process CLI [tools/sw2rd-postprocess](tools/sw2rd-postprocess/) rewrites the meshes of an already-exported package to prepare the model for simulation without requiring a SolidWorks re-export. The module includes a simple `prepare` mode to quickly prepare a model for simulation with MuJoCo. It also contains several distinct funcitonalities for working with the exported meshes:
+
+- **`decimate`** - reduce face counts uniformly with MeshLab [Quadric Edge Collapse Decimation](https://pymeshlab.readthedocs.io/) (`--ratio` / `--target-faces`).
+- **`prune`** - drop any empty/unreadable meshes, leaving valid ones untouched.
+- **`decompose`** - replace collision meshes with their [CoACD](https://github.com/SarahWeiii/CoACD) convex-hull unions while leaving visual meshes untouched.
+
+Run the tool using `uv` as in the following example or install the module using `pip`.
+
+```bash
+cd tools/sw2rd-postprocess
+uv sync
+uv run sw2rd-postprocess prepare <MJCF_PATH>  # make it MuJoCo-loadable
+uv run sw2rd-postprocess decompose <MJCF_PATH> --all --threshold 0.01
+```
+
 ## Converting mesh format from 3dxml to dae
 
 Executing the following command will convert the format of the exported mesh from 3DXML to DAE, and rewrite the URDF, allowing you to display colored meshes in visualization tools like RViz:
