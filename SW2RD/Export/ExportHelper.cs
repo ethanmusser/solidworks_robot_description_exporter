@@ -124,6 +124,16 @@ namespace SW2RD.Export
             new Dictionary<string, MathTransform>();
         private readonly Dictionary<string, double[]> referenceAxisCache =
             new Dictionary<string, double[]>();
+        // Memoizes the resolved (UNFLIPPED) live-preview origin + axis keyed by
+        // (coordsys, axis, source). The live preview re-runs the full in-context
+        // reconstruction on every coord-sys / axis pick, every flip, and every
+        // node switch; on a large flexible sub-assembly that reconstruction is
+        // multi-second, so re-resolving the SAME selection (the flip button is
+        // the worst offender - it only negates the vector) is wasteful. Geometry
+        // is static while the export PMP is open, so caching for the page session
+        // is safe; ClearAxisPreviewCache() drops it on PMP close.
+        private readonly Dictionary<string, AxisPreview> axisPreviewCache =
+            new Dictionary<string, AxisPreview>();
         private int featureLookupCacheDepth;
         // When set, WithComponentConfiguration reads in the part doc's
         // CURRENT active configuration instead of switching to the

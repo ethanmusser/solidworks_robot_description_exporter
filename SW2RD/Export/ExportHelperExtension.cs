@@ -1709,6 +1709,7 @@ namespace SW2RD.Export
         // multi-part flex behaviour is required.
         private MathTransform TryGetInContextCoordSysTransform(ResolvedFeatureReference r)
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 MathTransform subAsmGlobal = r.ComponentTransform;
@@ -1723,62 +1724,69 @@ namespace SW2RD.Export
                 MathTransform coordsysUnflexedGlobal =
                     subAsmGlobal == null ? localStd : (MathTransform)localStd.Multiply(subAsmGlobal);
 
-                // Resolve the anchor leaf part (the component whose geometry the
-                // coord-sys origin references) in the standalone sub-assembly doc.
-                Component2 anchorStandalone = GetCoordSysAnchorComponent(r);
-                if (anchorStandalone == null)
+                Feature coordSysFeat = FindNamedFeature(r.OwningDoc, "CoordSys", r.FeatureName);
+
+                // FAST PATH (no AccessSelections / dependency-tree walk): derive the
+                // origin from the coord system's defining reference POINT evaluated
+                // in-context, and the basis from its defining reference AXES evaluated
+                // in-context. Both reads are cheap (GetRefPoint / GetRefAxisParams on
+                // an in-context-resolved feature, then lifted by ComponentTransform),
+                // whereas the anchor carry below calls AccessSelections on every
+                // parent feature, which puts each into edit mode and costs tens of
+                // seconds on a flexible sub-assembly. When the coord system supplies
+                // both a reference point (origin) and reference axes (basis) - the
+                // common case for joint/site coord systems - we skip the anchor walk
+                // entirely.
+                double[] originGlobal = TryGetInContextCoordSysOriginGlobal(r, coordSysFeat);
+                double[][] basisCols = RefineCoordSysBasisColumns(r, coordSysFeat, coordsysUnflexedGlobal);
+                if (originGlobal != null && basisCols != null)
                 {
-                    logger.Info("In-context coord system '" + r.FeatureName +
-                        "' anchor component unresolved; falling back to standalone read.");
+                    // FAST path: no AccessSelections anchor walk. If a future
+                    // coord-sys is unexpectedly slow, look for "anchor-carry
+                    // fallback" below instead - that path runs AccessSelections.
+                    logger.Info("In-context coord-sys '" + r.FeatureName +
+                        "' resolved via fast reference-point+axis path in " +
+                        sw.ElapsedMilliseconds + " ms.");
+                    return ComposeCoordSysTransform(basisCols, originGlobal);
+                }
+
+                // SLOW FALLBACK: anchor-part flex carry. Needed only when the coord
+                // system lacks a defining reference point (origin) or defining axes
+                // (basis) we can evaluate in-context. Fills in whichever component
+                // (origin / basis) the fast path could not supply.
+                logger.Info("In-context coord-sys '" + r.FeatureName +
+                    "' missing fast " + (originGlobal == null ? "origin (no reference point)" : "")
+                    + (originGlobal == null && basisCols == null ? " and " : "")
+                    + (basisCols == null ? "basis (no evaluable axis)" : "")
+                    + "; using anchor-carry fallback (runs AccessSelections, may be slow).");
+                MathTransform carriedFlexed = AnchorCarryCoordSysTransform(r, coordsysUnflexedGlobal);
+                if (carriedFlexed == null)
+                {
+                    // No anchor either; return whatever the fast path did produce so
+                    // a partial in-context result still beats the standalone read.
+                    if (originGlobal != null && basisCols != null)
+                    {
+                        return ComposeCoordSysTransform(basisCols, originGlobal);
+                    }
                     return null;
                 }
 
-                MathTransform anchorSubAsmLocal = anchorStandalone.Transform2;
-                if (anchorSubAsmLocal == null)
+                double[] cf = carriedFlexed.ArrayData as double[];
+                double[] finalOrigin = originGlobal
+                    ?? (cf != null ? new[] { cf[9], cf[10], cf[11] } : new[] { 0.0, 0.0, 0.0 });
+                double[][] finalBasis = basisCols ?? (cf != null
+                    ? new[]
+                    {
+                        new[] { cf[0], cf[1], cf[2] },
+                        new[] { cf[3], cf[4], cf[5] },
+                        new[] { cf[6], cf[7], cf[8] },
+                    }
+                    : null);
+                if (finalBasis == null)
                 {
-                    return null;
+                    return carriedFlexed;
                 }
-                MathTransform anchorUnflexedGlobal = subAsmGlobal == null
-                    ? anchorSubAsmLocal : (MathTransform)anchorSubAsmLocal.Multiply(subAsmGlobal);
-
-                // Same anchor part, but its in-context instance under the root
-                // assembly (whose total transform reflects the flexible solve).
-                string targetName = r.OwningComponent.Name2 + "/" + anchorStandalone.Name2;
-                Component2 anchorInContext = FindComponentByName2InAssembly(targetName);
-                if (anchorInContext == null)
-                {
-                    logger.Info("In-context coord system '" + r.FeatureName +
-                        "' anchor '" + targetName + "' not found in assembly; falling back.");
-                    return null;
-                }
-                MathTransform anchorFlexedGlobal =
-                    anchorInContext.GetTotalTransform(true) ?? anchorInContext.Transform2;
-                if (anchorFlexedGlobal == null)
-                {
-                    return null;
-                }
-
-                // coordsysFlexed = (coordsysUnflexed in anchor frame) lifted by flexed anchor.
-                // This rigidly carries the WHOLE coord-sys frame by the ORIGIN
-                // part's motion - correct for the origin (translation) and for a
-                // single-part coord system, but NOT for the basis of a coord
-                // system whose axes are RELATIVE directions spanning two moving
-                // parts (e.g. a two-point axis between part A and part B). We use
-                // its translation as the origin and refine the basis below.
-                MathTransform anchorUnflexedInv = (MathTransform)anchorUnflexedGlobal.Inverse();
-                MathTransform coordsysInAnchor =
-                    (MathTransform)coordsysUnflexedGlobal.Multiply(anchorUnflexedInv);
-                MathTransform coordsysFlexedGlobal =
-                    (MathTransform)coordsysInAnchor.Multiply(anchorFlexedGlobal);
-
-                // Refine the basis from the coord system's OWN defining reference
-                // axes evaluated in-context (GetRefAxisParams reflects the flexed
-                // pose). This corrects multi-part / relative-axis coord systems
-                // that the single-anchor carry cannot. Falls back to the carried
-                // basis when no defining axis is evaluable.
-                MathTransform refined =
-                    RefineCoordSysBasisInContext(r, coordsysUnflexedGlobal, coordsysFlexedGlobal);
-                return refined ?? coordsysFlexedGlobal;
+                return ComposeCoordSysTransform(finalBasis, finalOrigin);
             }
             catch (Exception ex)
             {
@@ -1788,9 +1796,109 @@ namespace SW2RD.Export
             }
         }
 
+        // In-context coord-system ORIGIN: read the coord system's defining reference
+        // POINT in-context (reflecting the flexible solve) and lift it to root-global.
+        // This is the cheap replacement for the anchor dependency-tree walk on the
+        // origin (translation) axis - a reference point evaluates in-context in ~2 ms
+        // via GetRefPoint, vs tens of seconds for the AccessSelections-based anchor
+        // carry. Returns null when the coord system has no direct-parent reference
+        // point (caller falls back to the anchor carry for the origin).
+        private double[] TryGetInContextCoordSysOriginGlobal(
+            ResolvedFeatureReference r, Feature coordSysFeat)
+        {
+            if (coordSysFeat == null)
+            {
+                return null;
+            }
+            var pointNames = DirectParentFeatureNames(coordSysFeat, "RefPoint");
+            foreach (string pointName in pointNames)
+            {
+                ResolvedFeatureReference pr = r;
+                pr.FeatureName = pointName;
+                double[] g = TryGetInContextPointGlobal(pr);
+                if (g != null)
+                {
+                    return g;
+                }
+            }
+            return null;
+        }
+
+        // Composes a coord-system MathTransform from three basis columns (X/Y/Z) and
+        // a global origin, in SW's 16-element column-major layout.
+        private MathTransform ComposeCoordSysTransform(double[][] basisCols, double[] origin)
+        {
+            if (basisCols == null || basisCols.Length < 3 || origin == null)
+            {
+                return null;
+            }
+            double[] data =
+            {
+                basisCols[0][0], basisCols[0][1], basisCols[0][2],
+                basisCols[1][0], basisCols[1][1], basisCols[1][2],
+                basisCols[2][0], basisCols[2][1], basisCols[2][2],
+                origin[0], origin[1], origin[2],
+                1.0, 0.0, 0.0, 0.0,
+            };
+            return swMath?.CreateTransform(data) as MathTransform;
+        }
+
+        // Anchor-part flex carry for a coord system: rigidly carries the standalone
+        // coord-sys frame by the motion of the ORIGIN part (the leaf component its
+        // origin references). Correct for the origin (translation) and for a
+        // single-part coord system, but NOT for a basis whose axes are RELATIVE
+        // directions spanning two moving parts. EXPENSIVE - GetCoordSysAnchorComponent
+        // calls AccessSelections on the dependency tree (each puts a feature into edit
+        // mode); only used as the fallback when the fast reference-point / reference-
+        // axis path cannot supply the origin or basis. Returns null when the anchor
+        // cannot be resolved (caller falls back to the standalone read).
+        private MathTransform AnchorCarryCoordSysTransform(
+            ResolvedFeatureReference r, MathTransform coordsysUnflexedGlobal)
+        {
+            MathTransform subAsmGlobal = r.ComponentTransform;
+
+            Component2 anchorStandalone = GetCoordSysAnchorComponent(r);
+            if (anchorStandalone == null)
+            {
+                logger.Info("In-context coord system '" + r.FeatureName +
+                    "' anchor component unresolved; falling back to standalone read.");
+                return null;
+            }
+
+            MathTransform anchorSubAsmLocal = anchorStandalone.Transform2;
+            if (anchorSubAsmLocal == null)
+            {
+                return null;
+            }
+            MathTransform anchorUnflexedGlobal = subAsmGlobal == null
+                ? anchorSubAsmLocal : (MathTransform)anchorSubAsmLocal.Multiply(subAsmGlobal);
+
+            // Same anchor part, but its in-context instance under the root
+            // assembly (whose total transform reflects the flexible solve).
+            string targetName = r.OwningComponent.Name2 + "/" + anchorStandalone.Name2;
+            Component2 anchorInContext = FindComponentByName2InAssembly(targetName);
+            if (anchorInContext == null)
+            {
+                logger.Info("In-context coord system '" + r.FeatureName +
+                    "' anchor '" + targetName + "' not found in assembly; falling back.");
+                return null;
+            }
+            MathTransform anchorFlexedGlobal =
+                anchorInContext.GetTotalTransform(true) ?? anchorInContext.Transform2;
+            if (anchorFlexedGlobal == null)
+            {
+                return null;
+            }
+
+            MathTransform anchorUnflexedInv = (MathTransform)anchorUnflexedGlobal.Inverse();
+            MathTransform coordsysInAnchor =
+                (MathTransform)coordsysUnflexedGlobal.Multiply(anchorUnflexedInv);
+            return (MathTransform)coordsysInAnchor.Multiply(anchorFlexedGlobal);
+        }
+
         // Rebuilds the coordinate system's BASIS from its own defining reference
-        // axes evaluated IN-CONTEXT, returning a transform with that basis and the
-        // carried origin. A coord-sys basis is frequently a RELATIVE direction
+        // axes evaluated IN-CONTEXT, returning the three basis columns (X/Y/Z) as
+        // global unit vectors. A coord-sys basis is frequently a RELATIVE direction
         // (e.g. a two-point reference axis spanning two moving parts); the
         // single-anchor flex carry pins it to one part and gets such a basis wrong
         // whenever the OTHER part moves. Reference axes, by contrast, evaluate
@@ -1803,11 +1911,11 @@ namespace SW2RD.Export
         //      WHOLE standalone basis (so auto-derived columns are carried
         //      rigidly - the best continuation without replicating SW's private
         //      axis-completion rule).
-        // Returns null (caller keeps the carried frame) when no defining axis is
-        // evaluable. Origin (translation) always comes from the carried frame
-        // (the origin part's flex), independent of the basis.
-        private MathTransform RefineCoordSysBasisInContext(
-            ResolvedFeatureReference r, MathTransform unflexedGlobal, MathTransform carriedFlexed)
+        // Returns null when no defining axis is evaluable (caller keeps the carried
+        // basis). The basis is independent of the origin (the caller supplies the
+        // origin separately - from the in-context reference point or the anchor carry).
+        private double[][] RefineCoordSysBasisColumns(
+            ResolvedFeatureReference r, Feature feat, MathTransform unflexedGlobal)
         {
             double[] s = unflexedGlobal.ArrayData as double[];
             if (s == null)
@@ -1821,7 +1929,6 @@ namespace SW2RD.Export
                 new[] { s[6], s[7], s[8] },
             };
 
-            Feature feat = FindNamedFeature(r.OwningDoc, "CoordSys", r.FeatureName);
             var axisNames = DirectParentFeatureNames(feat, "RefAxis");
             if (axisNames.Count == 0)
             {
@@ -1876,24 +1983,12 @@ namespace SW2RD.Export
                 return null;
             }
 
-            double[] Xf = Vec.MatVec(rDelta, stdCols[0]);
-            double[] Yf = Vec.MatVec(rDelta, stdCols[1]);
-            double[] Zf = Vec.MatVec(rDelta, stdCols[2]);
-
-            double[] cf = carriedFlexed.ArrayData as double[];
-            double ox = cf != null ? cf[9] : 0.0;
-            double oy = cf != null ? cf[10] : 0.0;
-            double oz = cf != null ? cf[11] : 0.0;
-
-            double[] data =
+            return new[]
             {
-                Xf[0], Xf[1], Xf[2],
-                Yf[0], Yf[1], Yf[2],
-                Zf[0], Zf[1], Zf[2],
-                ox, oy, oz,
-                1.0, 0.0, 0.0, 0.0,
+                Vec.MatVec(rDelta, stdCols[0]),
+                Vec.MatVec(rDelta, stdCols[1]),
+                Vec.MatVec(rDelta, stdCols[2]),
             };
-            return swMath?.CreateTransform(data) as MathTransform;
         }
 
         // Names of a feature's DIRECT parent features of the given SW type
@@ -2475,8 +2570,65 @@ namespace SW2RD.Export
                 return empty;
             }
 
-            // PreviewAxisDirection is contractually side-effect-free and
-            // runs while the PropertyManager page is open. Suppress the
+            // Memoize the resolved UNFLIPPED preview per (coordsys, axis, source).
+            // The flip button and re-selecting the same feature otherwise re-run
+            // the multi-second in-context reconstruction; the flip is a pure sign
+            // change. Cache the unflipped result so only the FIRST resolve of each
+            // distinct selection pays the cost (cleared on PMP close).
+            string previewKey =
+                (coordsysName ?? "") + "||" + (axisName ?? "") + "||" + (int)axisSource;
+            AxisPreview cached;
+            if (!axisPreviewCache.TryGetValue(previewKey, out cached))
+            {
+                cached = ResolveAxisPreviewUnflipped(coordsysName, axisName, axisSource, usesBasisAxis);
+                axisPreviewCache[previewKey] = cached;
+            }
+            else
+            {
+                logger.Info("PreviewAxisDirection: cache hit for '" + previewKey + "'");
+            }
+
+            if (!cached.IsValid)
+            {
+                return empty;
+            }
+
+            // Return a fresh copy so the caller-applied flip never mutates the
+            // cached (unflipped) array.
+            double[] axisOut = new double[]
+            {
+                cached.AxisGlobal[0], cached.AxisGlobal[1], cached.AxisGlobal[2]
+            };
+            if (flipped)
+            {
+                axisOut[0] = -axisOut[0];
+                axisOut[1] = -axisOut[1];
+                axisOut[2] = -axisOut[2];
+            }
+            return new AxisPreview
+            {
+                IsValid = true,
+                OriginGlobal = new double[]
+                {
+                    cached.OriginGlobal[0], cached.OriginGlobal[1], cached.OriginGlobal[2]
+                },
+                AxisGlobal = axisOut,
+            };
+        }
+
+        // Resolves the UNFLIPPED preview origin + axis for a selection. Factored
+        // out of PreviewAxisDirection so the result can be memoized. Computes the
+        // coordinate-system transform ONCE and derives both the origin and (for a
+        // coord-sys basis axis) the basis column from it, instead of resolving the
+        // transform twice (origin via GetCoordinateSystemTransform + axis via
+        // GetCoordinateSystemBasisAxis, which re-resolved internally).
+        private AxisPreview ResolveAxisPreviewUnflipped(
+            string coordsysName, string axisName, JointAxisSource axisSource, bool usesBasisAxis)
+        {
+            AxisPreview empty = new AxisPreview { IsValid = false };
+
+            // PreviewAxisDirection is contractually side-effect-free and runs
+            // while the PropertyManager page is open. Suppress the
             // ShowConfiguration2 document mutation in WithComponentConfiguration
             // for the duration; a preview overlay in the part's current
             // configuration is acceptable and avoids closing the PM page.
@@ -2484,9 +2636,7 @@ namespace SW2RD.Export
             suppressConfigSwitchForFeatureLookup = true;
             try
             {
-                logger.Info("PreviewAxisDirection: GetCoordinateSystemTransform ENTER");
                 MathTransform coordsysTransform = GetCoordinateSystemTransform(coordsysName);
-                logger.Info("PreviewAxisDirection: GetCoordinateSystemTransform RETURNED (null=" + (coordsysTransform == null) + ")");
                 if (coordsysTransform == null)
                 {
                     return empty;
@@ -2498,15 +2648,18 @@ namespace SW2RD.Export
                 {
                     if (usesBasisAxis)
                     {
-                        logger.Info("PreviewAxisDirection: GetCoordinateSystemBasisAxis ENTER");
-                        axis = GetCoordinateSystemBasisAxis(coordsysName, BasisIndexFor(axisSource));
-                        logger.Info("PreviewAxisDirection: GetCoordinateSystemBasisAxis RETURNED (null=" + (axis == null) + ")");
+                        // Pull the basis column straight off the already-resolved
+                        // transform - no second GetCoordinateSystemTransform.
+                        int offset = 3 * BasisIndexFor(axisSource);
+                        double[] data = coordsysTransform.ArrayData;
+                        axis = MathOps.PNorm(new double[]
+                        {
+                            data[offset], data[offset + 1], data[offset + 2]
+                        }, 2);
                     }
                     else
                     {
-                        logger.Info("PreviewAxisDirection: EstimateAxis ENTER");
                         axis = EstimateAxis(axisName);
-                        logger.Info("PreviewAxisDirection: EstimateAxis RETURNED (null=" + (axis == null) + ")");
                     }
                 }
                 catch (Exception ex)
@@ -2521,13 +2674,6 @@ namespace SW2RD.Export
                     return empty;
                 }
 
-                if (flipped)
-                {
-                    axis[0] = -axis[0];
-                    axis[1] = -axis[1];
-                    axis[2] = -axis[2];
-                }
-
                 return new AxisPreview
                 {
                     IsValid = true,
@@ -2539,6 +2685,13 @@ namespace SW2RD.Export
             {
                 suppressConfigSwitchForFeatureLookup = priorSuppress;
             }
+        }
+
+        // Drops the live-preview memo. Called on export PMP close so a later
+        // session re-resolves against possibly-changed geometry.
+        public void ClearAxisPreviewCache()
+        {
+            axisPreviewCache.Clear();
         }
 
         // Resolves a SW reference axis Feature.Name to its global-frame
@@ -2566,10 +2719,11 @@ namespace SW2RD.Export
             // model-context RefAxis pointer into the ASSEMBLY context via
             // IComponent2.GetCorresponding, then read GetRefAxisParams. That
             // returns the axis IN-CONTEXT (reflecting flexible sub-assembly
-            // repositioning) in root-global coordinates, so the direction needs
-            // NO further component transform. Read-only (no SelectionMgr / doc
-            // mutation), so safe on the live-preview path. Falls through to the
-            // standalone sub-assembly-document read when unavailable.
+            // repositioning) but in the owning sub-assembly's LOCAL frame;
+            // TryGetInContextAxisDirection lifts it to root-global. Read-only
+            // (no SelectionMgr / doc mutation), so safe on the live-preview path.
+            // Falls through to the standalone sub-assembly-document read when
+            // unavailable.
             if (r.OwningComponent != null)
             {
                 double[] inContextDir = TryGetInContextAxisDirection(r);
@@ -2692,10 +2846,10 @@ namespace SW2RD.Export
         // In-context reference-axis direction for a feature that lives inside a
         // (possibly flexible) sub-assembly. Resolves the RefAxis in the assembly
         // context (see ResolveInContextFeature) so GetRefAxisParams reflects
-        // flexible repositioning. Assembly-context geometry is returned in
-        // root-global coordinates, so the direction is NOT multiplied by
-        // ComponentTransform. Returns a PNorm-normalised global direction, or
-        // null if unavailable (caller falls back to the standalone read).
+        // flexible repositioning. The evaluated direction comes back in the OWNING
+        // sub-assembly's LOCAL document frame (NOT root-global), so it IS lifted by
+        // r.ComponentTransform's rotation here. Returns a PNorm-normalised global
+        // direction, or null if unavailable (caller falls back to standalone).
         private double[] TryGetInContextAxisDirection(ResolvedFeatureReference r)
         {
             try
@@ -2724,7 +2878,15 @@ namespace SW2RD.Export
                     return null;
                 }
 
-                return MathOps.PNorm(v, 2);
+                // GetRefAxisParams on an assembly-context feature obtained from a
+                // NESTED sub-assembly component returns the direction in the
+                // OWNING sub-assembly's LOCAL document frame (it reflects flexible
+                // repositioning, but is NOT root-global). Lift it to root-global by
+                // the owning component's transform rotation -- the SAME convention
+                // StandaloneAxisDirGlobal uses. (A one-level sub-assembly placed at
+                // identity hides this because local == root-global there.)
+                double[] localDir = MathOps.PNorm(v, 2);
+                return MathOps.PNorm(GlobalAxis(localDir, r.ComponentTransform), 2);
             }
             catch (Exception ex)
             {
@@ -2800,9 +2962,10 @@ namespace SW2RD.Export
             // in a flexible sub-assembly): convert the model-context RefPoint
             // pointer into the ASSEMBLY context via IComponent2.GetCorresponding,
             // then read GetRefPoint. That returns the point IN-CONTEXT (reflecting
-            // flexible repositioning) in root-global coordinates, so it needs NO
-            // further component transform. Read-only, safe on any path. Falls
-            // through to the standalone sub-assembly-document read when unavailable.
+            // flexible repositioning) but in the owning sub-assembly's LOCAL frame;
+            // TryGetInContextPointGlobal lifts it to root-global. Read-only, safe on
+            // any path. Falls through to the standalone sub-assembly-document read
+            // when unavailable.
             if (r.OwningComponent != null)
             {
                 double[] inContextPoint = TryGetInContextPointGlobal(r);
@@ -2848,10 +3011,10 @@ namespace SW2RD.Export
         // In-context reference-point position for a feature that lives inside a
         // (possibly flexible) sub-assembly. Resolves the RefPoint in the assembly
         // context (see ResolveInContextFeature) so GetRefPoint reflects flexible
-        // repositioning. Assembly-context geometry is returned in root-global
-        // coordinates, so it is NOT multiplied by ComponentTransform. Returns the
-        // thresholded global position, or null if unavailable (caller falls back
-        // to the standalone read).
+        // repositioning. The evaluated position comes back in the OWNING
+        // sub-assembly's LOCAL document frame (NOT root-global), so it IS lifted by
+        // r.ComponentTransform (GlobalPoint) here. Returns the global position, or
+        // null if unavailable (caller falls back to the standalone read).
         private double[] TryGetInContextPointGlobal(ResolvedFeatureReference r)
         {
             try
@@ -2871,7 +3034,16 @@ namespace SW2RD.Export
                     return null;
                 }
 
-                return MathOps.Threshold(new double[] { data[0], data[1], data[2] }, 0.00001);
+                // GetRefPoint on an assembly-context feature obtained from a NESTED
+                // sub-assembly component returns the position in the OWNING
+                // sub-assembly's LOCAL document frame (it reflects flexible
+                // repositioning, but is NOT root-global). Lift it to root-global by
+                // the owning component's full transform -- the SAME GlobalPoint
+                // compose the standalone fallback path uses. (A one-level
+                // sub-assembly placed at identity hides this because local ==
+                // root-global there.)
+                double[] local = new double[] { data[0], data[1], data[2] };
+                return GlobalPoint(local, r.ComponentTransform);
             }
             catch (Exception ex)
             {

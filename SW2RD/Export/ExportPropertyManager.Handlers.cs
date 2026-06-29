@@ -162,6 +162,9 @@ namespace SW2RD.Export
                 try
                 {
                     Exporter.ClearAxisOverlay();
+                    // Drop the live-preview memo so the next PMP session
+                    // re-resolves against possibly-changed geometry.
+                    Exporter.ClearAxisPreviewCache();
                 }
                 catch (Exception ex)
                 {

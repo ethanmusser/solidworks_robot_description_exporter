@@ -161,7 +161,6 @@ namespace SW2RD.Export
         private void RefreshAxisDirectionPreview()
         {
             int seq = ++axisPreviewLogSeq;
-            logger.Info("[#" + seq + "] RefreshAxisDirectionPreview: enter");
 
             // Clear the re-entrancy guard on completion (try/finally), NOT
             // on entry. Clearing on entry would let any DeferRefreshAxisPreview
@@ -180,7 +179,6 @@ namespace SW2RD.Export
                 if (active == null || active.IsBaseNode ||
                     active.Link == null || active.Link.Joint == null)
                 {
-                    logger.Info("[#" + seq + "] RefreshAxisDirectionPreview: clearing overlay (no active joint node)");
                     Exporter.ClearAxisOverlay();
                     return;
                 }
@@ -207,21 +205,16 @@ namespace SW2RD.Export
                 // SW's selection-color highlight was a nicety, not
                 // load-bearing.
 
-                logger.Info("[#" + seq + "] RefreshAxisDirectionPreview: calling PreviewAxisDirection");
                 ExportHelper.AxisPreview preview =
                     Exporter.PreviewAxisDirection(coordSysName, axisName, currentAxisFlipped, axisSource);
-                logger.Info("[#" + seq + "] RefreshAxisDirectionPreview: PreviewAxisDirection returned IsValid=" + preview.IsValid);
 
                 if (!preview.IsValid)
                 {
-                    logger.Info("[#" + seq + "] RefreshAxisDirectionPreview: clearing overlay (preview invalid)");
                     Exporter.ClearAxisOverlay();
                     return;
                 }
 
-                logger.Info("[#" + seq + "] RefreshAxisDirectionPreview: calling DrawAxisOverlay");
                 Exporter.DrawAxisOverlay(preview.OriginGlobal, preview.AxisGlobal);
-                logger.Info("[#" + seq + "] RefreshAxisDirectionPreview: DrawAxisOverlay returned");
             }
             catch (Exception ex)
             {
@@ -230,7 +223,6 @@ namespace SW2RD.Export
             finally
             {
                 axisPreviewRefreshPending = false;
-                logger.Info("[#" + seq + "] RefreshAxisDirectionPreview: exit (pending cleared)");
             }
         }
     }
