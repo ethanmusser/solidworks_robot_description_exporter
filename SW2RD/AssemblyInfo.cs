@@ -66,8 +66,8 @@ using System.Runtime.InteropServices;
 // the Versioning\VersionInfo.cs pre-build target stamps from `git describe`.
 // The SDK-style csproj enables deterministic builds, which forbid wildcard
 // AssemblyVersions.
-[assembly: AssemblyVersion("0.6.0.0")]
-[assembly: AssemblyFileVersion("0.6.0.0")]
+[assembly: AssemblyVersion("0.7.0.0")]
+[assembly: AssemblyFileVersion("0.7.0.0")]
 //
 // In order to sign your assembly you must specify a key to use. Refer to the
 // Microsoft .NET Framework documentation for more information on assembly signing.
