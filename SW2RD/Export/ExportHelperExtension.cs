@@ -202,6 +202,12 @@ namespace SW2RD.Export
                 {
 
                 progressBar.Start(0, CommonSwOperations.GetCount(rootNode.Nodes) + 1, "Building links");
+                // Register the live export bar with SwProgress so a slow shared
+                // resolver (e.g. the in-context flexible-subassembly coord-sys
+                // fallback) can retitle it via SwProgress.SetTitle. Ownership of
+                // Start/End stays here; SwProgress.DetachExternal in the export
+                // finally clears the registration.
+                SwProgress.AttachExternal(progressBar);
                 int count = 0;
 
                 progressBar.UpdateProgress(count);
@@ -1759,6 +1765,10 @@ namespace SW2RD.Export
                     + (originGlobal == null && basisCols == null ? " and " : "")
                     + (basisCols == null ? "basis (no evaluable axis)" : "")
                     + "; using anchor-carry fallback (runs AccessSelections, may be slow).");
+                // Surface the slow path on whatever busy indicator is active (the
+                // export bar during export, or the live-preview scope during a
+                // PMP coord-sys pick); no-op if none.
+                SwProgress.SetTitle("Resolving coordinate system in flexible subassembly...");
                 MathTransform carriedFlexed = AnchorCarryCoordSysTransform(r, coordsysUnflexedGlobal);
                 if (carriedFlexed == null)
                 {

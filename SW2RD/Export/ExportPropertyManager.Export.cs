@@ -226,6 +226,12 @@ namespace SW2RD.Export
             }
             finally
             {
+                // Clear the SwProgress registration of the export progress bar.
+                // Bracketed here (not at each export Start/End pair) so a mid-
+                // export exception can never leave SwProgress pointing at a
+                // dead/ended bar and break later PMP busy indicators.
+                SwProgress.DetachExternal();
+
                 // Restore the components we resolved back to lightweight so the
                 // user's session returns to its prior low-memory state. Only the
                 // components we flipped are touched; anything the user had already

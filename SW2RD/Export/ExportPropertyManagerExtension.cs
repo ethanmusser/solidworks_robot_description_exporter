@@ -119,27 +119,42 @@ namespace SW2RD.Export
         // method saves the previously active node and fills in the property mananger with the new one
         public void SwitchActiveNodes(LinkNode node)
         {
-            SaveActiveNode();
-
-            Font fontRegular = new Font(Tree.Font, FontStyle.Regular);
-            Font fontBold = new Font(Tree.Font, FontStyle.Bold);
-            if (previouslySelectedNode != null)
+            // Switching links re-hydrates every SelectionBox (component Select4
+            // loops, coord-sys / axis SelectByID2) and, on the Link/Joint
+            // section, synchronously resolves the joint axis preview - which can
+            // be slow on large or flexible-subassembly assemblies. Show a busy
+            // indicator so the click does not look like a freeze. Inner scopes
+            // (e.g. RefreshAxisDirectionPreview) nest under this one and only
+            // swap the title.
+            string linkLabel = node?.Link?.Name;
+            if (string.IsNullOrEmpty(linkLabel))
             {
-                previouslySelectedNode.NodeFont = fontRegular;
+                linkLabel = node?.Text;
             }
-            FillPropertyManager(node);
+            using (SwProgress.Busy(swApp, "Loading link: " + (linkLabel ?? "")))
+            {
+                SaveActiveNode();
 
-            //If this flag is set to true, it prevents this method from getting called again when
-            // changing the selected node
-            automaticallySwitched = true;
+                Font fontRegular = new Font(Tree.Font, FontStyle.Regular);
+                Font fontBold = new Font(Tree.Font, FontStyle.Bold);
+                if (previouslySelectedNode != null)
+                {
+                    previouslySelectedNode.NodeFont = fontRegular;
+                }
+                FillPropertyManager(node);
 
-            //Change the selected node to the argument node. This highlights the newly activated node
-            Tree.SelectedNode = node;
+                //If this flag is set to true, it prevents this method from getting called again when
+                // changing the selected node
+                automaticallySwitched = true;
 
-            node.NodeFont = fontBold;
-            node.Text = node.Text;
-            previouslySelectedNode = node;
-            CheckNodeComplete(node);
+                //Change the selected node to the argument node. This highlights the newly activated node
+                Tree.SelectedNode = node;
+
+                node.NodeFont = fontBold;
+                node.Text = node.Text;
+                previouslySelectedNode = node;
+                CheckNodeComplete(node);
+            }
         }
 
         // This method runs through first the child nodes of the selected node to see if there are
@@ -1291,7 +1306,12 @@ namespace SW2RD.Export
             else
             {
                 List<string> problemLinks = new List<string>();
+                // Phase titles on the open-time busy indicator (no-op if no
+                // progress bar is active). These two recursive walks are the bulk
+                // of the open-time stall on large assemblies.
+                SwProgress.SetTitle("Resolving link components...");
                 CommonSwOperations.LoadSWComponents(ActiveSWModel, baseNode, problemLinks);
+                SwProgress.SetTitle("Validating coordinate systems, axes, and sites...");
                 ValidateFeatureReferences(baseNode, problemLinks);
 
                 if (problemLinks.Count > 0)

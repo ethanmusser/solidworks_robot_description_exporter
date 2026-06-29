@@ -344,6 +344,10 @@ namespace SW2RD.Export
             int progressBarBound = CommonSwOperations.GetCount(URDFRobot.BaseLink);
             iSwApp.GetUserProgressBar(out progressBar);
             progressBar.Start(0, progressBarBound, "Creating package directories");
+            // Re-register the (re-acquired) export bar with SwProgress for the
+            // mesh / inertial / site phases; same shared singleton as the build
+            // phase. Cleared by SwProgress.DetachExternal in the export finally.
+            SwProgress.AttachExternal(progressBar);
 
             //Creating package directories
             logger.Info("Creating package directories with name " + PackageName + " and save path " + SavePath);

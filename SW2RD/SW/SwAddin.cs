@@ -798,10 +798,17 @@ namespace SW2RD.SW
             ExportPropertyManager pm =
                 new ExportPropertyManager((SldWorks)SwApp, ExportPmMode.Configure);
             logger.Info("Loading config tree");
-            if (pm.LoadConfigTree())
+            // Loading a saved configuration on a large assembly resolves every
+            // referenced component (PID + name fallback) and walks the feature
+            // tree per reference - seconds of UI-thread-blocking work with only a
+            // spinning cursor otherwise. Show a busy indicator for the duration.
+            using (SwProgress.Busy((SldWorks)SwApp, "Loading robot description configuration..."))
             {
-                logger.Info("Showing configure property manager");
-                pm.Show();
+                if (pm.LoadConfigTree())
+                {
+                    logger.Info("Showing configure property manager");
+                    pm.Show();
+                }
             }
         }
 
@@ -843,10 +850,16 @@ namespace SW2RD.SW
             ExportPropertyManager pm =
                 new ExportPropertyManager((SldWorks)SwApp, ExportPmMode.Export);
             logger.Info("Loading config tree");
-            if (pm.LoadConfigTree())
+            // Same heavy config-load path as the Configure PMP; show a busy
+            // indicator so the open does not look like a freeze on large saved
+            // assemblies.
+            using (SwProgress.Busy((SldWorks)SwApp, "Loading robot description configuration..."))
             {
-                logger.Info("Showing export property manager");
-                pm.Show();
+                if (pm.LoadConfigTree())
+                {
+                    logger.Info("Showing export property manager");
+                    pm.Show();
+                }
             }
         }
 
