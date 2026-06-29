@@ -1,0 +1,60 @@
+[project]
+name = "sw2rd-postprocess"
+version = "0.0.0"
+description = "Post-process a SW2RD-exported robot description: simplify, prune, and convex-decompose its meshes for simulation (MuJoCo/MJCF)."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Ethan Musser", email = "ethanmusser1@gmail.com" }]
+dependencies = [
+    # Core
+    "mujoco",
+    "loguru",
+
+    # Simplification (prepare / decimate / prune)
+    "pymeshlab",
+
+    # Convex decomposition (decompose)
+    "coacd",
+    "trimesh",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.12.2", "pytest>=8", "trimesh", "pymeshlab"]
+
+[project.scripts]
+sw2rd-postprocess = "sw2rd_postprocess.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812",  # missing-trailing-comma; redundant if used alongside ruff format
+    "D100",    # undocumented-public-module
+    "D101",    # undocumented-public-class
+    "D102",    # undocumented-public-method
+    "D103",    # undocumented-public-function
+    "D104",    # undocumented-public-package
+    "D105",    # undocumented-magic-method
+    "D106",    # undocumented-public-nested-class
+    "D107",    # undocumented-public-init
+    "D203",    # blank line required before class docstring
+    "D211",    # no-blank-line-before-class
+    "D213",    # multi-line-summary-second-line
+    "E501",    # line-too-long
+    "ICN",     # flake8-import-conventions
+    "S101",    # assert
+    "TRY003",  # raise-vanilla-args
+    "PLC0415", # import-outside-top-level; pymeshlab/coacd/trimesh are imported lazily by design
+    "PLR0913", # too-many-arguments; the CLI threads many targeting/decimation knobs
+]
+isort.known-first-party = ["src"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN001", "ANN201", "ANN202", "INP001", "PLR2004", "TC003"]
