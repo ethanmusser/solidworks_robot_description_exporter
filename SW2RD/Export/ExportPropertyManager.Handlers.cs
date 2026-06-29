@@ -948,13 +948,19 @@ namespace SW2RD.Export
                 return;
             }
 
-            try
+            // Expanding a section re-hydrates its SelectionBox highlights
+            // (component Select4 loops, coord-sys / axis SelectByID2), which can
+            // stall on large assemblies. Show a busy indicator for the duration.
+            using (SwProgress.Busy(swApp, "Updating " + SectionDisplayName(Id) + " selections..."))
             {
-                RehydrateMarksForActiveSection(node, Id);
-            }
-            catch (Exception ex)
-            {
-                logger.Warn("OnGroupExpand(" + Id + ") rehydrate failed: " + ex.Message);
+                try
+                {
+                    RehydrateMarksForActiveSection(node, Id);
+                }
+                catch (Exception ex)
+                {
+                    logger.Warn("OnGroupExpand(" + Id + ") rehydrate failed: " + ex.Message);
+                }
             }
 
             // Joint-axis arrow overlay follows the Link/Joint section. Draw
@@ -977,6 +983,17 @@ namespace SW2RD.Export
             {
                 logger.Warn("OnGroupExpand(" + Id + ") axis overlay update failed: " + ex.Message);
             }
+        }
+
+        // Human-readable section label for busy-indicator titles.
+        private string SectionDisplayName(int sectionId)
+        {
+            if (sectionId == LinkJointGroupID) return "link / joint";
+            if (sectionId == VisualGroupID) return "visual";
+            if (sectionId == CollisionGroupID) return "collision";
+            if (sectionId == InertialGroupID) return "inertial";
+            if (sectionId == SitesGroupID) return "site";
+            return "section";
         }
 
         void IPropertyManagerPage2Handler9.OnListboxSelectionChanged(int Id, int Item)

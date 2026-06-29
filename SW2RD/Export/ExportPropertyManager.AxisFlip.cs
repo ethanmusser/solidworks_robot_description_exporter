@@ -22,6 +22,7 @@ THE SOFTWARE.
 
 using SolidWorks.Interop.swpublished;
 using SW2RD.Input;
+using SW2RD.Utilities;
 using System;
 
 namespace SW2RD.Export
@@ -183,6 +184,15 @@ namespace SW2RD.Export
                     return;
                 }
 
+                // Resolving the axis preview can hit the slow flexible-subassembly
+                // in-context coordinate-system path (first resolve of a given
+                // selection; later ones are memoized via axisPreviewCache). Show a
+                // busy indicator. When reached synchronously from
+                // SwitchActiveNodes this nests and only swaps the title; from the
+                // deferred (Tree.BeginInvoke) path it owns its own scope.
+                using (SwProgress.Busy(swApp, "Resolving joint axis / coordinate system..."))
+                {
+
                 string axisName = active.Link.Joint.AxisName ?? "";
                 string coordSysName = active.Link.Joint.CoordinateSystemName ?? "";
                 JointAxisSource axisSource = active.Link.Joint.AxisSource;
@@ -215,6 +225,7 @@ namespace SW2RD.Export
                 }
 
                 Exporter.DrawAxisOverlay(preview.OriginGlobal, preview.AxisGlobal);
+                } // SwProgress.Busy
             }
             catch (Exception ex)
             {
