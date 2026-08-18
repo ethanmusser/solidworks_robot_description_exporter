@@ -523,10 +523,17 @@ namespace SW2RD.Export
         // "Keep components resolved after export" checkbox on the Export group.
         private const int KeepResolvedCheckID = 163;
         // Manual mesh-quality override numberboxes, active only for the "Custom"
-        // quality level (chord fraction %, angle tolerance deg, max chord mm).
+        // quality level (chord fraction %, angle tolerance deg, max chord mm),
+        // each preceded by its own descriptive label.
         private const int CustomChordFractionNumberID = 164;
         private const int CustomAngleNumberID = 165;
         private const int CustomMaxChordNumberID = 166;
+        private const int LabelCustomChordFractionID = 167;
+        private const int LabelCustomAngleID = 168;
+        private const int LabelCustomMaxChordID = 169;
+        // Label above the "Mesh quality" dropdown, matching the separate-label
+        // style of the other Export-group comboboxes.
+        private const int LabelMeshQualityID = 170;
 
         // Marks for every PMP SelectionBox so SOLIDWORKS can attribute the
         // user's selection to the right list. CRITICAL:

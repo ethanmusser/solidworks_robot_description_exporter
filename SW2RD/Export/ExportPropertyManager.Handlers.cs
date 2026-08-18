@@ -47,6 +47,14 @@ namespace SW2RD.Export
             // mode; in Export mode there are no component pickers, so guard
             // against the null.
             PMSelectionVisual?.SetSelectionFocus();
+
+            // Re-apply the mesh-quality enable gating now that the page is
+            // actually shown. Control Enabled state set during build (before the
+            // page is displayed) is not reliably painted by SOLIDWORKS - the
+            // Custom override numberboxes in particular came up ungreyed on first
+            // open even when a non-Custom level was active. Re-applying here makes
+            // the greyed state correct from the first paint.
+            UpdateMeshQualityEnabled();
         }
 
         // Button-press dispatcher: maps the COM-supplied control ID to the
@@ -213,25 +221,14 @@ namespace SW2RD.Export
             {
                 LinkNode node = (LinkNode)Tree.SelectedNode;
                 CreateNewNodes(node);
-                return;
             }
 
-            // Persist the Custom mesh-quality overrides as the user edits them so
-            // they pre-populate the next export (mirrors the other Setup-tab
-            // preferences). The chord field is shown as a percent; store the
-            // fraction. Clamping happens in ExportPreferences.
-            if (Id == CustomChordFractionNumberID)
-            {
-                ExportPreferences.SetCustomChordFraction(Value / 100.0);
-            }
-            else if (Id == CustomAngleNumberID)
-            {
-                ExportPreferences.SetCustomAngleDeg(Value);
-            }
-            else if (Id == CustomMaxChordNumberID)
-            {
-                ExportPreferences.SetCustomMaxChordMm(Value);
-            }
+            // The Custom mesh-quality override boxes are NOT persisted here: they
+            // are also driven programmatically when the user picks a preset (so
+            // the greyed boxes mirror that preset), and persisting on every change
+            // would let a preset's values overwrite the user's saved Custom
+            // values. They are captured and persisted at export time instead
+            // (FinishExport, only when the Custom level is active).
         }
 
         void IPropertyManagerPage2Handler9.OnSelectionboxFocusChanged(int Id)
@@ -752,8 +749,11 @@ namespace SW2RD.Export
 
             if (Id == MeshQualityComboID)
             {
-                // Show/hide the Custom override fields when the user switches
-                // into or out of the "Custom" level (index 5).
+                // Seed the override boxes with the selected preset's values so the
+                // greyed fields show what it applies (and switching to Custom
+                // starts from there). For Custom this is a no-op, leaving the
+                // user's editable values in place. Then show/hide the boxes.
+                PopulateCustomBoxesForLevel(Item);
                 UpdateMeshQualityEnabled();
                 return;
             }

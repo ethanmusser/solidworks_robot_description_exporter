@@ -572,7 +572,20 @@ namespace SW2RD.Export
                 PMLabelParentLink.Caption = (nodeRole == NodeRole.TopLevelBody && node.Parent != null)
                     ? node.Parent.Name
                     : " ";
-                SelectComboBox(PMComboBoxJointType, "");
+                // Only clear the dropdown for the World root (its combo is
+                // empty + disabled). A top-level body reuses this same combo as
+                // its {fixed, free} world-attachment selector, and
+                // PopulateJointTypeComboForRole above already set its selection
+                // from Link.WorldAttachment. Clearing it here would force the
+                // selection back to index 0 ("fixed") - SelectComboBox sets
+                // CurrentSelection = 0 and the {fixed, free} list has no empty
+                // item to match - which both mis-displays a "free" body and
+                // lets the next SaveActiveNode read the stale index 0 and
+                // overwrite WorldAttachment back to Welded.
+                if (nodeRole == NodeRole.World)
+                {
+                    SelectComboBox(PMComboBoxJointType, "");
+                }
 
                 // No joint axis on this node: clear any previously-rendered
                 // overlay so we don't leave a stale arrow in the viewport.

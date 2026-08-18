@@ -164,10 +164,17 @@ namespace SW2RD.Export
                 "whole-assembly STL export.");
             PMCheckFastMeshExport.Checked = ExportPreferences.GetFastMeshExport();
 
+            PMExportGroup.AddControl2(LabelMeshQualityID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Label,
+                "Mesh quality", (short)alignment, options,
+                "Quality of the fast (tessellation) mesh export. The chord tolerance " +
+                "is set per part relative to that part's own size, so every part - " +
+                "and every part inside a sub-assembly - gets uniform, display-" +
+                "independent detail. Finer = smoother curves and larger files.");
             PMComboBoxMeshQuality = (PropertyManagerPageCombobox)PMExportGroup.AddControl2(
                 MeshQualityComboID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Combobox,
-                "Mesh quality", (short)alignment, options,
+                "", (short)alignment, options,
                 "Quality of the fast (tessellation) mesh export. The chord tolerance " +
                 "is set per part relative to that part's own size, so every part - " +
                 "and every part inside a sub-assembly - gets uniform, display-" +
@@ -188,37 +195,58 @@ namespace SW2RD.Export
             // Values are unitless so no document-unit conversion is involved:
             // chord as a percent of each part's bbox diagonal, angle in degrees,
             // max chord clamp in millimeters.
+            string chordTooltip =
+                "How far the flat triangle mesh is allowed to drift from the true curved " +
+                "surface, given as a percentage of each part's overall size. Smaller values " +
+                "hug the real shape more closely (smoother, more triangles); larger values " +
+                "are coarser (fewer triangles).";
+            PMExportGroup.AddControl2(LabelCustomChordFractionID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Label,
+                "Chord (% of part)", (short)alignment, options, chordTooltip);
             PMNumberBoxCustomChordFraction = (PropertyManagerPageNumberbox)PMExportGroup.AddControl2(
                 CustomChordFractionNumberID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Numberbox,
-                "Custom chord (% of part)", (short)alignment, options,
-                "Custom mesh quality only. Per-part chord tolerance as a percentage of " +
-                "that part's bounding-box diagonal. Larger = coarser / fewer faces.");
+                "", (short)alignment, options, chordTooltip);
             PMNumberBoxCustomChordFraction.SetRange2(
                 (int)swNumberboxUnitType_e.swNumberBox_UnitlessDouble, 0.01, 50.0, true, 0.1, 0.1, 0.01);
             PMNumberBoxCustomChordFraction.Value =
                 ExportPreferences.GetCustomChordFraction() * 100.0;
 
+            string angleTooltip =
+                "How sharply the mesh is allowed to turn from one triangle to the next across " +
+                "a curved surface, in degrees. Smaller angles make rounded features smoother " +
+                "(more triangles); larger angles make them blockier (fewer triangles).";
+            PMExportGroup.AddControl2(LabelCustomAngleID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Label,
+                "Angle (deg)", (short)alignment, options, angleTooltip);
             PMNumberBoxCustomAngle = (PropertyManagerPageNumberbox)PMExportGroup.AddControl2(
                 CustomAngleNumberID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Numberbox,
-                "Custom angle (deg)", (short)alignment, options,
-                "Custom mesh quality only. Surface-plane angle tolerance in degrees. " +
-                "Larger = coarser curves / fewer faces.");
+                "", (short)alignment, options, angleTooltip);
             PMNumberBoxCustomAngle.SetRange2(
                 (int)swNumberboxUnitType_e.swNumberBox_UnitlessDouble, 1.0, 60.0, true, 1.0, 1.0, 0.5);
             PMNumberBoxCustomAngle.Value = ExportPreferences.GetCustomAngleDeg();
 
+            string maxChordTooltip =
+                "An upper limit, in millimeters, on the chord drift above. Because the chord is " +
+                "a percentage of part size, very large parts can stop simplifying too early; " +
+                "this cap lets them keep getting coarser. Raise it to allow lighter meshes on " +
+                "big parts.";
+            PMExportGroup.AddControl2(LabelCustomMaxChordID,
+                (short)swPropertyManagerPageControlType_e.swControlType_Label,
+                "Max chord (mm)", (short)alignment, options, maxChordTooltip);
             PMNumberBoxCustomMaxChord = (PropertyManagerPageNumberbox)PMExportGroup.AddControl2(
                 CustomMaxChordNumberID,
                 (short)swPropertyManagerPageControlType_e.swControlType_Numberbox,
-                "Custom max chord (mm)", (short)alignment, options,
-                "Custom mesh quality only. Upper clamp on the per-part chord tolerance " +
-                "in millimeters, so very large parts can coarsen further. Raise to allow " +
-                "coarser meshes on big bodies.");
+                "", (short)alignment, options, maxChordTooltip);
             PMNumberBoxCustomMaxChord.SetRange2(
                 (int)swNumberboxUnitType_e.swNumberBox_UnitlessDouble, 0.01, 1000.0, true, 1.0, 1.0, 0.1);
             PMNumberBoxCustomMaxChord.Value = ExportPreferences.GetCustomMaxChordMm();
+
+            // If the saved quality level is a preset (not Custom), seed the boxes
+            // with that preset's values so the greyed fields show what it applies.
+            // The Custom case keeps the saved custom values loaded just above.
+            PopulateCustomBoxesForLevel(PMComboBoxMeshQuality.CurrentSelection);
 
             PMCheckKeepResolved = (PropertyManagerPageCheckbox)PMExportGroup.AddControl2(
                 KeepResolvedCheckID,
@@ -354,6 +382,36 @@ namespace SW2RD.Export
             SetControlEnabled(PMNumberBoxCustomChordFraction, custom);
             SetControlEnabled(PMNumberBoxCustomAngle, custom);
             SetControlEnabled(PMNumberBoxCustomMaxChord, custom);
+        }
+
+        // Fills the three Custom-override numberboxes with the parameters the
+        // given quality level uses, so a preset selection leaves the (greyed)
+        // boxes showing exactly what that preset applies. Switching to Custom
+        // then starts from those values instead of forcing the user to guess.
+        // For the Custom level (5) the boxes keep their own editable values.
+        private void PopulateCustomBoxesForLevel(int level)
+        {
+            if (level == 5)
+            {
+                return;
+            }
+            if (!ExportHelper.TryGetMeshQualityProfile(level, out double chordPercent,
+                    out double angleDeg, out double maxChordMm))
+            {
+                return;
+            }
+            if (PMNumberBoxCustomChordFraction != null)
+            {
+                PMNumberBoxCustomChordFraction.Value = chordPercent;
+            }
+            if (PMNumberBoxCustomAngle != null)
+            {
+                PMNumberBoxCustomAngle.Value = angleDeg;
+            }
+            if (PMNumberBoxCustomMaxChord != null)
+            {
+                PMNumberBoxCustomMaxChord.Value = maxChordMm;
+            }
         }
 
         // Greys out the MJCF "Rotation Format" dropdown when the selected output

@@ -1479,6 +1479,31 @@ namespace SW2RD.Export
             maxChord = MaxBodyChordTolerance;
         }
 
+        // Exposes a standard preset's parameters in the export PMP's units (chord
+        // as a percent of each part's bbox diagonal, angle in degrees, max-chord
+        // clamp in millimeters) so the UI can pre-fill the Custom override boxes
+        // with the values the selected preset actually uses - a starting point the
+        // user can tweak after switching to Custom. Returns false for the Custom
+        // level (5), which has no preset values. Single source of truth: it reads
+        // the same MeshQualityToTolerances table and MaxBodyChordTolerance clamp
+        // the export path uses.
+        public static bool TryGetMeshQualityProfile(int level, out double chordPercent,
+            out double angleDeg, out double maxChordMm)
+        {
+            if (level < 0 || level > 4)
+            {
+                chordPercent = 0.0;
+                angleDeg = 0.0;
+                maxChordMm = 0.0;
+                return false;
+            }
+            MeshQualityToTolerances(level, out double fraction, out double angleRad);
+            chordPercent = fraction * 100.0;
+            angleDeg = angleRad * 180.0 / Math.PI;
+            maxChordMm = MaxBodyChordTolerance * 1000.0;
+            return true;
+        }
+
         // Maps a standard mesh-quality level (0=Very coarse..4=Very fine) to a
         // relative chord-tolerance fraction (of each body's bbox diagonal) and an
         // angle tolerance (radians). Finer levels -> smaller fraction + tighter

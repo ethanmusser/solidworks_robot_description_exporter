@@ -533,9 +533,15 @@ namespace SW2RD.Export
                 ExportPreferences.SetFastMeshExport(fastMeshExport);
                 ExportPreferences.SetKeepResolvedAfterExport(keepResolved);
                 ExportPreferences.SetMeshQuality(meshQuality);
-                ExportPreferences.SetCustomChordFraction(customChordFraction);
-                ExportPreferences.SetCustomAngleDeg(customAngleDeg);
-                ExportPreferences.SetCustomMaxChordMm(customMaxChordMm);
+                // Only persist the override values when the user actually exported
+                // with the Custom level; for a preset the boxes merely mirror that
+                // preset, so saving them would clobber the user's saved Custom set.
+                if (meshQuality == 5)
+                {
+                    ExportPreferences.SetCustomChordFraction(customChordFraction);
+                    ExportPreferences.SetCustomAngleDeg(customAngleDeg);
+                    ExportPreferences.SetCustomMaxChordMm(customMaxChordMm);
+                }
                 ExportPreferences.SetRotationFormat(rotationFormat);
                 ExportPreferences.SetAngleUnit(angleUnit);
 
