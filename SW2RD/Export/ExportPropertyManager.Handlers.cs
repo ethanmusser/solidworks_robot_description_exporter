@@ -47,6 +47,14 @@ namespace SW2RD.Export
             // mode; in Export mode there are no component pickers, so guard
             // against the null.
             PMSelectionVisual?.SetSelectionFocus();
+
+            // Re-apply the mesh-quality enable gating now that the page is
+            // actually shown. Control Enabled state set during build (before the
+            // page is displayed) is not reliably painted by SOLIDWORKS - the
+            // Custom override numberboxes in particular came up ungreyed on first
+            // open even when a non-Custom level was active. Re-applying here makes
+            // the greyed state correct from the first paint.
+            UpdateMeshQualityEnabled();
         }
 
         // Button-press dispatcher: maps the COM-supplied control ID to the
@@ -214,6 +222,13 @@ namespace SW2RD.Export
                 LinkNode node = (LinkNode)Tree.SelectedNode;
                 CreateNewNodes(node);
             }
+
+            // The Custom mesh-quality override boxes are NOT persisted here: they
+            // are also driven programmatically when the user picks a preset (so
+            // the greyed boxes mirror that preset), and persisting on every change
+            // would let a preset's values overwrite the user's saved Custom
+            // values. They are captured and persisted at export time instead
+            // (FinishExport, only when the Custom level is active).
         }
 
         void IPropertyManagerPage2Handler9.OnSelectionboxFocusChanged(int Id)
@@ -728,6 +743,17 @@ namespace SW2RD.Export
                 SetFastMeshExportEnabled(Item == 0);
                 // Quality depends on BOTH format (STL) and the fast-export
                 // checkbox, so re-evaluate it whenever the format changes too.
+                UpdateMeshQualityEnabled();
+                return;
+            }
+
+            if (Id == MeshQualityComboID)
+            {
+                // Seed the override boxes with the selected preset's values so the
+                // greyed fields show what it applies (and switching to Custom
+                // starts from there). For Custom this is a no-op, leaving the
+                // user's editable values in place. Then show/hide the boxes.
+                PopulateCustomBoxesForLevel(Item);
                 UpdateMeshQualityEnabled();
                 return;
             }

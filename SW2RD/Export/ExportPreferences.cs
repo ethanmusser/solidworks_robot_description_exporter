@@ -38,6 +38,9 @@ namespace SW2RD.Export
         private const string ExportMeshesValueName = "ExportMeshes";
         private const string FastMeshExportValueName = "FastMeshExport";
         private const string MeshQualityValueName = "MeshQuality";
+        private const string CustomChordFractionValueName = "CustomChordFraction";
+        private const string CustomAngleDegValueName = "CustomAngleDeg";
+        private const string CustomMaxChordMmValueName = "CustomMaxChordMm";
         private const string RotationFormatValueName = "RotationFormat";
         private const string AngleUnitValueName = "AngleUnit";
         private const string KeepResolvedValueName = "KeepResolvedAfterExport";
@@ -54,9 +57,26 @@ namespace SW2RD.Export
         // path remains available by unchecking "Fast mesh export".
         private const bool DefaultFastMeshExport = true;
         // Mesh quality for the per-part tessellation path:
-        // 0 = Coarse, 1 = Medium, 2 = Fine, 3 = Very fine. Default Fine.
-        private const int DefaultMeshQuality = 2;
-        private const int MaxMeshQuality = 3;
+        // 0 = Very coarse, 1 = Coarse, 2 = Medium, 3 = Fine, 4 = Very fine,
+        // 5 = Custom. Default Fine.
+        private const int DefaultMeshQuality = 3;
+        private const int MaxMeshQuality = 5;
+
+        // Custom (level 5) tessellation overrides. Only consulted when the user
+        // picks the "Custom" mesh-quality option. Ranges are clamped on read so a
+        // stale / hand-edited registry value can't drive a runaway or degenerate
+        // tessellation. ChordFraction is a fraction of each body's bbox diagonal;
+        // AngleDeg is the surface-plane angle tolerance in degrees; MaxChordMm is
+        // the per-body chord clamp in millimeters.
+        private const double DefaultCustomChordFraction = 0.010;
+        private const double MinCustomChordFraction = 0.0001;
+        private const double MaxCustomChordFraction = 0.5;
+        private const double DefaultCustomAngleDeg = 30.0;
+        private const double MinCustomAngleDeg = 1.0;
+        private const double MaxCustomAngleDeg = 60.0;
+        private const double DefaultCustomMaxChordMm = 25.0;
+        private const double MinCustomMaxChordMm = 0.01;
+        private const double MaxCustomMaxChordMm = 1000.0;
         // MJCF frame-orientation representation:
         // 0 = Axis-angle, 1 = Quaternion, 2 = Euler. Default Axis-angle (the
         // most human-readable while still unambiguous). Mirrors the
@@ -140,6 +160,60 @@ namespace SW2RD.Export
         public static int ClampMeshQuality(int value) =>
             value < 0 || value > MaxMeshQuality ? DefaultMeshQuality : value;
 
+        public static double GetCustomChordFraction()
+        {
+            return ClampCustomChordFraction(
+                ReadDouble(CustomChordFractionValueName, DefaultCustomChordFraction));
+        }
+
+        public static void SetCustomChordFraction(double value)
+        {
+            WriteDouble(CustomChordFractionValueName, ClampCustomChordFraction(value));
+        }
+
+        public static double ClampCustomChordFraction(double value) =>
+            Clamp(value, MinCustomChordFraction, MaxCustomChordFraction, DefaultCustomChordFraction);
+
+        public static double GetCustomAngleDeg()
+        {
+            return ClampCustomAngleDeg(ReadDouble(CustomAngleDegValueName, DefaultCustomAngleDeg));
+        }
+
+        public static void SetCustomAngleDeg(double value)
+        {
+            WriteDouble(CustomAngleDegValueName, ClampCustomAngleDeg(value));
+        }
+
+        public static double ClampCustomAngleDeg(double value) =>
+            Clamp(value, MinCustomAngleDeg, MaxCustomAngleDeg, DefaultCustomAngleDeg);
+
+        public static double GetCustomMaxChordMm()
+        {
+            return ClampCustomMaxChordMm(ReadDouble(CustomMaxChordMmValueName, DefaultCustomMaxChordMm));
+        }
+
+        public static void SetCustomMaxChordMm(double value)
+        {
+            WriteDouble(CustomMaxChordMmValueName, ClampCustomMaxChordMm(value));
+        }
+
+        public static double ClampCustomMaxChordMm(double value) =>
+            Clamp(value, MinCustomMaxChordMm, MaxCustomMaxChordMm, DefaultCustomMaxChordMm);
+
+        // Clamps to [min, max]; a NaN / infinity falls back to the default.
+        private static double Clamp(double value, double min, double max, double fallback)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+            {
+                return fallback;
+            }
+            if (value < min)
+            {
+                return min;
+            }
+            return value > max ? max : value;
+        }
+
         public static int GetRotationFormat()
         {
             return ClampRotationFormat(ReadInt(RotationFormatValueName, DefaultRotationFormat));
@@ -213,6 +287,64 @@ namespace SW2RD.Export
             catch (Exception ex)
             {
                 logger.Warn("ExportPreferences.WriteInt(" + name + ") failed: " + ex.Message);
+            }
+        }
+
+        // Doubles are stored as invariant-culture strings (REG_SZ) because the
+        // registry has no native floating-point value kind and the DWORD path
+        // used by ReadInt/WriteInt would truncate the fractional part.
+        private static double ReadDouble(string name, double defaultValue)
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryRoot))
+                {
+                    if (key == null)
+                    {
+                        return defaultValue;
+                    }
+                    object raw = key.GetValue(name, null);
+                    if (raw == null)
+                    {
+                        return defaultValue;
+                    }
+                    if (double.TryParse(
+                        Convert.ToString(raw, System.Globalization.CultureInfo.InvariantCulture),
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out double parsed))
+                    {
+                        return parsed;
+                    }
+                    return defaultValue;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("ExportPreferences.ReadDouble(" + name + ") failed: " + ex.Message);
+                return defaultValue;
+            }
+        }
+
+        private static void WriteDouble(string name, double value)
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(RegistryRoot))
+                {
+                    if (key == null)
+                    {
+                        return;
+                    }
+                    key.SetValue(
+                        name,
+                        value.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                        RegistryValueKind.String);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.Warn("ExportPreferences.WriteDouble(" + name + ") failed: " + ex.Message);
             }
         }
     }
